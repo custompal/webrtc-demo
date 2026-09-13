@@ -329,7 +329,7 @@ INFO native bitrate vpx_apply ss0=750 layer0=300 layer1=525 layer2=750 decimator
 | N2 | `nativeInit` 的 `fileNameBase` 由 Kotlin 传值：只有传 `"native"` 才得到契约路径 | 传其它值会得到 `<base>.log` | **已闭合**：t8 实传字面量 `"native"`（`NativeLog.kt:121`，基名常量 `BASE_NAME`），与契约 §9.2/§9.4 一致 |
 | N3 | `outMeta[4]`（temporalIndex）为帧序回推值，非 vpx 回传 | 仅影响展示 | 若需精确值，升级 libvpx 或用 `VP9E_GET_SVC_LAYER_ID`（本轮不做） |
 | N4 | `nativeInit` 前若 Kotlin 调用编码器，日志只落 logcat + 一次 ERROR（契约 §9.4 允许） | 首次排障缺文件日志 | **已闭合**：t8 的 `NativeLog.ensureInitialized` 在 `WebRtcDemoApp.onCreate` 与 `WebRtcEngine.initialize`（创建 factory/编码器之前）双重调用，失败只写 logcat 不抛异常 |
-| N5 | t5 的 `libwebrtc-java.jar` / `libjingle_peerconnection_so.so` 尚未产出 | 不影响本层构建（本层不依赖），但 t10 打包与 A1 生效需要 | t5 完成后 t10 重建 APK；本层无需改动 |
+| N5 | ~~t5 的 `libwebrtc-java.jar` / `libjingle_peerconnection_so.so` 尚未产出~~ | — | **已闭合（2026-09-13）**：终版 APK 内已含 `lib/arm64-v8a/libjingle_peerconnection_so.so`（12,946,912 B，sha256 `757cef81…`，本层独立从 APK 抽出复核，见 §9.1.2）；t15 的 26 处 Kotlin 修复经三方核对未触碰 `nativebridge/**` 与 `app/src/main/cpp/**`。本层无需改动 |
 | N6 | 本层新增的 `tests/host/`（验证资产）不在契约 §2.2 文件清单内 | 可能引起"超清单文件"疑问 | 已在 `tests/host/README.md` 与本文声明：**不参与 CMake/AGP 构建**，可随时删除 |
 
 ---
@@ -384,6 +384,44 @@ ninja -C /tmp/t7build_real
 > 结论：契约 §4.2 的「自有库不得链接 libwebrtc / libjingle」在 **AGP 真实构建链路的二进制层面**得到证实；
 > 同时确认 `JNI_OnLoad` 注册入口在正式构建中导出（`RegisterNatives` 生效前提）。
 > 该次 AGP 构建的**失败点只在 Kotlin 层**（t8 与 `libwebrtc-java.jar` 的 API 差异），与本层 C++/CMake/NDK/libvpx 链路无关（t10 判定）。
+> t15 修复完成后 t10 已产出终版 APK，证据与"APK 内实体"复核见 §9.1.2。
+
+### 9.1.2 APK 内实体证据（t10 终版，本层独立从 APK 抽出复验，2026-09-13）
+
+t10 完成 `clean assembleDebug`：`app/build/outputs/apk/debug/app-debug.apk` = 33,260,234 B，
+sha256 `c72d366706569b6dab5689200bc0902ce94fb7241b238a401e61fa5e745caa96`（用 t16 的 v61 jar）。
+
+**本层独立复验方式**：容器内无 `unzip/bsdtar/7z`，因此用 Node.js 解析 ZIP 中央目录后提取条目（支持 STORED/DEFLATED），
+再对提取物做 sha256 与 ELF 检查（命令与脚本见注）。
+
+| 条目 | 大小 | sha256（本层实测） | 与 t10 登记值 |
+|---|---|---|---|
+| `lib/arm64-v8a/libwebrtcdemo_native.so` | 1,231,512 B | `e9b66cc98d97454c32d535cb670bae251d381c383fff98ea11d922cb798f35f5` | ✅ 一致 |
+| `lib/arm64-v8a/libjingle_peerconnection_so.so` | 12,946,912 B | `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e` | ✅ 一致 |
+| `app-debug.apk` | 33,260,234 B | `c72d366706569b6dab5689200bc0902ce94fb7241b238a401e61fa5e745caa96` | ✅ 一致 |
+
+对 **APK 内** `libwebrtcdemo_native.so`（即真正随包发布的产物）的 ELF 检查：
+
+| 检查 | 结果 |
+|---|---|
+| `llvm-readelf -h` | `ELF64 / DYN / AArch64` |
+| `llvm-nm -D --defined-only` | 仅 `JNI_OnLoad`、`JNI_OnUnload` |
+| `NEEDED` | `liblog.so, libandroid.so, libm.so, libc++_shared.so, libdl.so, libc.so` |
+| 未定义符号含 `webrtc|jingle` | **0** |
+| 同包内 `libjingle_peerconnection_so.so` | `ELF64/AArch64`，导出 `JNI_OnLoad`（194 个动态符号）= 官方 SDK native 侧在位（A1 的 `VideoEncoderWrapper` 前提） |
+
+> 与 §9.1.1 的 2,206,528 B **不是矛盾**：那是 `intermediates/cmake/debug/obj/` 下**含调试信息**的中间产物；
+> APK 内是经 AGP `stripDebugDebugSymbols` 处理后的 **1,231,512 B**。两者源自同一次构建。
+> 至此契约 §4.2「自有库不得链接 libwebrtc/libjingle」拥有**三层证据**：手工 Release 构建（§9.1）、
+> AGP `externalNativeBuild` 中间产物（§9.1.1）、**APK 内实体**（本节）。
+
+> 复现命令（容器内）：
+> ```bash
+> node -e '<解析 ZIP 中央目录并提取指定条目的内联脚本>' app-debug.apk lib/arm64-v8a/libwebrtcdemo_native.so /tmp/apk_native.so
+> sha256sum /tmp/apk_native.so app/build/outputs/apk/debug/app-debug.apk
+> $NDK_BIN/llvm-nm -D --defined-only /tmp/apk_native.so
+> ```
+
 
 
 ### 9.2 格式与编译
@@ -481,8 +519,10 @@ ssh -i ~/.ssh/id_ed25519 root@172.21.0.219 -p 5766 \
 | v1.3 | 2026-09-13 | 新增 **§2.7 排障日志配对锚点**：Kotlin `encoded_plane_rejected`/`setrates_failed`/`setrates` ↔ C++ `nativeEncode_rejected`/`nativeSetRates_rejected`/`setrates`+`ts_target_kbps`；记录 t8 固化的结构不变量（`len == S*T` 由构造保证、运行期 S/T=3/3，故 `length_mismatch` 分支不可能由 B 侧触发，本层仍按 §6.3 保留校验）；t8 守卫脚本 `t7iface.sh` 15→**19/19** | android-dev 的第三轮互验反馈 |
 | v1.4 | 2026-09-13 | 新增 **§9.1.1 AGP 真实构建链路**（t10 实跑 `:app:externalNativeBuildDebug` BUILD SUCCESSFUL；本层独立复核产物：2,206,528 B / ELF64 AArch64 / 仅导出 `JNI_OnLoad`+`JNI_OnUnload` / NEEDED 无 libwebrtc·libjingle / 未定义符号含 webrtc\|jingle = 0），把契约 §4.2 的二进制层证据补齐到**正式 AGP 路径** | env-installer（t10）实测通报 |
 | v1.5 | 2026-09-13 | ① **§2.7 改为按事件名引用**（行号易碎）：记录 t8 新增失败分支导致的行号位移快照（`encoded_plane_rejected` 178→**183**、不变量注释 238→**243**、`setrates_failed` 255→**260**，内容未变）；② 新增 t8 的两个可诊断事件 `to_i420_failed` / `frame_convert_failed` 入配对表；③ 记录本层对 26 处 Kotlin API 修复的**域隔离复核**（`nativebridge/**` 与 `app/src/main/cpp/**` 0 文件被触碰、`external fun` 仍 15、`SPATIAL_LAYERS=1`/`TEMPORAL_LAYERS=3`、9 处 JNI 调用形状与状态码映射未变、`createNative` 改名只在其自有类内） | android-dev 的边界交代 + 锚点位移通报 |
+| v1.6 | 2026-09-13 | 新增 **§9.1.2 APK 内实体证据**：本层用 Node 解析 ZIP 独立从终版 `app-debug.apk`（33,260,234 B / sha256 `c72d3667…`）抽出 `libwebrtcdemo_native.so`（1,231,512 B / sha256 `e9b66cc9…`）与 `libjingle_peerconnection_so.so`（12,946,912 B / sha256 `757cef81…`），三者与 t10 登记值**逐字节一致**；APK 内库仅导出 `JNI_OnLoad`/`JNI_OnUnload`、NEEDED 无 libwebrtc·libjingle、未定义符号含 webrtc\|jingle = 0 → 契约 §4.2 证据升级为**三层**（手工 Release / AGP 中间产物 / APK 内实体）；**§8 N5（jar/so 未产出）标为已闭合** | env-installer（t10）终版 APK 通报 |
 
-> 代码未因 v1.1–v1.5 变更（本层始终按契约 §9.2 输出 `native.log`、按 §6.6 返回状态码数值）。改动仅限本报告文件。
+> 代码未因 v1.1–v1.6 变更（本层始终按契约 §9.2 输出 `native.log`、按 §6.6 返回状态码数值）。改动仅限本报告文件。
+
 
 
 

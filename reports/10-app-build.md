@@ -174,6 +174,58 @@ sha256 : c72d366706569b6dab5689200bc0902ce94fb7241b238a401e61fa5e745caa96
 **权威 APK 的四项核验（重测）**：dex 13 个，`com.example.webrtcdemo` 条目 **4427**、`org.webrtc` 条目 10367；`lib/arm64-v8a/` 含 `libjingle_peerconnection_so.so` 12,946,912 B + `libwebrtcdemo_native.so` 1,231,512 B；Manifest `package=com.example.webrtcdemo`、权限 INTERNET/CAMERA/RECORD_AUDIO/ACCESS_NETWORK_STATE/MODIFY_AUDIO_SETTINGS、组件 5 项（activity/provider/receiver 合计）；`resources.arsc` 存在且 `aapt2 dump resources` 解析成功（exit=0）。
 **stage 10 属主归一（受版控树口径）**：非 1000 项 = **0**；构建后再对 `app/build`、`app/.cxx`、`.gradle`、`.kotlin`、`jniLibs`、`reports/logs`、`signaling/dist` 归一 → **全项目非 1000 项 = 0**（chown 只改元数据，APK 哈希复核未变）。
 
+#### 5.7.2 **权威构建 #3（终局口径确认：jar = `d98939bb…` v61，2026-09-13 21:17）** — **最终权威结论**
+
+captain 连续两次改口后**终局确认**：权威 jar = `d98939bb…`（v61/Java 17），`third_party/libwebrtc/java/**` 已下冻结令。我按最终判据重跑：
+
+| 判据 | 实测 |
+|---|---|
+| 判据 1 jar 核验 | ✅ `sha256 = d98939bbf0c0cd071baff19004a4dc2f602997b70e33e0fc3669c5fccb5f6543`，`size = 1,048,264` |
+| 判据 2 启动时刻 | ✅ **T0 = 2026-09-13 21:17:31**（epoch 1789305451），**晚于**源码基线 `18:00:01`（yes）**且晚于** jar mtime `20:00:41`（epoch 1789300841，yes） |
+| 判据 3 jar 前后一致 | ✅ before = after = `d98939bb…`，`stat "%Y %s"` = `(1789300841, 1048264)` 两侧完全相同 |
+| 判据 3 构建期无写入 | ✅ `find app/src/main/kotlin app/src/main/cpp -newermt T0` → **0**；**整个 `app/src`（含 jniLibs）也为 0** |
+| 编译级证据 | ✅ `:app:compileDebugKotlin FROM-CACHE`（如实披露）＋ `:app:buildCMakeDebug[arm64-v8a]`、`:app:assembleDebug` **实际执行**；`BUILD SUCCESSFUL in 51s`，EXIT=0；锁异常 **0** |
+| 日志 | `reports/logs/authoritative3-assembleDebug-20260913-211731.log` |
+| **APK（最终权威）** | path `app/build/outputs/apk/debug/app-debug.apk`；mtime **21:18:22.051**；**33,260,234 B**；sha256 **`c72d366706569b6dab5689200bc0902ce94fb7241b238a401e61fa5e745caa96`** |
+| 解包四项 | (a) dex 13 个，`com.example.webrtcdemo` **4427** 条（`org.webrtc` 10367）；(b) `lib/arm64-v8a/`：`libjingle_peerconnection_so.so` 12,946,912 B + `libwebrtcdemo_native.so` 1,231,512 B；(c) Manifest 权限 6 条（含 INTERNET/CAMERA/RECORD_AUDIO）+ 组件 5 项；(d) `resources.arsc` 可解析（`Package name=com.example.webrtcdemo id=7f`） |
+| **APK 内 so 哈希** | `libjingle_peerconnection_so.so` = **`757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e`** ✅（与 t5 交付逐字节一致）；`libwebrtcdemo_native.so` = `e9b66cc98d97454c32d535cb670bae251d381c383fff98ea11d922cb798f35f5` |
+| stage 10 | 受版控树非 1000 项 = **0**；构建后再归一 `app/build`、`app/.cxx`、`.gradle`、`.kotlin`、`jniLibs`、`reports/logs`、`signaling/dist` → 全项目非 1000 = **0**（chown 只改元数据，APK 哈希复核未变） |
+| 可复现性 | **20:21 / 21:06 / 21:13 / 21:18 四次 `clean assembleDebug` 产出同一 sha256** ⇒ 固定输入下 APK 逐字节可复现 |
+
+> **过渡期证据作废**：19:12 那次（基于 A 方案 v55 改字节 jar）APK 仅作过程记录，**不进最终结论**；最终结论只认本节（基于原生 v61 jar）。
+
+#### 5.7.3 **决定性 no-cache 构建（t18 要求，2026-09-13 21:40–21:42）**
+
+命令：`./gradlew --no-daemon --no-build-cache clean assembleDebug`；日志 `reports/logs/final-nocache-assembleDebug-20260913-214035.log`。
+
+| 项 | 实测 |
+|---|---|
+| `:app:clean` | ✅ 出现（1 次） |
+| 关键任务**实际执行**（非 UP-TO-DATE、非 FROM-CACHE） | ✅ `compileDebugKotlin`、`dexBuilderDebug`、`packageDebug`、`buildCMakeDebug[arm64-v8a]`、`desugarDebugFileDependencies`、`mergeExtDexDebug`、`processDebugResources`、`packageDebugResources` |
+| 任务统计 | **43 actionable tasks: 42 executed, 1 up-to-date** |
+| 结果 | `BUILD SUCCESSFUL in 2m 2s`，EXIT=0；锁异常 0 |
+| jar 前后 | before = after = `d98939bbf0c0cd071baff19004a4dc2f602997b70e33e0fc3669c5fccb5f6543`，`stat "%Y %s"` = `(1789300841, 1048264)` 两侧一致 ✅ |
+| 构建期写入 | `find app/src -newermt "$T0"` → **0** ✅ |
+| **APK** | mtime **21:42:38.205**，**33,260,234 B**，sha256 **`b0cddd86718a75a0aadb82424d0ce5ab24bae2f52edede27f86cd0c2d7bbb12b`** |
+| 新 APK 四项核验 | (a) dex 13 个含 `com.example.webrtcdemo` 4427 条；(b) 两个 so 就位，**`libjingle_peerconnection_so.so` = `757cef8128bf9151…` ✅**、`libwebrtcdemo_native.so` = `e9b66cc9…`；(c) Manifest 权限 6 条 + 组件 5 项；(d) `resources.arsc` 存在且可解析 |
+
+> ⚠️ **重要差异声明（如实报告，未做掩饰）**：本次 no-cache 构建的 APK **字节与先前 4 次（带 build cache）不同**：`c72d3667…caa96` → **`b0cddd86…b12b`**（大小相同 33,260,234 B；内部 so 与 dex 核验均通过）。
+> 由此**必须下调此前的"打包可复现"结论**：先前 4 次同哈希是在 **build cache 开启**、`compileDebugKotlin` 等任务 `FROM-CACHE` 的条件下取得的；**在 `--no-build-cache` 下字节不同 ⇒ 本工程 APK 打包并非跨执行模式字节可复现**（差异来源未进一步定位；可能为 dex/zip 次序等打包期非确定性）。
+> **对交付物的影响（如实披露）**：该构建按任务要求写入标准输出路径 `app/build/outputs/apk/debug/app-debug.apk`，因此**该路径上现为 `b0cddd86…`**；**先前的 `c72d3667…` 字节已无副本**（全盘检索 `*.apk` 仅此一份），无法回滚。我**没有**主动"替换交付 APK"，但须告知该副作用，并请 captain 裁定以哪一份为交付（二者输入相同、内部核验均通过）。
+
+#### 5.7.4 **补记：21:05:56 那次权威构建的任务口径（供 verifier 对账）**
+
+`reports/logs/authoritative-assembleDebug-20260913-210556.log`（21:13/21:17 两次同口径）：
+```
+43 actionable tasks: 21 executed, 21 from cache, 1 up-to-date
+> Task :app:packageDebugResources FROM-CACHE
+> Task :app:compileDebugKotlin FROM-CACHE
+> Task :app:dexBuilderDebug FROM-CACHE
+> Task :app:buildCMakeDebug[arm64-v8a]      ← 实际执行
+> Task :app:packageDebug                    ← 实际执行
+```
+即：**`packageDebug` 与 `buildCMakeDebug` 实际执行；`compileDebugKotlin`、`dexBuilderDebug`、`packageDebugResources` 为 FROM-CACHE**（非"未编译"，而是同输入缓存命中）。
+
 #### 5.7.1 **权威构建 #2（jar 定稿 `d98939bb…` 之后，captain 复核令）**
 
 | 项 | 实测 |
@@ -202,7 +254,7 @@ sha256 : c72d366706569b6dab5689200bc0902ce94fb7241b238a401e61fa5e745caa96
 - 我产出的 v55 jar：sha256 `138cf12d…013a`，453 个 class 全 v55
 - 逐字节核验：解包清单一致；**忽略字节 6–7 后 453 个 class 全部 `cmp` 相同（内容不同数 = 0）**
 - 冒烟验证：`d8` 对旧 jar 复现错误、对新 jar 成功产出 `classes.dex`
-- 原始字节另存：AAR 内 `classes.jar` 未改动（仍 v69，可对照）
+- 原始字节另存（**当时**）：AAR 内 `classes.jar` 未改动（**当时为 v69**，可对照）——**该 AAR 原件已归档为 `libwebrtc-arm64.aar.orig`（6,457,598 B，sha256 `fe26d97f…d178e`，其 `classes.jar` = `ad54a0a2…af1f` / 453×major 69）**；**现行** AAR 已于 20:00 被 t16 重打为 `456e3f2f…`，其 `classes.jar` = `d98939bb…`（major 61）。
 
 **该应急版本现已作废**：captain 最终裁定 **Java 17 / major 61**，并由 webrtc-builder 在 **t16** 用 javac 原生重编（`build/android/gyp/compile_java.py` 中硬编码的 `--release 25` 改为 17，非改字节）产出终版 jar。
 
@@ -218,11 +270,11 @@ sha256 : c72d366706569b6dab5689200bc0902ce94fb7241b238a401e61fa5e745caa96
 **重要实测教训（我踩到并记录）**：终版 jar 在 20:00:41 落地后，我按增量方式再跑 `assembleDebug`，Gradle 把 `desugarDebugFileDependencies`/`dexBuilderDebug`/`packageDebug` 全判为 **UP-TO-DATE**（APK 时间戳仍是 19:12），**即增量构建没有因该 jar 内容变化而重新 dex**。我据此**强制 `./gradlew --no-daemon clean assembleDebug`** 重编（BUILD SUCCESSFUL in 41s），得到**当前 APK sha256 `c72d3667…caa96`**，并再跑一遍 `build_app.sh` 全绿确认（`✅ 全部通过`，org.webrtc 491 类、FileProvider 节点、两个 so 均核验通过）。
 → 结论：**更换 libwebrtc jar 后必须 clean 重编**，否则可能得到一个"看起来构建成功、实际仍绑定旧 jar"的 APK。
 
-> **给 verifier 的口径**：终版 jar 的 sha256 是 `d98939bb…`（Java 17/major 61，t16 原生重编）；我此前的 `138cf12d…`（v55 版本戳改写）**已作废**，仅作为过程记录与本报告中保留的脚本存在；原始 v69 字节在 `.orig-jdk25` 与 AAR 内 `classes.jar` 中可查。
+> **给 verifier 的口径**：终版 jar 的 sha256 是 `d98939bb…`（Java 17/major 61，t16 原生重编）；我此前的 `138cf12d…`（v55 版本戳改写）**已作废**，仅作为过程记录存在（对应脚本已自仓库移除，见 §6.3）；**原始 v69 字节可查于 `libwebrtc-java.jar.orig-jdk25`（单 jar）与 `libwebrtc-arm64.aar.orig` 内的 `classes.jar`（`ad54a0a2…af1f`）**。⚠️ **现行 AAR（`456e3f2f…`）内的 `classes.jar` 已是 `d98939bb…`（major 61），不再是 v69。**
 
 ### 6.3 **D 级偏离登记**【**状态：已由 t16 取代 / 已退役**】（captain 2026-09-13 指令要求登记）
 
-> **一句话**：`ad54a0a2…`(v69 原始) → `138cf12d…`(我临时改字节成 v55) → **现行 `d98939bb…`(t16 用 javac `--release 17` 原生重编，major 61)**。临时手段**已删除**（本提交 `git rm scripts/fix_jar_class_version.sh`），仅留文字记录与备份以防回溯。
+> **一句话（captain 终局口径 2026-09-13 21:15）**：`ad54a0a2…`(v69 原始) → `138cf12d…`(我临时改字节成 v55，**退役**) → `ee792522…`(t16 首轮的**原生 v55**，因 captain 与 t16 指令交叉曾被改口采用，随后**作废**，备查 `.v55-java11`) → **现行/终态 `d98939bb…`(t16 原生 `--release 17` 重编，453/453 = major 61)**。临时手段**已删除**（`git rm scripts/fix_jar_class_version.sh`），仅留文字记录与备份以防回溯。
 
 | 项 | 内容 |
 |---|---|
@@ -230,9 +282,9 @@ sha256 : c72d366706569b6dab5689200bc0902ce94fb7241b238a401e61fa5e745caa96
 | 性质 | **临时"版本戳归一化"**：把 `libwebrtc-java.jar` 内 453 个 class 的头部 2 字节版本号 `69 → 55`，**只改声明、非原生重编**（局限：无真机可验，不构成可交付态） |
 | 原值（t5 交付） | `third_party/libwebrtc/java/libwebrtc-java.jar` sha256 **`ad54a0a209ecfd6e5c407d9ba04f61b39ac2804a62e08903d5fb23feba76af1f`**（1,051,957 B，major 69） |
 | 偏离期值（我产出） | sha256 **`138cf12dfa7c2a6b30a74c95c0f19536043812dbae7d48f2c4d7d4b5a560013a`**（555,728 B，453×major 55）——**系 re-zip 产物，字节已不可得**（见 `reports/05 §8.1` 的 provenance 说明） |
-| **现行值（最终）** | sha256 **`d98939bbf0c0cd071baff19004a4dc2f602997b70e33e0fc3669c5fccb5f6543`**（1,048,264 B，**453/453 = major 61**，**t16 用 javac `--release 17` 原生重编**，非改字节；AAR 内 `classes.jar` 已同步同哈希） |
+| **现行值（终态，captain 21:15 最终口径）** | sha256 **`d98939bbf0c0cd071baff19004a4dc2f602997b70e33e0fc3669c5fccb5f6543`**（1,048,264 B，**453/453 = major 61**，**t16 用 javac `--release 17` 原生重编**，非改字节；AAR 内 `classes.jar` 已同步同哈希）。<br>**同轮作废值（备案）**：`ee792522c35cb8ca5c53052a1fecaa4bca6a96870f94aa4f563d0198ea6d8245`（1,048,264 B，**原生 v55 / Java 11**，t16 首轮按任务书原文产出）——captain 曾一度改口采用、随后**终局裁定回到 v61**，故**作废**；盘上备查：`libwebrtc-java.jar.v55-java11` 与 `webrtc-build/src/out/Release-arm64/lib.java/sdk/android/libwebrtc.jar`（均实测 = `ee792522…`） |
 | **临时手段的退役** | `scripts/fix_jar_class_version.sh` **已从仓库删除**（`git rm`，本提交）：它是临时手段、已被原生 v61 取代，**留在库里会诱导后人误用于正常 jar**。历史状态可在本报告 §6.1/§6.2 与 `reports/05 §8.1` 查到 |
-| 备份（保留在盘、**不入库**） | `third_party/libwebrtc/java/libwebrtc-java.jar.orig-jdk25`（原始 v69；命中 `.gitignore:12 third_party/libwebrtc/`）；同目录另有 `.orig-build`(v69)、`.v55-java11`、`.v61-java17`；AAR 另有 `.orig` 备份 |
+| 备份（保留在盘、**不入库**） | `third_party/libwebrtc/java/libwebrtc-java.jar.orig-jdk25`（原始 v69；命中 `.gitignore:12 third_party/libwebrtc/`）；同目录另有 `.orig-build`(v69)、`.v55-java11`、`.v61-java17`；AAR 原件亦归档：`libwebrtc-arm64.aar.orig`（6,457,598 B，`fe26d97f…d178e`，内含 v69 的 `classes.jar` = `ad54a0a2…af1f`） |
 | 可回滚方式 | `cp …libwebrtc-java.jar.orig-jdk25 …libwebrtc-java.jar`（回到 v69 —— **该状态下 AGP 8.5 的 D8 无法消费，构建必然失败**）；若要"可构建的历史态"则用 `.v61-java17` |
 | 取代路径 | **t16**（原生 `--release 17` 重编）→ **t17**（把 `--release 25→17` 固化为入库补丁 `scripts/patches/libwebrtc-java-release17.patch` + 幂等应用+t5 脚本守卫，并修正 `reports/05`）；补丁**已在 `198d514` 入库** |
 | 对 verifier 的影响 | jar 哈希对账口径：**只认 `d98939bb…`**；`ad54a0a2…`/`138cf12d…`/`ee792522…` 仅作历史链路。`app/build.gradle.kts:154` 消费的正是该 jar 路径（**未消费 AAR**） |
@@ -250,6 +302,11 @@ sha256 : c72d366706569b6dab5689200bc0902ce94fb7241b238a401e61fa5e745caa96
 7. **环境遗留**：`app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so` 由脚本从 third_party 复制而来（契约 §4.3 要求），属**构建输入**，已在 `.gitignore` 中排除，不入库。
 8. **属主归一的范围盲区（webrtc-builder 复核触发，已修）**：阶段 10 原先只 chown `jniLibs/、reports/logs/、local.properties、app/build/` + 受版控树，**漏掉 AGP 以 root 生成的 gitignored 目录** `app/.cxx/**`（实测 99 项）与项目级 `.gradle/**`、`.kotlin/**`（实测 29 项）。现已把这四个目录纳入阶段 10 的 chown 列表，并实测项目内非 1000 项 **= 0**。
    （webrtc-builder 提到的 4 项——`jniLibs` 的 so、2 个 `build_app-*.log`、`local.properties`——在我最终那次全流程运行后**已是 1000:1000**，其测量早于该次运行。）
+
+9. **源码冻结基线含第 8 个 Kotlin 文件（补登，t18 要求）**：除 26 个编译错误涉及的 7 个文件外，**冻结基线还包含 `app/src/main/kotlin/com/example/webrtcdemo/webrtc/VideoRendererPool.kt`（mtime `2026-09-13 18:00:01.910`，t15 之后由 android-dev 追加：本端预览 `RendererEvents` 由 `null` 改为空实现+日志，满足契约 §7.1"不得传 null"）**，它**不属那 26 个编译错误**。
+   ⚠️ **不得**仅凭 mtime 推断"APK 必然已包含该改动"：mtime 只能界定"构建窗口是否落在源码基线之后"，**"改动是否进包"只能由编译/打包任务真正执行来证明**（本报告 §5.7.3 的 no-cache 构建即为此提供了完全执行的证据）。
+10. **订正一处措辞（t18 要求）**：此前我写过"落库后完整复跑、**APK 哈希未变** ⇒ 证明提交未影响产物"。**该推论不成立**——哈希未变只说明那批任务被判 **UP-TO-DATE（APK 未被重写）**，**它本身不能证明打包可复现**；真正决定性的证据是 §5.7.3 的 `--no-build-cache` 全执行构建（其结果见该节：**同输入下字节与带缓存构建不同**）。正确表述应为：「提交只改 `.git` 元数据、工作区源码未变，故复跑时任务 UP-TO-DATE、APK 未被重写」。
+11. **`reports/12-e2e-raw.log` 保留入库的说明（t18 要求）**：该文件（约 12 KB）是 t12 机端到端联调的**原始证据**，位于 `reports/`（**不属** `.gitignore` 排除的 `/reports/logs/*`），因此**有意随交付提交**；`reports/logs/**`（逐次构建日志）仍全部不入库。
 
 ## 8. 复跑与验证命令清单（供 verifier 独立复核）
 
