@@ -1,0 +1,6 @@
+[submodule "third_party/libvpx-src"]
+	path = third_party/libvpx-src
+	url = https://chromium.googlesource.com/webm/libvpx
+[submodule "third_party/libwebrtc-src"]
+	path = third_party/libwebrtc-src
+	url = https://webrtc.googlesource.com/src
