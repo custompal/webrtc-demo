@@ -27,7 +27,7 @@
 
 | 项 | 实测 |
 |---|---|
-| Java SDK AAR | `third_party/libwebrtc/java/libwebrtc-arm64.aar` 6,457,598 B |
+| Java SDK AAR | `third_party/libwebrtc/java/libwebrtc-arm64.aar` 6,456,926 B，sha256 `456e3f2ffbc407588b9430e719500f434caff7097eddc3e410b5d27f496fbaf0`（**t16 于 20:00 重打**：内含 `classes.jar` 453/453 = **major 61**、`jni/arm64-v8a/libjingle_peerconnection_so.so` 为 stripped 版 `757cef8128bf9151…`、`AndroidManifest.xml`） |
 | Java 类 jar | `third_party/libwebrtc/java/libwebrtc-java.jar`（**最终 = t16 原生重编版**：1,048,264 B，453/453 个 class = **major 61 / Java 17**，sha256 `d98939bb…`；版本演进与归档见 §6） |
 | JNI 共享库 | `…/java/jni/arm64-v8a/libjingle_peerconnection_so.so` 12,946,912 B，sha256 `757cef8128bf9151…`，**stripped** |
 | libvpx | `third_party/libvpx/lib/libvpx.a` 1,929,142 B，NDK `llvm-readelf` 逐成员 **AArch64**；`include/vpx/` 11 个头 |
@@ -157,7 +157,7 @@ bash scripts/build_app.sh --skip-go          # 跳过 Go
 ## 7. 未解决 / 未运行时验证（如实标注，不夸大）
 
 1. **未做真机/模拟器运行验证**：无 Android 设备，**未验证** APK 能否安装、`JNI_OnLoad` 是否注册成功、Camera2 采集/渲染、日志导出（ACTION_SEND）实际可用性。APK 侧证据止于"静态打包正确 + dex 含类 + native so 就位"。
-2. **AAR 仍是 v69**：`third_party/libwebrtc/java/libwebrtc-arm64.aar` 内的 `classes.jar` 未随 t16 重编更新（AAR 由 t5 在 17:03 打出）。若后续改用 AAR 作为 Gradle 依赖（契约 §4.3 的备选路径 ②），会遇到**同样的 D8 版本错误**；需由 t5/t16 重打 AAR 或同样归一化。**当前构建走 jar 路径，不受影响。**
+2. **AAR 已随 t16 同步，原告警消除**：`libwebrtc-arm64.aar` 于 20:00 由 t16 重打，其 `classes.jar` 现为 **453/453 = major 61（Java 17）**、内含 so 为 stripped 版（`757cef8128bf9151…`，与 third_party 一致），sha256 `456e3f2f…`。故契约 §4.3 的**备选路径 ②（直接依赖 AAR）在当前状态下同样可用**。（本条原写"AAR 仍是 v69"，此处如实更新，避免与历史结论矛盾。）
 3. **debug 构建**：APK 为 `assembleDebug`（未签名发布版、未开启 R8/混淆）。契约 V 表若要求 release APK，需另行构建（本任务按"assembleDebug（或契约指定任务）"执行）。
 4. **t8 的 12 条"待验证 API 假设"**：本次编译已实际核对掉一批（`IceServer` 嵌套、`ResolutionBitrateLimits` 4 参、`VideoEncoder` 无 `createNativeVideoEncoder` 等）；但**运行期语义**（如 `setInjectableLogger` 是否真的生效、`setCodecPreferences` 是否能保证 VP9 置首）仍需真机验证。
 5. **脚本自身的三个 bug**（已修，见 §4 第 3/4 行与 §6.2）：`dexdump` 误用 APK；`pipefail`+`grep -q` 的 SIGPIPE 造成**随机假 FAIL**；`x=$(… \| grep …)` 无匹配时 `set -e` **静默终止脚本**——均已记录，供后人避免同样的坑。
