@@ -376,13 +376,17 @@ hdr "10. 属主归一（**必须在所有产物落盘之后、git 提交之前**
 #   写 root 属主的新文件。因此本阶段固定为脚本**最后一环**（stage 9 之后），
 #   且判据只聚焦【受版本控制的树】，gitignored 的产物属主**只作记录、不作验收判据**
 #   （否则每次 t5 重编都会让"非 1000 项 = 0"变成假失败）。
-# 归零范围：受版控树（git ls-files --cached --others --exclude-standard）+ 本脚本自有产出
-# （jniLibs/、reports/logs/、local.properties、app/build/）。不主动改 third_party 产物属主（仅记录）。
+# 归零范围：受版控树（git ls-files --cached --others --exclude-standard）+ 本脚本/AGP 自有产出
+# （jniLibs/、reports/logs/、local.properties、app/build/、app/.cxx/、项目级 .gradle/、.kotlin/）。
+# 不主动改 third_party 产物属主（含 gitignored 产物，仅记录）——webrtc-builder 已确认其产物 0 项非 1000。
 if [ "$(id -u)" = "0" ]; then
-  # 本脚本自有产出一律归 1000:1000
+  # 本脚本/AGP 自有的 gitignored 产出，一律归 1000:1000
+  # （实测遗漏过 app/.cxx(99 项)、项目级 .gradle/、.kotlin/ —— 见 reports/10-app-build.md §7.7）
   chown -R 1000:1000 "$JNILIBS" "$LOG_DIR" 2>/dev/null || true
   [ -f "$PROJ/local.properties" ] && chown 1000:1000 "$PROJ/local.properties" 2>/dev/null || true
-  [ -d "$APP/build" ] && chown -R 1000:1000 "$APP/build" 2>/dev/null || true
+  for d in "$APP/build" "$APP/.cxx" "$PROJ/.gradle" "$PROJ/.kotlin"; do
+    [ -e "$d" ] && chown -R 1000:1000 "$d" 2>/dev/null || true
+  done
   # 受版控树判据（含将被提交的未跟踪文件，排除 gitignore）
   n_tracked=0; tracked_list=""
   while IFS= read -r f; do

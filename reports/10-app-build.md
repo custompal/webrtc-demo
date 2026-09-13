@@ -163,6 +163,8 @@ bash scripts/build_app.sh --skip-go          # 跳过 Go
 5. **脚本自身的三个 bug**（已修，见 §4 第 3/4 行与 §6.2）：`dexdump` 误用 APK；`pipefail`+`grep -q` 的 SIGPIPE 造成**随机假 FAIL**；`x=$(… \| grep …)` 无匹配时 `set -e` **静默终止脚本**——均已记录，供后人避免同样的坑。
 6. **增量构建陷阱**：更换 `libwebrtc-java.jar` 后，Gradle 仍可能把 dex/package 判为 UP-TO-DATE（见 §6.2 实测）；**必须 `clean assembleDebug`** 才能保证 APK 绑定新 jar。
 7. **环境遗留**：`app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so` 由脚本从 third_party 复制而来（契约 §4.3 要求），属**构建输入**，已在 `.gitignore` 中排除，不入库。
+8. **属主归一的范围盲区（webrtc-builder 复核触发，已修）**：阶段 10 原先只 chown `jniLibs/、reports/logs/、local.properties、app/build/` + 受版控树，**漏掉 AGP 以 root 生成的 gitignored 目录** `app/.cxx/**`（实测 99 项）与项目级 `.gradle/**`、`.kotlin/**`（实测 29 项）。现已把这四个目录纳入阶段 10 的 chown 列表，并实测项目内非 1000 项 **= 0**。
+   （webrtc-builder 提到的 4 项——`jniLibs` 的 so、2 个 `build_app-*.log`、`local.properties`——在我最终那次全流程运行后**已是 1000:1000**，其测量早于该次运行。）
 
 ## 8. 复跑与验证命令清单（供 verifier 独立复核）
 
