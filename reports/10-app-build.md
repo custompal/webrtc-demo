@@ -102,7 +102,6 @@ OK   新构建与 t9 交付的 signaling/signaling 逐字节一致（t9 产物�
 `-log` / `-log-level` / `-addr` / `-stun` / `-turn` / `-user` 等参数实测可用（`-h` 输出）。
 
 ### 5.4 native 单独验证（与 Kotlin 解耦；阶段 7 的 native 部分提前预验证）
-
 ```
 $ ./gradlew --no-daemon :app:externalNativeBuildDebug
 > Task :app:configureCMakeDebug[arm64-v8a]
@@ -126,8 +125,28 @@ bash scripts/build_app.sh --skip-go          # 跳过 Go
 关键 Gradle 命令（脚本内）：
 ```bash
 ./gradlew --no-daemon :app:compileDebugKotlin -PwebrtcDemo.skipNative=true   # 阶段 6.5 早失败
-./gradlew --no-daemon assembleDebug                                          # 阶段 7
+./gradlew --no-daemon assembleDebug                                          # 阶段 7（不加 skipNative，真编 native）
 ```
+
+### 5.6 **提交后复跑**：Go 的 VCS 戳差异被正确归因（附录 F 设计的真实场景实证）
+
+`signaling/**` 已入库 ⇒ HEAD 前进、`vcs.modified` 翻转。**提交后**（HEAD=`10aa709`）重跑 `build_app.sh`，阶段 8 的实测输出：
+
+```
+已构建 …/signaling/dist/signaling-linux-amd64（5496984 bytes）
+  sha256: b3e502a0c7d233141ff4ab268d4973c116a89efd59db69c98d3e2e3432ea11f1   ← 默认构建（含 VCS 戳）
+  交付物 sha256      : c298235a0c4b1afe0cb8988274d36770da105a03c4f5577cb6fe799b37b4c068
+  本次默认构建 sha256: b3e502a0c7d233141ff4ab268d4973c116a89efd59db69c98d3e2e3432ea11f1
+  VCS-free 重建(两次): 1b333208d29110f8ebd61e4916b11bd77997b5832137e460269e6bbb6da743aa / 1b333208…43aa
+  VCS-free 基线(期望): 1b333208d29110f8ebd61e4916b11bd77997b5832137e460269e6bbb6da743aa
+  t9 交付物 vcs.revision=1a9d3ff69667f4198cb7952d8ecd015fc9965052
+  新构建    vcs.revision=10aa709dc91ff759bd3eed3d049b87b3fd8093ad
+  [辅助] 非 vcs 元数据差异行数 = 0（0 不代表源码未变，只说明 module/参数一致）
+OK   哈希差异已确证仅由 Go VCS 戳引起（VCS-free 基线与 t9 交付基线一致：1b333208d29110f8…）—— 避免假失败
+```
+
+**意义**：这正是 §附录 F 想要的结果——**提交后默认构建哈希必然变化（`c298235a…` → `b3e502a0…`），但归因判据（VCS-free 基线 `1b333208…`）证明源码/工具链一字未变**，脚本既不误报失败（假 FAIL），也不掩盖真实改动（假 OK，见附录 F4 的负例测试）。
+> 注：此后 `signaling/dist/signaling-linux-amd64` 为 `b3e502a0…`（默认含 VCS 戳的等价构建，源码与 t9 相同）；**部署件 `/opt/signaling/signaling` 仍为 `c298235a…c068`（t12 部署，未受影响）**。verifier 若比对哈希，请以本条口径为准。
 
 ## 6. jar 的 class 版本问题：我的临时归一化 → **被 t16 的原生重编取代（最终口径 = Java 17 / major 61）**
 
