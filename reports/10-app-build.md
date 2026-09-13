@@ -51,6 +51,10 @@
 > **教训（写进 §6.2/§7.6）**：更换 libwebrtc jar 后**必须 clean 重编**，否则增量构建可能给出"构建成功但仍绑定旧 jar"的 APK。
 
 > android-dev 修复后复测：`:app:compileDebugKotlin` **BUILD SUCCESSFUL（27s，0 错误）** —— 这正是 t8 之前缺失的**编译级证据**（t8 报告自述"40 个文件仅过静态检查，不保证零编译错误"）。
+>
+> **归因与证据（补记，来源 android-dev t15）**：26 处错误由 **t15**（android-dev）修复，**只改 `app/src/main/kotlin/**` 的 7 个文件**（`WebRtcConfig`/`StatsMapper`/`FrameNormalizer`/`Vp9VideoEncoder`/`ui/theme/Color`/`log/Log`/`diag/DiagnosticsScreen`），**`nativebridge/**` 与 `app/src/main/cpp/**` 一行未动**（其 `t7iface.sh` 19/19 复跑通过）。t15 自己的串行证据：`reports/logs/kotlin-compile+test-20260913-1754-T15-SERIAL-BUILD-SUCCESSFUL.log`（`compileDebugKotlin + testDebugUnitTest` → BUILD SUCCESSFUL 1m22s / EXIT=0）与 `reports/logs/junit-20260913-1754-T15-tests36.txt`（**tests=36, failures=0, errors=0**）。
+> **一处中间态澄清（避免误判）**：我在 **17:43:55** 的另一次编译曾报**只剩 6 个错误**（全在 `Vp9VideoEncoder.kt:164/165/301/315/316/318`），那是 **t15 编辑中途的快照**（该文件最后一批修复落盘于 17:48:33，26−20=6 完全吻合），**不是"仍有 6 处缺陷"**。t10 的结论以**修复后串行运行**为准（0 错误）。
+> **说明**：`scripts/build_app.sh` **不跑单测、也不写死任何单测数字**（避免把 31/36 之类计数固化）；单测数由 t15 证据与本报告引用给出。
 
 ## 5. 验收证据（原始输出）
 
