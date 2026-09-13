@@ -42,10 +42,13 @@ captures/
 *.keystore
 keystore.properties
 
-# ===== Go 信令服务编译产物 =====
-signaling
-signaling-linux-amd64
-code/webrtc-demo/signaling
+# ===== Go 信令服务编译产物（只忽略二进制，绝不忽略 signaling/ 源码目录）=====
+# 修复 C23/R7：原裸模式 `signaling` 会命中整个 signaling/ 目录 → Go 全部源码静默不入库。
+# 必须使用带前导斜杠的精确路径（相对仓库根）。
+/signaling/signaling
+/signaling/signaling-linux-amd64
+/signaling/dist/
+/signaling/logs/
 
 # ===== 通用 =====
 *.o
@@ -74,3 +77,8 @@ code/webrtc-demo/signaling
 !**/*.h
 !**/*.kts
 !**/*.kt
+
+# ⚠️ 必须放在整个文件最末：`!reports/**` 会把 reports/ 下一切重新纳入，所以忽略规则若放前面会被它覆盖。
+# （目录级 `/reports/logs/` 无效，因为 `!reports/**` 会重新包含它；必须用内容级 `*` 模式。）
+/reports/logs/*
+/signaling/logs/*

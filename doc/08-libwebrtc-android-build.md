@@ -229,6 +229,7 @@ export CROSS_PREFIX=aarch64-linux-android-
 export NDK_PATH=~/webrtc-build/src/third_party/android_toolchain
 
 # 配置 libvpx
+# ⚠️ 实测补充（2026-09-13）：下面两行接口已过期（现代 libvpx 不接受 --sdk-path），见本节末注记
 ./configure \
   --target=arm64-android-gcc \
   --sdk-path=$NDK_PATH \
@@ -250,6 +251,13 @@ export NDK_PATH=~/webrtc-build/src/third_party/android_toolchain
 make -j$(nproc)
 make install
 ```
+
+> **实测补充（2026-09-13，t5/webrtc-builder 核验 + captain 转达）— 本节 `./configure` 的接口已过期，必须按下方现代写法**
+> - **过期点**：现代 libvpx **不再接受 `--sdk-path`**，`armv8-android-gcc` 目标也不可用；上例的 `--target=arm64-android-gcc --sdk-path=...` 会直接 configure 失败。
+> - **正确做法**：用 `--target=arm64-android-gcc` + **NDK standalone toolchain**，通过环境变量指定交叉工具链：`CHOST / CC / CXX / AR / AS / LD / STRIP / NM / RANLIB`（指向 `$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin` 下带 `--target=aarch64-linux-android26` 前缀的编译器），其余开关（`--enable-vp9*`、`--disable-vp8*`、`--enable-static`、`--disable-shared`、`--enable-pic` 等）保持本节不变。
+> - **可复现命令**：以 `code/webrtc-demo/scripts/t5-libwebrtc-libvpx-build.sh` 的 `phase_libvpx()` 与 t5 报告为准（**待 t5 报告落盘后以其记录的最终命令为准**）。
+> - **已核验结果**：`third_party/libvpx/lib/libvpx.a`（arm64）已产出——首目标文件为 `ELF 64-bit LSB relocatable, ARM aarch64`；`vpx_codec.h` / `vpx_encoder.h` / `vp8cx.h` / `vpx_image.h` 齐全。接口契约见 `doc/14-interface-contract.md` §4.4。
+> - 本文档其余部分（§1–§8、§10 除下述一行外、§11）不受影响；**§10 常见错误表中「确认 `--sdk-path` 指向正确 NDK 路径」一行同样已过期**。
 
 ### 9.4 产物
 
@@ -292,7 +300,7 @@ third_party/libvpx/
 | `install-build-deps-android.sh` 权限不足 | 需要 root | `sudo ./build/install-build-deps-android.sh` |
 | `ninja: error: loading 'build.ninja'` | GN 未生成成功 | 重新 `gn gen`，检查 args 参数 |
 | 编译 OOM (Out of Memory) | 内存不足 | `ninja -j4`（限制并行数） |
-| `libvpx configure: error: C compiler test failed` | NDK 路径不对 | 确认 `--sdk-path` 指向正确 NDK 路径 |
+| `libvpx configure: error: C compiler test failed` | NDK 路径不对 | 确认 `--sdk-path` 指向正确 NDK 路径 —— ⚠️ **实测补充（2026-09-13）：`--sdk-path` 已过期**，现代 libvpx 改用 NDK standalone toolchain 环境变量（`CHOST`/`CC`/`CXX`/`AR`/`AS`/`LD`/`STRIP`），详见 §9.3 末注记与 `scripts/t5-libwebrtc-libvpx-build.sh` |
 | `gn gen` 报 `unknown argument` | 参数名变更 | 查 `gn args --list out/Release-arm64` |
 
 ## 11. 幂等性与断点续编
@@ -360,6 +368,7 @@ fi
 cd libvpx-src
 NDK_PATH="$WORKSPACE/src/third_party/android_toolchain"
 make distclean 2>/dev/null || true
+# ⚠️ 实测补充（2026-09-13）：--sdk-path 已过期，本脚本的 libvpx 段不可直接使用；见 §9.3 末注记
 ./configure \
   --target=arm64-android-gcc \
   --sdk-path=$NDK_PATH \

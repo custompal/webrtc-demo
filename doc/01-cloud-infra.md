@@ -43,7 +43,7 @@
 listening-port=3478
 listening-ip=<内网IP>
 external-ip=<公网IP>/<内网IP>
-relay-ip=<公网IP>
+relay-ip=<公网IP>            # ← ⚠️ 实测修正（t6，2026-09-13）：此行写法错误，必须填「内网 IP」，详见下方注记
 min-port=49152
 max-port=49200
 realm=webrtc-demo
@@ -55,6 +55,14 @@ total-quota=100
 cert=/etc/turnserver/cert.pem
 pkey=/etc/turnserver/pkey.pem
 ```
+
+> **实测修正（t6，2026-09-13）— 配置块中的 `relay-ip=<公网IP>` 是错的，必须写内网 IP**
+> - 正确写法：`relay-ip=<内网IP>`（本例 `172.21.0.219`）；对外通告的公网 relay 地址由 `external-ip=<公网IP>/<内网IP>` 映射负责（本例 `external-ip=47.238.144.66/172.21.0.219`）。EIP 是 NAT 映射地址、不在本机网卡上，内核不允许 bind。
+> - 写错时的实测现象：coturn 日志 `Trying to bind fd 61 to <47.238.144.66:49189>: errno=99`（EADDRNOTAVAIL）+ `bind: Cannot assign requested address`，客户端 `Allocate` 返回 **508 (Cannot create socket)**。这也是本节第 10 节「external-ip 映射写错会导致 relay 地址异常」的具体化。
+> - 修正后实测：STUN 返回 `UDP reflexive addr: 47.238.144.66:35866`；TURN 4 次 Allocate 成功、relay 落在 `49152–49200`、12/12 与 8/8 数据包经中继往返、丢包 0%、错误密码被正确拒绝。
+> - 可复现配置：`code/webrtc-demo/deploy/turnserver.conf`（宿主机 `/etc/turnserver.conf` 的实际副本）；完整原始证据见 `reports/06-coturn.md` §4/§5。
+> - 客户端 ICE server 规则（URL 形态/凭据/realm）与公网可达性阻塞项见接口契约 `doc/14-interface-contract.md` §7.7 与 C28。
+
 `systemctl enable --now coturn`。
 
 ## 6. Go 信令部署（同机）

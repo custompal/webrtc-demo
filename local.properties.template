@@ -1,0 +1,23 @@
+# local.properties 模板 —— 复制为 local.properties 后按本机实际路径修改。
+#
+#   cp local.properties.template local.properties
+#
+# 【重要】local.properties 含本机绝对路径，已在 .gitignore 中，禁止提交。
+# 该文件由 Android Gradle Plugin 读取，用于定位 SDK / NDK。
+#
+# 本工程约定（doc/14 §4.5，与 <WS>/env.sh 一致）：
+#   宿主机工作区根 = /opt/dsh-workspaces
+#   容器内同目录   = /data/dsh/home/workspace
+#   SDK 由 t4 安装在 <工作区根>/android-sdk
+
+# Android SDK 根目录（必须）
+sdk.dir=/opt/dsh-workspaces/android-sdk
+# 容器内成员如需生成此文件，请改用：
+# sdk.dir=/data/dsh/home/workspace/android-sdk
+
+# 可选：NDK 目录。一般无需设置 —— AGP 会从 sdk.dir/ndk/<version> 自动选择，
+# 且 app/build.gradle.kts 已冻结 ndkVersion = "26.1.10909125"（推荐用它保证可复现）。
+# ndk.dir=/opt/dsh-workspaces/android-sdk/ndk/26.1.10909125
+
+# 可选：CMake。由 android.externalNativeBuild.cmake.version = "3.22.1" 决定，
+# AGP 从 sdk.dir/cmake/3.22.1 自动获取，无需在此设置 cmake.dir。

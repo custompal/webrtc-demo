@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用主题：Activity 窗口层的最小主题。
+  真正的配色由 Compose 侧 ui/theme/Theme.kt（Material3）负责，这里只定义窗口背景，
+  避免冷启动时白闪/黑闪，并去掉系统 ActionBar。
+  不依赖 com.google.android.material，故直接继承平台主题。
+-->
+<resources>
+    <style name="Theme.WebRtcDemo" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>

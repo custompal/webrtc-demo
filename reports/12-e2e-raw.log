@@ -1,0 +1,45 @@
+[2026-09-13T08:00:18.445Z] === signaling E2E verification ===
+[2026-09-13T08:00:18.450Z] wsUrl = ws://47.238.144.66:8443/ws
+[2026-09-13T08:00:18.556Z] [HOST] == WebSocket connected ws://47.238.144.66:8443/ws
+[2026-09-13T08:00:18.566Z] [JOINER] == WebSocket connected ws://47.238.144.66:8443/ws
+[2026-09-13T08:00:18.567Z] [HOST] => {"type":"create"}
+[2026-09-13T08:00:18.573Z] [HOST] <= {"type":"created","roomId":"EKXQJ5","stunUrl":"stun:47.238.144.66:3478","turnUrl":"turn:47.238.144.66:3478?transport=udp","turnUsername":"demo","turnCredential":"demopass"}
+[2026-09-13T08:00:18.574Z] PASS  created 含 6 位 roomId :: roomId=EKXQJ5
+[2026-09-13T08:00:18.574Z] PASS  created.stunUrl == coturn 实测地址 :: got=stun:47.238.144.66:3478
+[2026-09-13T08:00:18.574Z] PASS  created.turnUrl == coturn 实测地址 :: got=turn:47.238.144.66:3478?transport=udp
+[2026-09-13T08:00:18.574Z] PASS  created 含 TURN 凭据 :: demo/demopass
+[2026-09-13T08:00:18.574Z] [JOINER] => {"type":"join","roomId":"EKXQJ5"}
+[2026-09-13T08:00:18.578Z] [JOINER] <= {"type":"joined","roomId":"EKXQJ5","stunUrl":"stun:47.238.144.66:3478","turnUrl":"turn:47.238.144.66:3478?transport=udp","turnUsername":"demo","turnCredential":"demopass","peerId":"peer-002"}
+[2026-09-13T08:00:18.578Z] PASS  joined.roomId 与 created 一致 :: EKXQJ5
+[2026-09-13T08:00:18.578Z] PASS  joined 含 peerId :: peerId=peer-002
+[2026-09-13T08:00:18.578Z] PASS  joined.stunUrl/turnUrl 与 created 一致 :: stun:47.238.144.66:3478 | turn:47.238.144.66:3478?transport=udp
+[2026-09-13T08:00:18.578Z] [HOST] <= {"type":"peerJoined","peerId":"peer-002"}
+[2026-09-13T08:00:18.579Z] PASS  发起方收到 peerJoined 且 peerId 匹配 :: peer-002
+[2026-09-13T08:00:18.579Z] [HOST] => {"type":"offer","sdp":"v=0\r\no=- 4611731400430051336 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\n"}
+[2026-09-13T08:00:18.581Z] [JOINER] <= {"type":"offer","sdp":"v=0\r\no=- 4611731400430051336 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\n"}
+[2026-09-13T08:00:18.582Z] PASS  offer 原样转发（字节一致）
+[2026-09-13T08:00:18.582Z] [JOINER] => {"type":"answer","sdp":"v=0\r\no=- 7720690197868186841 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\n"}
+[2026-09-13T08:00:18.584Z] [HOST] <= {"type":"answer","sdp":"v=0\r\no=- 7720690197868186841 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0\r\n"}
+[2026-09-13T08:00:18.584Z] PASS  answer 原样转发（字节一致）
+[2026-09-13T08:00:18.584Z] [HOST] => {"type":"ice","candidate":"candidate:1 1 udp 2122260223 192.168.1.7 51234 typ host generation 0","sdpMid":"0","sdpMLineIndex":0}
+[2026-09-13T08:00:18.587Z] [JOINER] <= {"type":"ice","candidate":"candidate:1 1 udp 2122260223 192.168.1.7 51234 typ host generation 0","sdpMid":"0","sdpMLineIndex":0}
+[2026-09-13T08:00:18.587Z] PASS  ice A→B 原样转发
+[2026-09-13T08:00:18.587Z] [JOINER] => {"type":"ice","candidate":"candidate:2 1 udp 1686052607 47.238.144.66 49152 typ srflx raddr 172.21.0.219 rport 49152","sdpMid":"0","sdpMLineIndex":0}
+[2026-09-13T08:00:18.590Z] [HOST] <= {"type":"ice","candidate":"candidate:2 1 udp 1686052607 47.238.144.66 49152 typ srflx raddr 172.21.0.219 rport 49152","sdpMid":"0","sdpMLineIndex":0}
+[2026-09-13T08:00:18.590Z] PASS  ice B→A 原样转发
+[2026-09-13T08:00:18.590Z] [HOST] => {"type":"natType","natType":"FullCone"}
+[2026-09-13T08:00:18.593Z] [JOINER] <= {"type":"natType","natType":"FullCone"}
+[2026-09-13T08:00:18.593Z] PASS  natType A→B :: FullCone
+[2026-09-13T08:00:18.593Z] [JOINER] => {"type":"natType","natType":"PortRestrictedCone"}
+[2026-09-13T08:00:18.596Z] [HOST] <= {"type":"natType","natType":"PortRestrictedCone"}
+[2026-09-13T08:00:18.596Z] PASS  natType B→A :: PortRestrictedCone
+[2026-09-13T08:00:18.596Z] [JOINER] => {"type":"ping","timestamp":1789286418596}
+[2026-09-13T08:00:18.599Z] [JOINER] <= {"type":"pong","timestamp":1789286418598}
+[2026-09-13T08:00:18.599Z] PASS  ping → pong :: ts=1789286418598
+[2026-09-13T08:00:18.599Z] [HOST] => {"type":"leave"}
+[2026-09-13T08:00:18.605Z] [JOINER] <= {"type":"peerLeft","peerId":"peer-001"}
+[2026-09-13T08:00:18.605Z] PASS  leave → 对端收到 peerLeft :: peerId=peer-001
+[2026-09-13T08:00:18.610Z] PASS  leave 后发起方连接正常关闭(1000) :: __CLOSE__:1000
+[2026-09-13T08:00:18.625Z] PASS  用信令下发的 TURN 凭据 Allocate 成功 :: relay=47.238.144.66:49159 mapped=47.238.144.66:34202 lifetime=600s
+[2026-09-13T08:00:18.626Z] PASS  relay 地址为 coturn 公网 IP :: 47.238.144.66
+[2026-09-13T08:00:18.627Z] === 总计: 通过 19 项，失败 0 项 ===

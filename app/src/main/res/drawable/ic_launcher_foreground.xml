@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自适应图标前景：简化的“摄像机”图形（108dp 画布，图形保持在中央 72dp 安全区内）。
+  纯矢量实现，避免引入任何二进制 PNG 资源。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 机身 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M36,42 h24 a5,5 0 0 1 5,5 v14 a5,5 0 0 1 -5,5 h-24 a5,5 0 0 1 -5,-5 v-14 a5,5 0 0 1 5,-5 z" />
+
+    <!-- 镜头（右侧三角形） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M68,50 l10,-6 v20 l-10,-6 z" />
+</vector>

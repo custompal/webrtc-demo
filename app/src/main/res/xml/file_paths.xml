@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 可导出路径（doc/14 §9.5 冻结形态，逐字对齐）
+  authority = com.example.webrtcdemo.fileprovider（见 AndroidManifest.xml）
+   - files-path  logs/ ：日志根目录 <filesDir>/logs/（app.log / native.log /
+                        webrtc.log / encoder_bitrate.csv / export/*.zip）
+   - cache-path  .    ：cache 根（导出中转、诊断文件用）
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="logs" path="logs/" />
+    <cache-path name="cache" path="." />
+</paths>

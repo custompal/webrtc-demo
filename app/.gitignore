@@ -1,0 +1,7 @@
+# Android app 模块忽略规则（由 t14 创建）
+/build/
+/.gradle/
+/.cxx/
+/.externalNativeBuild/
+*.apk
+*.aab

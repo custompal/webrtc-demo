@@ -1,0 +1,43 @@
+# 自研 C++ 代码风格配置（ADR-007 / doc/14 §C25、doc/05 §11）
+# 基线 = Chromium（== WebRTC），2 空格缩进、80 列、行末左括号、指针靠左。
+# 用法：clang-format -i --style=file app/src/main/cpp/**/*.cpp
+---
+Language: Cpp
+BasedOnStyle: Chromium
+Standard: c++17
+
+# 缩进与行宽（doc/05 §11.1）
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+ColumnLimit: 80
+ContinuationIndentWidth: 4
+ConstructorInitializerIndentWidth: 4
+AccessModifierOffset: -1
+MaxEmptyLinesToKeep: 1
+
+# 大括号行末（WebRTC 风格）
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+
+# 指针/引用靠左：const uint8_t* y（与 libwebrtc 一致）
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# include 手工排序（对应头 → 系统头 → 库 → 本项目），交给开发者
+SortIncludes: false
+IncludeBlocks: Preserve
+
+# 注释不自动回流：本项目注释以中文为主，clang-format 的按字节宽度估算
+# 会把中文句子切断（自研代码要求“中文注释可读”优先于机器回流）。
+ReflowComments: false
+
+# 逗号结尾与换行
+AllowAllArgumentsOnNextLine: true
+BinPackArguments: true
+BinPackParameters: true
+...

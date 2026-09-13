@@ -1,0 +1,15 @@
+[Unit]
+Description=WebRTC Demo Signaling Server
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/signaling
+ExecStart=/opt/signaling/signaling -addr :8443 -stun stun:47.238.144.66:3478 -turn turn:47.238.144.66:3478?transport=udp -user demo:demopass -log /var/log/signaling/signaling.log
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

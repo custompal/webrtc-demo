@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  字符串资源。中文为主，英文可辅。
+  说明：本文件由 t14 建立基础条目；t8 按 doc/10 §3 的界面文案继续补充，
+  若 doc/14 指定了统一文案，以契约为准。
+-->
+<resources>
+    <string name="app_name">WebRTC Demo</string>
+
+    <!-- ==================== HomeScreen（doc/10 §3.1） ==================== -->
+    <string name="home_title">WebRTC Demo</string>
+    <string name="home_create_meeting">创建会议</string>
+    <string name="home_join_meeting">加入会议</string>
+    <string name="home_room_id_hint">输入 6 位房间号</string>
+    <string name="home_nat_type_label">本端 NAT 类型</string>
+    <string name="home_nat_detecting">检测中…</string>
+    <string name="home_connecting">正在连接…</string>
+
+    <!-- ==================== CallScreen（doc/10 §3.2/3.3） ==================== -->
+    <string name="call_connecting">正在连接会议…</string>
+    <string name="call_status_connection_type">连接模式</string>
+    <string name="call_status_bitrate">传输速率</string>
+    <string name="call_status_local_nat">本端 NAT</string>
+    <string name="call_status_remote_nat">对端 NAT</string>
+    <string name="call_status_encoder_bitrate">编码码率</string>
+    <string name="call_action_mute">静音</string>
+    <string name="call_action_unmute">取消静音</string>
+    <string name="call_action_hangup">挂断</string>
+    <string name="call_action_camera_on">开启摄像头</string>
+    <string name="call_action_camera_off">关闭摄像头</string>
+
+    <!-- ==================== 日志导出（D6） ==================== -->
+    <string name="log_export_entry">导出日志</string>
+    <string name="log_export_running">正在打包日志…</string>
+    <string name="log_export_success">日志已导出，共 %1$d 个文件</string>
+    <string name="log_export_empty">暂无可导出的日志</string>
+    <string name="log_export_failed">日志导出失败：%1$s</string>
+    <string name="log_export_share_title">分享日志包</string>
+
+    <!-- ==================== 通用 ==================== -->
+    <string name="common_ok">确定</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_retry">重试</string>
+
+    <!-- ==================== 通话页补充（t8） ==================== -->
+    <string name="call_action_switch_camera">切换前后摄</string>
+    <string name="call_status_encoder_impl">编码实现</string>
+    <string name="call_status_remote_video">远端画面</string>
+
+    <!-- ==================== 诊断页（diag/DiagnosticsScreen.kt） ==================== -->
+    <string name="diag_entry">诊断</string>
+    <string name="diag_title">诊断与日志</string>
+    <string name="diag_log_level">日志级别</string>
+    <string name="diag_level_restart_hint">Kotlin/native 立即生效；libwebrtc 层级别需重启 App 生效</string>
+    <string name="diag_nat_redetect">重新探测 NAT</string>
+    <string name="diag_ice_policy">强制中继（RELAY）</string>
+    <string name="diag_use_default_encoder">使用默认编码器（对照实验）</string>
+    <string name="diag_back">返回</string>
+    <!-- ==================== 诊断页：信令地址覆盖（§8.1） ==================== -->
+    <string name="diag_signaling_url">信令地址覆盖（ws:// 或 wss://，路径固定 /ws）</string>
+    <string name="diag_save_url">保存并生效</string>
+    <string name="diag_reset_url">恢复默认</string>
+    <string name="diag_low_res">弱设备降级 480x360@24</string>
+    <string name="diag_save_as">另存为…</string>
+    <string name="call_status_peer_ids">对端身份</string>
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- XML 层颜色资源：仅用于窗口背景与自适应图标底色；UI 配色见 ui/theme/Color.kt -->
+<resources>
+    <color name="window_background">#FFF5F5F7</color>
+    <color name="ic_launcher_background">#FF0B57D0</color>
+</resources>
