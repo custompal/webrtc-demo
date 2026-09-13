@@ -14,8 +14,10 @@
 | **t11 开工时磁盘指纹** | **1337 行 / `sha256 b3b6743825eababc51d41944d61d0f4ab542c8a0f3cdfc4d7a754cefd1cc0f4d`**（执行期间两次断言，值稳定） |
 | V 项 | V01–V64（实测计数 64，无重排；另 §12.9 追加 V60–V64） |
 | 仓库根 | 容器 `/data/dsh/home/workspace/code/webrtc-demo` ＝ 宿主机 `/opt/dsh-workspaces/code/webrtc-demo` |
-| 交付 Git 提交 | **t11 开工 `39a62bd` → 写终报前 `d7a2471` → 定稿 `a57c057` → 收尾提交落地 `14ef053`（=`t10 收尾：退役 A 方案（删除 fix_jar_class_version.sh）…`）**；谱系：`7a02694`（初始化文档）→ `ad2e553`（submodule）→ `1a9d3ff`（t3 报告）→ `198d514`（**t10 统一提交**）→ `8a8611e`（t10 收尾/属主归一）→ `1a3a8e6` → `10aa709` → `39a62bd` → `d7a2471` → `a57c057` → **`14ef053`** |
-| HEAD 收尾提交状态 | **`14ef053` 已落地**（`git rm scripts/fix_jar_class_version.sh` 93 行删除 + `reports/10` §6.3 标注"已由 t16 取代" + §5.7.1 权威构建#2）。captain 三条判据：① `git ls-files scripts/` **不含**退役脚本 ✓（0 命中，F-01 闭合）；② `reports/10` 字面仍有 1 处"仍 v69"，位于 **§6.1「我当时的应急处理（已被取代，保留记录）」** 小节内、紧随其后即声明"该应急版本现已作废…最终 Java 17/major 61"，同文件另处（旧:209/现:245）已显式更正 → 我判为**历史语境**、不再构成"把非现行值标为现行"（F-02 闭合，附注）；③ `git status --porcelain` **非空** —— 仅剩 ` M reports/07-native-dev.md`（**captain 授权的在途项**，待随下一提交带上）与本报告自身未跟踪；若要求归零，需再一条提交带 07 报告 |
+| **最终 HEAD（t19 收口）** | **`b66c1664a059202b1b2d020060b9083a8d5cb6ca`**（`t18: 闭合 t11 findings F-1/F-2 + reports/07 v1.6 与 reports/99 入库 + no-cache 决定性构建证据`）—— **该提交只含报告文件**（`reports/07-native-dev.md` +44 / `reports/10-app-build.md` +67 / `reports/99-final-report.md` 572 行），**不含任何产物字节**；收口时 `git status --porcelain` = **空** ✅ |
+| 本报告自身的收口提交 | 上表 `b66c166` 已把本报告（572 行版）入库；**此后 verifier 仅为本节的 HEAD 回填/APK 终值确认提交了一次 `reports/99` 更新（只改本文件，不含产物字节）**——该后续提交的哈希不写进本报告（避免自引用）；**项目交付物的最终 HEAD 以 `b66c166` 为准** |
+| 提交谱系（全部） | `7a02694`（初始化文档）→ `ad2e553`（submodule）→ `1a9d3ff`（t3 报告）→ `198d514`（**t10 统一提交**）→ `8a8611e`（t10 收尾/属主归一）→ `1a3a8e6` → `10aa709` → `39a62bd` → `d7a2471` → `a57c057` → `14ef053`（退役脚本 `git rm`）→ **`b66c166`（t18 收尾，最终）** |
+| 收尾提交与判据（**t19 收口，全部达成**） | ① `git ls-files scripts/` **不含** `fix_jar_class_version.sh` ✓（F-01 闭合，`14ef053`）；② `reports/10` 的 v69 归属**已写对** —— 原件归档为 `.aar.orig`（6 457 598 B / `fe26d97f…d178e`，其 `classes.jar` = `ad54a0a2…` v69），现行 AAR 内 `classes.jar` = `d98939bb…`（major 61）✓（F-02 闭合，`b66c166`）；③ `git status --porcelain` = **空** ✓（`reports/07` v1.6、`reports/10`、`reports/99` 均随 `b66c166` 入库） |
 | 在途文件（**授权，非缺陷**） | `reports/07-native-dev.md` 在验证期间处于**在途提交状态**：native-dev 已 idle 收工的 **v1.6 / 531 行**（新增 §9.1.2「APK 内实体证据」、N5 标为已闭合），captain 已指派 env-installer 随最终收尾提交带上；**最终提交哈希待该提交落地后回填**。其 §9.1.2 的两条哈希与 ELF 结论**我已独立复跑**（见 §3.8） |
 | tracked 文件数 | 169（signaling 23；`app/src/**/*.kt` 43 = main 40 + test 3；`scripts/patches/libwebrtc-java-release17.patch` 已入库） |
 | 本报告只写的文件 | 本文件（未修改任何被验证产物） |
@@ -231,7 +233,7 @@
 
 ### 3.4 APK 内 arm64-v8a `.so`（含自研库）
 
-`app-debug.apk`（33,260,234 B / `c72d3667…`）内：`lib/arm64-v8a/` 含 `libwebrtcdemo_native.so`、`libjingle_peerconnection_so.so`、`libc++_shared.so`、`libandroidx.graphics.path.so`；前两者抽出后 `llvm-objdump -f` 均为 `elf64-littleaarch64`；自研 `.so` 动态符号导出仅 `JNI_OnLoad`。dex 侧：`SelfVp9Libvpx`（classes3/8/11）、`nativebridge/NativeVp9Encoder`（classes3/8）、`com/example/webrtcdemo/MainActivity`（classes12）、`org/webrtc/PeerConnectionFactory`、`org/webrtc/VideoEncoder` 均可检索到 → 自研类与 SDK 均已打包。
+**终版 `app-debug.apk`（33,260,234 B / `b0cddd86…`）**（其前一次构建 `c72d3667…` 已被 clean 覆盖，两版内同名 `.so` 哈希相同，见 §0.2/§3.13）内：`lib/arm64-v8a/` 含 `libwebrtcdemo_native.so`、`libjingle_peerconnection_so.so`、`libc++_shared.so`、`libandroidx.graphics.path.so`；前两者抽出后 `llvm-objdump -f` 均为 `elf64-littleaarch64`；自研 `.so` 动态符号导出仅 `JNI_OnLoad`。dex 侧：`SelfVp9Libvpx`（classes3/8/11）、`nativebridge/NativeVp9Encoder`（classes3/8）、`com/example/webrtcdemo/MainActivity`（classes12）、`org/webrtc/PeerConnectionFactory`、`org/webrtc/VideoEncoder` 均可检索到 → 自研类与 SDK 均已打包。
 
 ### 3.5 libwebrtc Java SDK 产物可解析出 `org/webrtc` 类
 
@@ -331,7 +333,7 @@
 | `:app:clean` | **执行**（日志第 12 行 `> Task :app:clean`；其前另有 `externalNativeBuildCleanDebug`） |
 | 任务执行态 | **`43 actionable tasks: 42 executed, 1 up-to-date`**；`grep -c FROM-CACHE` = **0**；`dexBuilderDebug` / `packageDebug` / `assembleDebug` 均**实际执行**（非 UP-TO-DATE/非缓存还原） |
 | 输入侧记录 | 日志头部记录 `jar(before) sha=d98939bb…`（1 048 264 B） |
-| 结果 | **APK `b0cddd86…`（33 260 234 B，mtime 21:42:38）**，`BUILD SUCCESSFUL in 2m 2s` |
+| 结果 | **APK `b0cddd86…`（33 260 234 B，mtime 21:42:38）**，`BUILD SUCCESSFUL in 2m 2s`；该结论与 `reports/10` §5.7.3/§5.7.4 同批随 **`b66c166`** 入库 |
 | 对照（此前的“authoritative”日志） | `authoritative-assembleDebug-20260913-210556/211309/211731.log` 三次均 **`FROM-CACHE = 21`**（缓存辅助），故其同哈希是**缓存的必然结果** |
 
 **b) 结论更正：APK **不是**逐字节可复现**
