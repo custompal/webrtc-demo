@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------------------
+# webrtc-demo .gitignore
+#
+# 约定（见 doc/05 §9.0）：
+#   third_party/libvpx-src/      = libvpx 源码 submodule（跟踪）
+#   third_party/libwebrtc-src/   = libwebrtc 源码 submodule（跟踪）
+#   third_party/libvpx/          = libvpx 编译产物（lib/include），忽略
+#   third_party/libwebrtc/       = libwebrtc 编译产物（lib/include/java），忽略
+# ---------------------------------------------------------------------------
+
+# ===== libwebrtc / libvpx 编译产物（体积大，不入库）=====
+third_party/libwebrtc/
+third_party/libvpx/
+third_party/android_toolchain/
+third_party/*.zip
+
+# ===== 构建系统（depot_tools / gn / ninja 输出）=====
+build/
+out/
+depot_tools/
+.gclient
+.gclient_entries
+gn_args.gni
+
+# ===== Android / Gradle =====
+.gradle/
+**/build/
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+.idea/
+.kotlin/
+
+# ===== 签名与密钥（严禁入库）=====
+*.jks
+*.keystore
+keystore.properties
+
+# ===== Go 信令服务编译产物 =====
+signaling
+signaling-linux-amd64
+code/webrtc-demo/signaling
+
+# ===== 通用 =====
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.log
+*.tmp
+*.swp
+*~
+.DS_Store
+.vscode/
+.ninja_deps
+.ninja_log
+
+# ===== 明确保留（必须放在最后：后面的规则优先级更高，避免被 *.a/*.so 等再次忽略）=====
+!reports/
+!reports/**
+!doc/
+!doc/**
+!scripts/
+!scripts/**
+!**/CMakeLists.txt
+!**/*.cpp
+!**/*.h
+!**/*.kts
+!**/*.kt
