@@ -148,6 +148,32 @@ OK   哈希差异已确证仅由 Go VCS 戳引起（VCS-free 基线与 t9 交付
 **意义**：这正是 §附录 F 想要的结果——**提交后默认构建哈希必然变化（`c298235a…` → `b3e502a0…`），但归因判据（VCS-free 基线 `1b333208…`）证明源码/工具链一字未变**，脚本既不误报失败（假 FAIL），也不掩盖真实改动（假 OK，见附录 F4 的负例测试）。
 > 注：此后 `signaling/dist/signaling-linux-amd64` 为 `b3e502a0…`（默认含 VCS 戳的等价构建，源码与 t9 相同）；**部署件 `/opt/signaling/signaling` 仍为 `c298235a…c068`（t12 部署，未受影响）**。verifier 若比对哈希，请以本条口径为准。
 
+### 5.7 **权威构建（captain 基线令，2026-09-13 21:05–21:06）** — APK 最终口径以此为准
+
+**基线**：captain 令以 `app/src/main/kotlin/…/webrtc/VideoRendererPool.kt` 的 mtime **2026-09-13 18:00:01.910** 为源码权威基线；任何早于此启动的构建不得作最终产物。
+
+**执行前置（并发纪律）**：启动前实测宿主机仍有他人 gradle 进程（`--dry-run assembleDebug`、`testDebugUnitTest` 等），**我先守候到全部退出（IDLE @ 21:05:56，残留并发 PID = 空）**再开始，避免并发污染。日志落**项目内**：`reports/logs/authoritative-assembleDebug-20260913-210556.log`。
+
+| 判定规则 | 实测 |
+|---|---|
+| R1 启动时刻晚于 18:00:01 | ✅ **T0 = 2026-09-13 21:05:56**，T1 = 21:06:43；命令 `./gradlew --no-daemon clean assembleDebug`（**不加** `-PwebrtcDemo.skipNative=true`）；`BUILD SUCCESSFUL in 46s` |
+| R2 构建期间无新写入 `app/src` | ✅ `find app/src/main/kotlin app/src/main/cpp -newermt "$T0" -type f` → **0**（`app/src/main/jniLibs/…so` 由脚本 stage 5 按契约 §4.3 复制，属**构建输入**、非源码编辑，单列） |
+| R3 `:app:compileDebugKotlin` 实际执行或存在晚于基线的成功前序编译 | ⚠️ 本次为 **`FROM-CACHE`**（`org.gradle.caching=true` 命中同上输入的编译缓存），**非伪造**；按 captain 规则以"晚于 18:00:01 的成功前序编译"补证：`reports/logs/kotlin-compile+test-20260913-1810-T15-FINAL-INCLUDING-8.14.log`（BUILD SUCCESSFUL / e:=0 / 36 单测全绿）、`reports/logs/kotlin-compile-20260913-190910.log` 与 `…-194225.log`（均为 `1 executed` 的真编译）。同轮 `> Task :app:buildCMakeDebug[arm64-v8a]` **实际执行**（native 真编） |
+| 锁异常 | ✅ 0（`Timeout waiting to lock|Could not create service|File lock|Unable to lock` 无命中） |
+
+**权威 APK（最终口径）**：
+
+```
+路径   : /opt-dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk
+mtime  : 2026-09-13 21:06:42.561 +0800
+大小   : 33,260,234 B
+sha256 : c72d366706569b6dab5689200bc0902ce94fb7241b238a401e61fa5e745caa96
+```
+> **与 20:21 那次 clean 构建的 APK 逐字节相同（同 sha256）** ⇒ 在本工程与当前插件版本下 APK 打包是**可复现**的；故此前的四类核验结论对权威 APK 继续成立（且已在其上复测，见下）。
+
+**权威 APK 的四项核验（重测）**：dex 13 个，`com.example.webrtcdemo` 条目 **4427**、`org.webrtc` 条目 10367；`lib/arm64-v8a/` 含 `libjingle_peerconnection_so.so` 12,946,912 B + `libwebrtcdemo_native.so` 1,231,512 B；Manifest `package=com.example.webrtcdemo`、权限 INTERNET/CAMERA/RECORD_AUDIO/ACCESS_NETWORK_STATE/MODIFY_AUDIO_SETTINGS、组件 5 项（activity/provider/receiver 合计）；`resources.arsc` 存在且 `aapt2 dump resources` 解析成功（exit=0）。
+**stage 10 属主归一（受版控树口径）**：非 1000 项 = **0** ✅。
+
 ## 6. jar 的 class 版本问题：我的临时归一化 → **被 t16 的原生重编取代（最终口径 = Java 17 / major 61）**
 
 **问题（t10 第 2 次构建失败）**：t5 的 `third_party/libwebrtc/java/libwebrtc-java.jar` 内 **453 个 class 全部是 major version 69（Java 25）**，AGP 8.5.2 的 D8 直接拒绝（`Unsupported class file major version 69`）。
