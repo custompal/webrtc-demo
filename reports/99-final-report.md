@@ -1618,6 +1618,8 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 APK            = app/build/outputs/apk/debug/app-debug.apk
                  sha256 30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2  33 309 445 B
                  仓内路径 mtime = 19:05:19.310（captain §13.23 裁定的交付锚点；宿主/留档 mtime = 18:41:59）
+                 部署元数据（我 [读盘 21:07:18] stat）：mode 644 / uid 1000:1000 / ino 3144249 / **ctime 19:07:29.818**
+                 ⚠️ mtime < ctime 的成因 = **19:07:29 对 `app/build` 的 chown(root→uid 1000)**（captain `367adf2` 记录：非-1000 属主计数 19:06:40=1047 → 19:16:17=0），**不是"19:07:29 才放置"** —— 反证：`webrtc-builder [19:06:40]` 已读到该路径 = `30c41ac9…`，故放置时刻为 **19:05:19**（mtime 即放置时刻）。⇒ 记录部署事件应含 `sha+size+mtime+ctime+uid+ino`（ctime 指向"元数据/属主变更"，不必然指向放置）。
 jar            = 0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757  1 206 602 B  509 条目  ^J/ = 1
 AAR            = 8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099  6 492 067 B（内 classes.jar == jar，逐字节）
 三值语义身份   = jar 0c776934… + J/N.class 1ff8d3ff…(6 924 B) + GEN_JNI.class a6e7edcf…(24 910 B)   ✅ 全部复算一致
