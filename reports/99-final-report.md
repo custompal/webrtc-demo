@@ -2011,4 +2011,21 @@ classes6.dex … 相同；classes9/11/12/14 字节不同而结构相同；classe
 
 ---
 
+## 13.29 事故记录：未授权并行重复构建件 `f1b36244…` 不采纳为锚点（**captain 指令追加**，不改写历史节）
+
+- **触发与处置**：本记录按 captain 指令（22:1x）追加。事故件 `f1b36244fb5ef0908710087e8b285abdfd16af431f2584731eeb597d31301cdf`（33 310 685 B）由 **env-installer 的未授权并行重复构建**产出（其 agent turn 已被 captain `interrupt`）：`TS=20260914-220259` → check-only 22:03:04 → kotlin 22:04 → **`clean assembleDebug` 22:04→22:08:06（BUILD SUCCESSFUL 3m26s，`:app:clean` 出现）** → 22:08:20 起跑 `:app:testDebugUnitTest` 时被发现并中止。captain 处置留痕：`reports/10-t42b-incident-20260914-220943.log`（29 行）与 `reports/10-t42b-parallel-rebuild-evidence-20260914-220943.log`（238 行 / `fc183597ac6499176c225bde28692f7a17b272a529b503efc872897d84147d0e`）。
+1. **① 该件永久不作锚点/交付件**：仅作**非交付归档** `artifacts/app-debug-f1b36244.apk`（我读：33 310 685 B、mtime `22:09:48`、uid `root`）；它**无入库日志、无门禁、无单测结论**（其测试运行被中止）。
+2. **② 交付锚点仍为 `36ba3ec6…`**：回滚后我复核标准路径 `app/build/outputs/apk/debug/app-debug.apk` = **`36ba3ec6e4b69c47281ab258ea681420440db81d7e739ea2af77cc37f6c0d50c`**（33 310 685 B）；`artifacts/app-debug-36ba3ec6.apk` 同值；**§13.28 的判决与 v3 载荷钉集的对象仍是 `36ba3ec6…`，不受本事故影响**。
+3. **③ 下载链路全程未被触碰（宿主侧旁证，非我第一手）**：`/opt/apk-http/served/app-debug.apk` 与 `parts/SOURCE.sha256` 全程 = `36ba3ec6…`（captain 与 webrtc-builder 两方独立宿主读数同值，served mtime `22:00:46.065672427`、part00-02 各 8 388 608 B + part03 8 144 861 B）；发布日志 `reports/10-t42-captain-publish-20260914-220045.log` = `51a431ce95ed50993e3419aab4d40b4f3a060290e7a2698852d05e439ad4a47b`；`apk-http` = active/enabled、ExecStart 仍指冻结副本。⇒ 事故期间**用户下载面未落后**。以上均属容器不可见面，按"宿主侧第一手、verifier 未复核"登记（与 §13.28.6 同口径）。
+4. **④ 事故件与锚点的差异 = 纯 D8 dex 分片字节不稳定（我第一手复算，证其非语义差异、但不可作权威交付件）**：
+   | 比较 | 结果 | 证据 |
+   |---|---|---|
+   | 锚点 `36ba3ec6…` vs 事故件 `f1b36244…`（逐条目） | 165/165 条目、**相同 158 / 不同 7**，不同项 = `classes{3,5,6,9,11,12,14}.dex`；`resources.arsc`（`e5550e42…`）与 `AndroidManifest.xml` **相同**；四 `.so` **相同** | `tmp/vfy43/t43/F-entrydiff.log` = `0bfe81534abb8deeeb6e02f2a0b77d504f3b8d6dd20674225d55144164ff79cd` |
+   | 结构指纹（逐 dex `CLASS/NAME/TYPE/ACCESS` 序列） | **14/14 相同**（行数逐一相同：`classes.dex` 307 662 / `classes13.dex` 219 899 / `classes14.dex` 14 806 …） | `tmp/vfy43/t43/E-f1b36244.log` = `adf217330f4d31eef7f27bc119b0e2175bceddc8f0e84897a31e8def2a2c0b57` |
+   ⇒ **该件与锚点在签名级等价**，差异仅落在 dex 分片字节（与"APK **字节**不可复现、**结构**可复现"的既有结论同源）；但**判据可检出**：其自身 sha 与 7 个 dex 钉均不等于 v3 钉集 ⇒ 任何按 §13.28.4 钉集校验的流程都会拒绝它。
+5. **⑤ t43 的 v3 钉集适用范围**：**只对 `36ba3ec6…` 成立**；`30c41ac9…`（v2）与 `f1b36244…`（非交付件）**均在本钉集之外**，不得混用（P-16/P-18 口径）。
+6. **旁记（与已入库结论衔接）**：盘上现存单测 XML 批（`mtime 22:09:34`、46/0/0）时间与该未授权链吻合，故**只作旁证**、不作锚点轮指针（锚点轮载体 = `reports/10-t42-captain-testDebugUnitTest-20260914-215240.log` = `c384d0d5…` 与 `reports/10-t42-captain-build-20260914-215240.log` = `45646f94…`，见 §13.28.5）。
+
+---
+
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
