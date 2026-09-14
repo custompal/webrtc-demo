@@ -1082,7 +1082,7 @@ $NDK/llvm-objdump -d --start-address=0x29f718 --stop-address=0x29f87c <so> | awk
 #### (b) 该 APK **已包含** 11:12 的 `FileLogger.kt` 改动（我独立扫 dex，非采信）
 我在 APK 内 14 个 `.dex` 上按字节计数：`app-fallback.log` = **1**、`writeFailures` = **1**、`critical` = **7**、`FileLogger` = **42**。
 源头侧：`app/src/main/kotlin/com/example/webrtcdemo/log/FileLogger.kt` mtime = **11:12:31**，而 T0（交付构建开始）= **11:26:08** ⇒ **该改动必然在交付 APK 内**，"APK 早于 FileLogger 改动"的担忧不成立 ✅
-> ⚠️ 时点更新：`app/src` 全树**最新** mtime 现为 **18:20:45**（`app/src/test/.../JniBindingClasspathTest.kt`，android-dev 的 t32 在途改动），已晚于 env-installer 观察到的 11:19:51 ⇒ 任何"app/src 最新 mtime"类论断须带取数时刻。
+> ⚠️ **"app/src 最新 mtime"是移动靶（任何此类论断必须带取数时刻）**：11:19:51（env-installer 初测）→ 18:20:45（我取数）→ **18:28:44**（env-installer 18:33 取数 = t32 在途的 `JniBindingClasspathTest.kt`）→ **19:02:06**（我 19:04:32 取数 = **t33 构建过程重写 `app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so`**）。⇒ 一律理解为"**交付 T0（11:26:08）之后的在途改动 / 构建动作**"，与"交付后被改"不是一回事。
 
 #### (c) 单测证据链：**弃用 FROM-CACHE 那次，改用真实执行那次**
 | 日志 | 结果 | 性质 |
@@ -1319,6 +1319,12 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 4. **"AV1 残余 / 悬空引用"表述作废**：B 落位后 `LibaomAv1EncoderJni` 的引用由非 native 桩兜住；该风险**仅适用于 A 变体**，仅作对照留档（§13.8/§13.19）。
 5. **裁定 (甲)：采用现行落位件，不做"统一到 61"（有意裁定，非遗漏）** —— 终态 = jar **`0c776934…`**（1 206 602 B / 18:17:28 / major **`{55: 51, 61: 458}`**）+ AAR `8e8f2baf…`；`J/N.class` = `1ff8d3ff…`、`GEN_JNI.class` = `a6e7edcf…`（t30 handoff = **B**）。**不做统一的三条理由（captain 逐条验过）**：(i) `FINAL.jar`/`FINAL2.jar` 的 49 个 `*Jni` 是 `javac --release 17` **重编译产物**，51 条变更中 **version-only = 0**（即字节差异不止版本号）；(ii) jar 内 2 个类**当前源无法忠实复现**（源修订漂移）；(iii) 审计成本高于收益。**51 个 major-55 类全部 ≤ 61、D8 可消费 ⇒ 非交付阻塞**；应按 **`{55:51, 61:458}`** 记录（`{55:2, 61:507}` 属 **未被采用**的 `FINAL`/`FINAL2` 变体，见 §13.20），且 t33 的重编与我的复验清单**不按 `FINAL.jar` 重排**。
 6. 落位过程记录以 **`reports/15 §16`（captain 写入）** 为准；本报告只做**独立复核与三态结论**，不修改任何产物。
+
+#### (f) t33 构建日志内的两道门（env-installer 新增，t34 直接引用）
+- **[P-11] dex 级绑定形态**（`scripts/build_app.sh:421` 起）：**jar 侧 + dex 侧双闸**查 `J.N` 与转发 `GEN_JNI`，任一为 0 即 FAIL —— 正是 K-15 的**交付层**判据（旧 APK dex 实测 `jn=0` ⇒ 必红）。
+- **[P-12] native 交付件对象漂移护栏**（`scripts/build_app.sh:382` 起）：APK 内 `libjingle_peerconnection_so.so` 必须 == `757cef81…`、`libc++_shared.so` == `c9dbf4ec…` —— 与我 §13.15(a)/§13.20 的护栏同向，可互为交叉验证。
+- 两条均含**正负例验证**，且会原样出现在 t33 的构建日志里 ⇒ **t34 把它们作为输入证据引用，并在 APK 实体上独立复跑一次**。
+- ⚠️ **t33 构建过程会重写 `app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so`**（我实测 mtime 19:02:06）⇒ t34 必须在**构建结束后**核该 `.so` 仍为 `757cef81…`（P-12 覆盖同一断言；构建期间的 mtime 变化**不是**漂移证据）。
 
 #### (e) 跨报告口径标注（captain 2026-09-14 指令，逐条落实；**不修改被标注的报告文件**）
 > **搜索范围自我修正（方法论）**：我最初用 `find / -xdev` 搜 `7dbe8400…` ⇒ **`-xdev` 会跳过 tmpfs（含 `/tmp`）**，该次搜索**范围不完整**。随后我改用**不带 `-xdev`** 的严格搜索（`/tmp`、`/data`、`/workspace`、`/home`、`/root`）并直接 `ls /tmp/*.jar`：**本容器内仍无 `7dbe8400…` 的 jar、也无 `/tmp/pre-deploy.*`**（容器内 `/tmp` 仅 `aar-classes.jar`、`pre23_classes.jar`）⇒ 结论维持"**宿主（native-dev 侧）`/tmp/pre-deploy.jar` 可复算 / verifier 容器侧不可复算**"。
