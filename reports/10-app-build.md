@@ -866,3 +866,13 @@ size   = 33 309 445 B      mtime = 2026-09-14 18:41:59.794      package = com.ex
 - JNI 关键条目**逐字节相同**：`classes.dex`（含 `J.N`）、`classes13.dex`（含 `GEN_JNI`）、四个 `.so`、`AndroidManifest.xml`、`resources.arsc`。
 ⇒ 准确表述：**"语义可复现（类集合与逐 dex 分区一致）／整包 sha 不跨构建稳定"**；`ef29e00c…` 仅作"非逐字节可复现"的证据，**不作为交付候选**（隔离留档 `tmp/t38-unsanctioned-rebuild/` + `artifacts/`）。
 
+**(7) 交付锚点自身的构建日志已入库（captain 追加，回应"锚点无 build 日志"的核查）**：t33 交付构建的原始输出此前只存在于仓外 `tmp/t33/`，现已按 `reports/` 直下（**被跟踪**）路径入库三份：
+```
+reports/10-t33-captain-checkonly-20260914-183850.log         # bash scripts/build_app.sh --check-only  EXIT=0
+reports/10-t33-captain-assembleDebug-20260914-183903.log     # T0 18:39:03 → T1 18:42:00 ; BUILD SUCCESSFUL 2m56s ; 42 executed/1 up-to-date ; :app:clean ; FROM-CACHE 行 = 0
+                                                             # 头部含 T0/T1 双钉（jar 0c776934… / aar 8e8f2baf…）与 **APK sha256 = 30c41ac9…（33 309 445 B / 18:41:59）**
+reports/10-t33-captain-testDebugUnitTest-20260914-184232.log # BUILD SUCCESSFUL 2m23s ; 24/24 executed ; 46 tests / 0 failures / 0 errors（逐类 8+4+17+11+6）
+```
+⇒ "交付锚点 `30c41ac9…` 无 build 日志"这一缺口**已闭合**。注意 `reports/logs/10-t33-nocache-assembleDebug-…190227.log` 中的 `APK sha256=ef29e00c…` 属**被弃的 19:02 重复构建**，两者**不可混引**；无需为补日志而重跑构建（重跑只会产出又一个不同 sha，并迫使锚点重裁定）。
+
+

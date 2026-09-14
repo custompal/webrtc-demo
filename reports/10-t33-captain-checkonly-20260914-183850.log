@@ -1,0 +1,70 @@
+# t33（captain 接管执行）阶段一：build_app.sh --check-only 原始输出
+# 命令: bash scripts/build_app.sh --check-only      EXIT=0
+# 说明: 该步骤会重写 local.properties 并抽取 jniLibs 的 .so（内容哈希经断言不变）；两者均被 .gitignore 覆盖。
+# ---- 原始输出 ----
+
+===== 0. 环境（必须由 env.sh 提供） =====
+  JAVA_HOME        = /usr/lib/jvm/java-17-openjdk-amd64
+  ANDROID_HOME     = /opt/dsh-workspaces/android-sdk
+  ANDROID_NDK_HOME = /opt/dsh-workspaces/android-sdk/ndk/26.1.10909125
+  GRADLE_USER_HOME = /opt/dsh-workspaces/.gradle-home
+  TMPDIR           = /opt/dsh-workspaces/tmp
+openjdk version "17.0.20" 2026-07-21
+
+===== 1. 工具链版本（契约 §3.3/§3.5） =====
+  javac  = 17.0.20
+  [32mOK[0m   JDK 17
+  cmake  = 3.28.3
+  [32mOK[0m   cmake ≥3.22
+  ninja  = 1.11.1
+  gradlew 版本（wrapper 8.7）:
+distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
+
+===== 2. t5 产物就位检查（缺失则 t8/t10 阻塞，契约 §4.3/§4.4） =====
+  [32mOK[0m   6492067 bytes  /opt/dsh-workspaces/code/webrtc-demo/third_party/libwebrtc/java/libwebrtc-arm64.aar
+  [32mOK[0m   1206602 bytes  /opt/dsh-workspaces/code/webrtc-demo/third_party/libwebrtc/java/libwebrtc-java.jar
+  [32mOK[0m   12946912 bytes  /opt/dsh-workspaces/code/webrtc-demo/third_party/libwebrtc/java/jni/arm64-v8a/libjingle_peerconnection_so.so
+  [32mOK[0m   1929142 bytes  /opt/dsh-workspaces/code/webrtc-demo/third_party/libvpx/lib/libvpx.a
+  [32mOK[0m   /opt/dsh-workspaces/code/webrtc-demo/third_party/libvpx/include/vpx（11 个头文件）
+  [32mOK[0m   aarch64: /opt/dsh-workspaces/code/webrtc-demo/third_party/libwebrtc/java/jni/arm64-v8a/libjingle_peerconnection_so.so
+  [32mOK[0m   aarch64(成员 Machine): /opt/dsh-workspaces/code/webrtc-demo/third_party/libvpx/lib/libvpx.a → AArch64
+  [32mOK[0m   jar 内 org/webrtc 类条目 = 476
+  [32mOK[0m   JAR 使用精确 live 路径（无通配/无归档后缀）: /opt/dsh-workspaces/code/webrtc-demo/third_party/libwebrtc/java/libwebrtc-java.jar
+  [32mOK[0m   AAR 使用精确 live 路径（无通配/无归档后缀）: /opt/dsh-workspaces/code/webrtc-demo/third_party/libwebrtc/java/libwebrtc-arm64.aar
+  [32mOK[0m   SO_TP 使用精确 live 路径（无通配/无归档后缀）: /opt/dsh-workspaces/code/webrtc-demo/third_party/libwebrtc/java/jni/arm64-v8a/libjingle_peerconnection_so.so
+  [32mOK[0m   VPX_A 使用精确 live 路径（无通配/无归档后缀）: /opt/dsh-workspaces/code/webrtc-demo/third_party/libvpx/lib/libvpx.a
+  [基线指纹] jar sha256=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757  size=1206602  mtime=2026-09-14 18:33:42
+  [基线指纹] aar sha256=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099  size=6492067  mtime=2026-09-14 18:33:42
+  [32mOK[0m   jar 含 J/N.class（jni_zero short/proxy native 持有类）
+  [32mOK[0m   jar 含 org/jni_zero/GEN_JNI.class
+  [32mOK[0m   jar 内 *Jni.class = 48
+  [32mOK[0m   GEN_JNI 为纯转发层（static native = 0）
+  [32mOK[0m   J.N 哈希 native 声明数 = 193
+
+===== 3. t7/t8 源码就位检查 =====
+  [32mOK[0m   app/src/main/cpp/CMakeLists.txt
+  [32mOK[0m   app/src/main/kotlin/（40 个 .kt）
+  [32mOK[0m   app/build.gradle.kts
+  [32mOK[0m   settings.gradle.kts
+
+===== 4. 契约硬约束自检（§4.2：native 库名 / 禁止链接 libwebrtc.a） =====
+  add_library: 25:add_library(vpx STATIC IMPORTED)
+32:add_library(webrtcdemo_native SHARED
+  [32mOK[0m   库名 = webrtcdemo_native (SHARED)
+  [32mOK[0m   未链接 libwebrtc.a / libjingle_peerconnection_so（符合 §4.2）
+  [32mOK[0m   Kotlin NativeLoader: System.loadLibrary("webrtcdemo_native")
+
+===== 5. 抽出 libjingle_peerconnection_so.so → app/src/main/jniLibs/arm64-v8a/（契约 §4.3） =====
+  [32mOK[0m   自 third_party 复制
+/opt/dsh-workspaces/code/webrtc-demo/app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so: ELF 64-bit LSB shared object, ARM aarch64, version 1 (SYSV), dynamically linked, BuildID[xxHash]=0deb3a8b880d7480, stripped
+    jniLibs so sha256 = 757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e（期望前缀 757cef8128bf9151）
+  [32mOK[0m   jniLibs so 与 t5 stripped 版哈希一致
+  [32mOK[0m   stripped ✅
+    大小: 12946912 B（期望 12946912）
+
+===== 6. local.properties =====
+  [32mOK[0m   已写 /opt/dsh-workspaces/code/webrtc-demo/local.properties（NDK 由 app/build.gradle.kts ndkVersion 指定）
+sdk.dir=/opt/dsh-workspaces/android-sdk
+
+===== == --check-only：不执行构建 == =====
+前置校验全部通过（未构建）
