@@ -1144,6 +1144,7 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 > **已执行**：`chown -R 1000:1000 /opt-dsh-workspaces/code/webrtc-demo/.git`（含 `.git/index` 与全部 objects），并以 uid 1000 实测 `git status/log/rev-parse` 正常；**全队规则：仓库内所有 git 命令一律以 uid 1000 执行**（SSH 场景 `su -s /bin/bash admin -c "cd <repo> && git …"`），**禁止 root 身份跑 git**。
 > **verifier 复核与一次复发留痕**：chown 之后我又观察到 **`.git/index` 于 18:54:11 再次变为 `root:root`**（⇒ chown 本身不足以长期维持，**规则才是操作性根治**）；我按就地修复重建（18:55:47 恢复 `node:node`，`find .git ! -user node` = **0**）。**四次时间点**：`18:25`、`18:27`、`18:31:18`、`18:46:11`（+ 复核时 `18:54:11`）。
 > **结论**：K-17 记为**已闭合（captain chown + uid-1000-only 规则；verifier 就地修复配方保留于 §10.11）**。
+> **复现条件（显式）**：**维护期内任何成员若以 root 跑仓库内 git（哪怕只是 `git status`）都会复现** `.git/index`/对象目录被置 root；native-dev 声明其本会话**从未执行任何 git 命令**（写面仅 `webrtc-build/t30/**`、`t36/**`），env-installer 已认账其早期 root 经 ssh 的提交为来源之一并承诺改为 uid 1000。
 > **复发源披露与前向纪律（env-installer 主动认账，2026-09-14）**：其此前以 **root 经 ssh** 执行的提交（t18/t26/`c6fcfcd`/`3acc1d2` 等）即 root:root 索引/对象目录的来源之一；其已承诺**此后所有 git 一律以 uid 1000 执行**（宿主机 `su -s /bin/bash admin -c 'git …'`），并在每次 git 操作后做 root 侧兜底 `chown -R 1000:1000 .git` + 断言 **`find .git ! -uid 1000 | wc -l == 0`**。
 > **探针陷阱（值得留档）**：`git update-index --refresh` 的 **exit≠0 表示"有文件 needs update"**，**不是**权限失败（env-installer 首轮即据此误判"仍不可写"）；判可写性应使用 **`test -w .git/index` / `touch .git/index` / `git add` 演练** 三条真探针。
 > **dangling 对象现状**：可写性演练累计留下 **6 个 dangling blob**（`49407c77`、`56dbbdc6`、`9ae37822`、`c00db6f3`、`9daeafb9`、`2757c6f6`）——均无引用、不影响 ref/tree、`git gc` 可回收；非交付物，**不构成缺陷**。
@@ -1164,7 +1165,7 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 native-dev 称 webrtc-builder 在**构建树**内独立跑出同名 srcjar：`webrtc-build/src/out/Release-arm64/gen/sdk/android/libjingle_peerconnection_so__jni_registration.srcjar`，sha256 同为 `2e352096…`。
 **我的实测**：该文件确实存在（**62 140 B**，mtime **11:34:56**），但权限为 **`-rw------- root root`（0600）** ⇒ **uid 1000 读取 `Permission denied`**（`head`/`jar xf`/`sha256sum` 均失败）。
 ⇒ **（18:35 更新：该文件 owner 已为 node、可读，我复核 = `2e352096…` 且与 `out/A` srcjar 及两份源逐字节相同 ⇒ 本项已由"未验证"升级为"已验证"，见 §13.21 追加第 4 条。原"未能核对"的记述保留如下以备查。）** 我无法在其不可读期间核对 sha256、也无法比较内容；"大小相同"当时只是**弱证据**；如需我核，请 `chmod 644`（或 `chown node:node`）该文件，我一条命令即可复核（`sha256sum` + 解包比对两份 `.java`）。
-> **读侧口径澄清（19:0x 复核）**：native-dev 报"构建树 `gen/**` 中 `0600 root` 文件 = 506/2793"，并要求 `chmod 644`。我实测（容器内同一路径）：`gen` 下总文件 **2 793**、**`-perm 600` = 505**，但 **`-user root` = 0**、**`! -readable` = 0**、**`! -perm -u+rw` = 0** ⇒ 那些 600 权限文件是 **`node:node` 所有**（我可读），**root 属主文件为 0、不可读文件为 0**；`webrtc-build/src/out`（14 062 文件）与 `app/build`（860 文件）同样 `! -readable = 0`。而**本节讨论的那份 srcjar 现为 `-rw-r--r-- node node`（644、mtime 11:34:56 未变、sha `2e352096…`）**，且与 `t30/out/A` 同名件 `cmp` 逐字节相同 ⇒ **我 18:35 的"已验证"结论成立、无需 chmod 才能复核**。⇒ K-17 的**读侧**在本容器**当前为 0 影响**；把"0600"当成"root 所有/不可读"会造成误判（建议 `chmod` 请求可撤回，或仅在宿主视角确有 root 0600 时再执行）。
+> **读侧口径澄清（19:0x 复核）**：native-dev 报"构建树 `gen/**` 中 `0600 root` 文件 = 506/2793"，并要求 `chmod 644`。我实测（容器内同一路径）：`gen` 下总文件 **2 793**、**`-perm 600` = 505**，但 **`-user root` = 0**、**`! -readable` = 0**、**`! -perm -u+rw` = 0** ⇒ 那些 600 权限文件是 **`node:node` 所有**（我可读），**root 属主文件为 0、不可读文件为 0**；`webrtc-build/src/out`（14 062 文件）与 `app/build`（860 文件）同样 `! -readable = 0`。而**本节讨论的那份 srcjar 现为 `-rw-r--r-- node node`（644、mtime 11:34:56 未变、sha `2e352096…`）**，且与 `t30/out/A` 同名件 `cmp` 逐字节相同 ⇒ **我 18:35 的"已验证"结论成立、无需 chmod 才能复核**。⇒ K-17 的**读侧**在本容器**当前为 0 影响**（**19:13:35 复测仍为**：总 2 793、`-user root` = 0、`-perm 600 -user root` = 0、`! -readable` = 0；`-perm 600` = 505 但**均为 `node:node`**；该 srcjar 现为 `644 node` 可读）；把"0600"当成"root 所有/不可读"会造成误判（建议 `chmod` 请求可撤回，或仅在宿主视角确有 root 0600 时再执行）。
 
 > ⚠️ 这同时是 **K-17 的"读侧"影响**：root 身份产出的构建中间件对 node 成员**不可读** ⇒ "终报可直接引用该路径"**对 node 身份不成立**（引用前须确认可读性）。
 
@@ -1251,6 +1252,7 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 
 **读法（三态）**：
 1. **已验证**：A 变体已被团队**显式改名为 `candidate-A-DO-NOT-LAND-…`**（其内容我复算与 native-dev 报值一致：`J/`=1、`*Jni`=48、`J.N` native 193、`GEN_JNI` 方法 **193**、native 0、前缀 `org_webrtc_*` **190** + `org_jni_1zero_*` 3、AV1 未覆盖 = 1）⇒ **A/B 之争事实上已按 B 收口**。
+   ⚠️ **改名 ≠ 从未落位（必读）**：该 A 件在 **18:32:24 曾被实际拷入交付路径**（jar `c289b4df…`、AAR `f2ea0132…`），**18:33:42 被 captain 回滚为 B**，**之后**才被改名为 `DO-NOT-LAND` 并隔离于 `tmp/jn-fix/QUARANTINE-A/`。证据：`webrtc-build/t36/t36-addendum-transient-reland.md` = `d02ae1b8…` + `webrtc-build/t36/logs/t36-addendum-1832.log` = `1b656cc3…`（我核对存在）。**不要把"现名 DO-NOT-LAND"读成"从未落过"**，全过程见 §13.21。
 2. **已验证**：**落位件与 `FINAL2.jar` 使用同一套绑定类字节**（`1ff8d3ff…`/`a6e7edcf…`），**但落位件没有 `FINAL2` 的版本统一**：`FINAL2` = `{55:2, 61:507}`，落位件 = `{55:51, 61:458}`（45 个 `*Jni` 仍是 55 版）。差值（1 206 602 − 1 181 534 = **25 068 B**）与"45 个 `*Jni` 重编到 61 + 2 个例外"的量级吻合。
    ⇒ 准确表述：**落位 = `FINAL2` 的绑定类 + 旧的 55 版 `*Jni`**，而非 `FINAL2` 本身。
 3. **待裁定**：若交付口径要求"全部统一到 61"，则仅 `FINAL2.jar`（或 `FINAL.jar`）满足；如选 `FINAL2` 重新落位，`J/N`/`GEN_JNI` 字节**不变**（同为 `1ff8d3ff…`/`a6e7edcf…`）⇒ 仅需复跑"jar 侧版本分布 + APK 重编"，绑定判据①②③④不会变化（仍应重跑以留痕）。
@@ -1340,7 +1342,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 
 #### (g) t33 **双钉哈希**要求与 t36 的有效性条件（native-dev 提议 + 我采纳）
 - **双钉**：t33 构建**前后各记一次** `jar` 与 `AAR` 的 sha256（`before` / `after`），以证明该 APK 的基线 jar 就是**回滚后的 B**（`0c776934…` / `8e8f2baf…`）—— 鉴于 18:32:24–18:33:42 存在瞬时 A 窗口（§13.21），单点记录不足以排除窗口内启动；两值相同即"构建全程 jar 未漂移"。
-- **t36（193 描述符对照）有效性条件**：其证据对象是 **`J/N.class 1ff8d3ff…` / `GEN_JNI.class a6e7edcf…`**（即现行 B）⇒ **只要 jar 仍为 `0c776934…` 结论有效；jar 一旦改变（例如改落 `FINAL.jar`）必须重跑**。
+- **t36（193 描述符对照）有效性条件**：其证据对象是 **`J/N.class 1ff8d3ff…` / `GEN_JNI.class a6e7edcf…`**（即现行 B）⇒ **只要 jar 仍为 `0c776934…` 结论有效**。**若 jar 改变，须分两种情形**：(i) 改落 **`FINAL.jar`**（`d0d05244…`，手编桩 `0eac3fb5…`/`32448db8…`）⇒ **两个 class 指纹改变，t36 必须重跑**；(ii) 改落 **`FINAL2.jar`**（`167a299a…`）⇒ 其两个绑定类字节**与现落位件完全相同**（`1ff8d3ff…`/`a6e7edcf…`，native-dev 实测、我核对「含 B 对」清单一致）⇒ **判据①②③④与 t36 证据对象均不变，只需重钉容器哈希 X 并重跑 t34 的产物级复验**，**t36 无需重跑**（避免"统一版本 ⇒ 全套证明作废"的误解）。*captain 已裁定 **(甲)**：保持现落位件 `0c776934…`、不做统一，上述 (i)/(ii) 仅作将来变更时的判据边界留档。*
 - t36 证据（我核对哈希一致）：`webrtc-build/t36/signature-crosscheck.tsv` = `e7c1980b…`（194 行 = 表头 + **193 数据行**）、`signature-crosscheck-refined.tsv` = `015402fc…`（178 行 = 表头 + **177**）、`t36-report.md` = `6810282…`、`t36-addendum-transient-reland.md` = **`d02ae1b8…`**（记录本次瞬时回退）。其 §5 已自述边界：**描述符一致 ≠ 运行期可绑定**，真机首调仍是唯一决定性判据 —— 与本报告 §13.3 口径一致。
 
 #### (f) t33 构建日志内的两道门（env-installer 新增，t34 直接引用）
