@@ -69,18 +69,35 @@ java -version 2>&1 | head -1
 [ -z "${GRADLE_USER_HOME:-}" ] && fail "GRADLE_USER_HOME 未设置（应指向 <WS>/.gradle-home）"
 [ -z "${TMPDIR:-}" ] && fail "TMPDIR 未设置（应指向 <WS>/tmp）"
 
-# --- [P-14] 执行位置前置断言：**本脚本必须在宿主机执行** ------------------------------------
-# 实测（2026-09-14 复核）：**容器内 `python3`/`unzip`/`jar`/`javap` 全部缺失**（`java` 亦无），
-#   在这些工具缺失的环境里运行本脚本，会以"命令不存在/工具缺失"的形式产生**误导性失败**，
-#   而不是清晰的"位置错"。故此处先做前置断言：缺任一工具即 FAIL 并显式提示执行位置要求。
-missing_tools=""
-for t in python3 unzip javap java sha256sum; do
-  command -v "$t" >/dev/null 2>&1 || missing_tools="$missing_tools $t"
+# --- [P-14] 执行环境前置断言：工具**逐个 `--version` 可执行**；缺失时给出 PATH 注入口 ----------
+# 事实更正（2026-09-14，captain 授权 A 项）：**容器内并非"没有这些工具"，而是"不在 PATH"**：
+#   webrtc-build/src/third_party/jdk/current/bin/{jar,javap,java,…}（jar/javap 25.0.4.1；注意 `javap --version` 不认，须 `javap -version`）
+#   webrtc-build/src/third_party/cpython3/host/bin/python3（Python 3.11.9）
+#   ⚠️ webrtc-build/pyenv/bin/python3 -> /usr/bin/python3 是**悬空链接**，**勿依赖**
+# ⇒ 结论：本脚本要求工具"在 PATH 内可用"**或**"经下列注入目录可用"；两者皆不可才 FAIL。
+#    （因此不再写"容器不可用"式断言；脚本仍需 JDK/SDK/NDK/gradle，故实际运行位置仍是宿主。）
+PATH_INJECT="$WS/webrtc-build/src/third_party/jdk/current/bin:$WS/webrtc-build/src/third_party/cpython3/host/bin"
+for t in python3 unzip javap jar java sha256sum; do
+  if command -v "$t" >/dev/null 2>&1; then
+    ok "$t 在 PATH 内：$(command -v "$t")"
+  elif (PATH="$PATH_INJECT:$PATH"; command -v "$t" >/dev/null 2>&1); then
+    ok "$t 不在 PATH，但可经注入目录获得：$(PATH="$PATH_INJECT:$PATH"; command -v "$t")"
+    export PATH="$PATH_INJECT:$PATH"
+  else
+    fail "$t 既不在 PATH，也不在注入目录（$PATH_INJECT）⇒ 无法继续（属缺工具，非位置错）"
+  fi
 done
-if [ -z "$missing_tools" ]; then
-  ok "宿主工具齐备（python3/unzip/javap/java/sha256sum）"
-else
-  fail "缺少工具:${missing_tools} ⇒ **本脚本须在宿主机执行**（容器内无 python3/unzip/jar/javap/java）"
+# 版本可执行性断言（逐个跑一次，确认不是空壳/不可执行）
+for spec in "python3:--version" "unzip:-v" "java:-version" "sha256sum:--version"; do
+  t=${spec%%:*}; flag=${spec#*:}
+  if command -v "$t" >/dev/null 2>&1; then
+    v=$("$t" "$flag" 2>&1 | head -1 || true)
+    [ -n "$v" ] && ok "$t $flag → $v" || fail "$t $flag 无输出（工具不可执行）"
+  fi
+done
+if command -v javap >/dev/null 2>&1; then
+  v=$(javap -version 2>&1 | head -1 || true)
+  [ -n "$v" ] && ok "javap -version → $v" || fail "javap 不可执行"
 fi
 
 hdr "1. 工具链版本（契约 §3.3/§3.5）"
@@ -188,17 +205,29 @@ if [ -f "$JAR" ]; then
       || fail "GEN_JNI 含 ${n_gen_native:-?} 个 native 声明 ⇒ 编译期 stub 形态，与 .so 的 Java_J_N_* 不匹配"
     n_jn_native=$(javap -p -classpath "$JAR" 'J.N' 2>/dev/null | grep -c ' native ' || true)
     ok "J.N 哈希 native 声明数 = ${n_jn_native:-0}"
-    # --- GEN_JNI 方法数断言（captain 2026-09-14 授权；判别表如下）---------------------------
-    #   B（现行落位件 `0c776934…`）：方法数 = **194**、`static native` = **0**   ← 唯一合法形态
-    #   A（隔离件 `c289b4df…`     ）：方法数 = **193**、`static native` = 0     ← 缺 AV1 非 native 桩 ⇒ 必红
-    #   落位前（`dc5f8919…`       ）：方法数 = **193**、`static native` = **194** ← stub 形态 ⇒ 必红
-    #   ⚠️ 只有"方法数"这一条能自动抓 A 回退：`J.N` 的 native 数在 **A 与 B 同为 193**（不可用）。
+    # --- GEN_JNI/J.N 形态断言（captain 2026-09-14 授权；判别表 + 三条各抓什么）-----------------
+    #   B（现行落位件 `0c776934…`）：GEN_JNI 方法数 = **194**、`static native` = **0**；J.N 非 native 桩 = **1** ← 唯一合法形态
+    #   A（隔离件 `c289b4df…`     ）：GEN_JNI 方法数 = **193**、`static native` = 0；J.N 非 native 桩 = **0**   ← 缺 AV1 桩 ⇒ 必红
+    #   落位前（`dc5f8919…`       ）：GEN_JNI 方法数 = **193**、`static native` = **194**；无 `J.N`            ← stub 形态 ⇒ 必红
+    #   ⚠️ `J.N` 的 native 数在 **A 与 B 同为 193** ⇒ **单看它不可判**。
+    #   三条各抓什么（captain B2 口径）：
+    #     ① GEN_JNI 方法数 == 194      → 抓 A 回退（193）/落位前（193）
+    #     ② GEN_JNI static native == 0 → 抓落位前 stub 形态（194 个 native）
+    #     ③ J.N 非 native public static == 1 → 抓"手工把方法数凑到 194 却不带 AV1 桩"的伪造形态
     n_gen_methods=$(javap -p -classpath "$JAR" org.jni_zero.GEN_JNI 2>/dev/null | grep -cE '^  (public|static)' || true)
     n_gen_methods=$(( ${n_gen_methods:-0} - 1 ))   # 减去构造器行
     if [ "${n_gen_methods:-0}" = "194" ]; then
       ok "GEN_JNI 方法数 = 194（B 形态：含 1 条 AV1 非 native 桩）"
     else
       fail "GEN_JNI 方法数 = ${n_gen_methods:-?}（期望 194=B；193 且 native=0 ⇒ A 回退；193 且 native=194 ⇒ 落位前 stub）⇒ jar 形态漂移，禁止放行"
+    fi
+    n_jn_all=$(javap -p -classpath "$JAR" 'J.N' 2>/dev/null | grep -cE '^  public static' || true)
+    n_jn_nat2=$(javap -p -classpath "$JAR" 'J.N' 2>/dev/null | grep -c ' native ' || true)
+    n_jn_nonnative=$(( ${n_jn_all:-0} - ${n_jn_nat2:-0} ))
+    if [ "${n_jn_nonnative:-0}" = "1" ]; then
+      ok "J.N 非 native public static 方法数 = 1（AV1 直抛桩在位）"
+    else
+      fail "J.N 非 native public static 方法数 = ${n_jn_nonnative:-?}（期望 1＝AV1 桩；0 ⇒ 伪造的 194 形态；>1 ⇒ 形态漂移）"
     fi
   else
     warn "无 javap，跳过 GEN_JNI/J.N 形态核验"

@@ -856,6 +856,9 @@ size   = 33 309 445 B      mtime = 2026-09-14 18:41:59.794      package = com.ex
 | `artifacts/app-debug-721df1c8.apk` | 33,293,061 | 2026-09-14 11:28:34 | **0**（落位前，负例） |
 | **`artifacts/app-debug-30c41ac9.apk`**（= 交付锚点） | 33,309,445 | 2026-09-14 18:41:59 | **3**（B 家族） |
 | `artifacts/app-debug-ef29e00c.apk`（非锚点，审计留档） | 33,309,445 | 2026-09-14 19:04:43 | **3** |
+| `tmp/t38-unsanctioned-rebuild/app-debug-ef29e00c.apk`（非锚点，captain 归集） | 33,309,445 | 2026-09-14 19:04:43 | **3** |
+| `/tmp/pub-full.apk`（宿主） | 33,309,445 | 2026-09-14 18:52:08 | **3**（与锚点**逐字节相同**；t35 公网下载复测留档）⚠️ **据 native-dev 报告，宿主侧现已不在** |
+| `/tmp/dl-internal.apk`（宿主） | 33,260,234 | 2026-09-13 21:46:01 | 0（= `b0cddd86…`）⚠️ **据 native-dev 报告，宿主侧现已不在** |
 
 - **瞬时 A 窗口 `[18:32:24, 18:33:42]`（78 秒）内产出 APK 数 = 0**（全盘 `*.apk` 扫描）⇒ **不存在基于 A 件的 APK**；A 变体现仅存 `tmp/jn-fix/QUARANTINE-A/`（chmod 400 + README）。
 - 证据与旁证：`webrtc-build/t36/t36-addendum-transient-reland.md`（2,387 B / `d02ae1b8fa0a065684992d2e9f273ab0af547261ad8e9d59a8c14af9846b6575`）；`reports/15 §19`（A→B 回滚与"仅触碰不改内容"写入登记）；本报告 §9.14.7（恢复后基线时点）。
@@ -875,5 +878,46 @@ reports/10-t33-captain-assembleDebug-20260914-183903.log     # T0 18:39:03 → T
 reports/10-t33-captain-testDebugUnitTest-20260914-184232.log # BUILD SUCCESSFUL 2m23s ; 24/24 executed ; 46 tests / 0 failures / 0 errors（逐类 8+4+17+11+6）
 ```
 ⇒ "交付锚点 `30c41ac9…` 无 build 日志"这一缺口**已闭合**。注意 `reports/logs/10-t33-nocache-assembleDebug-…190227.log` 中的 `APK sha256=ef29e00c…` 属**被弃的 19:02 重复构建**，两者**不可混引**；无需为补日志而重跑构建（重跑只会产出又一个不同 sha，并迫使锚点重裁定）。
+
+### 9.14.12 captain 授权修订落地（A 项表述更正 + B1–B5；2026-09-14 19:4x）
+
+**A｜表述更正（已写入 `scripts/build_app.sh` P-14 注释 + 本节）**：容器内**并非"没有这些工具"，而是"不在 PATH"**：
+- `webrtc-build/src/third_party/jdk/current/bin/{jar,javap,java,…}`（jar/javap **25.0.4.1**；注意 `javap --version` 不认，须用 `javap -version`）
+- `webrtc-build/src/third_party/cpython3/host/bin/python3`（**Python 3.11.9**）
+- ⚠️ `webrtc-build/pyenv/bin/python3 -> /usr/bin/python3` 为**悬空链接**，**勿依赖**
+- 容器内实证：用该 `python3` + `zipfile` **直读 APK**（不依赖 `unzip`）= **165 条目**；`classes.dex = a1b2ebdc…`（44,668,428 B）；四 `.so` = `757cef81…`/`c9dbf4ec…`/`95c44e5a…`/`41e9a793…` ⇒ 判据①②③④、ELF/zip-dex 枚举**可在容器内执行**（真正缺的只有 `unzip`/`strings`，可分别以 `zipfile`/`grep -a` 替代）。
+
+⇒ 统一口径：**"工具不在 PATH，而非容器不具备能力；脚本须在具备 PATH 注入的环境执行"**（不再写"容器不可用"）。
+
+**B1｜P-14 实现（已落地）**：改为"**逐工具 `--version` 断言 + 明确 PATH 注入口**"：
+`PATH_INJECT="$WS/webrtc-build/src/third_party/jdk/current/bin:$WS/webrtc-build/src/third_party/cpython3/host/bin"`；工具在 PATH 内即用，否则经注入目录可用即 `export PATH`；两者皆无才 FAIL。**删除**"容器不可用"式断言。
+演练（宿主，隔离运行）：6 个工具**均在 PATH 内**（`/usr/bin/python3`、`/usr/bin/unzip`、JDK 17 的 `javap`/`jar`/`java`、`/usr/bin/sha256sum`），且 `python3 --version`→`Python 3.12.3`、`unzip -v`→`UnZip 6.00`、`java -version`→`openjdk 17.0.20`、`sha256sum --version`→`9.4`、`javap -version`→`17.0.20` 逐个有输出。
+
+**B2｜`GEN_JNI` 断言第三条（已落地）**：判据 = `GEN_JNI 方法数 == 194` ∧ `GEN_JNI static native == 0` ∧ **`J.N` 非 native `public static` == 1**（即 `org_webrtc_LibaomAv1Encoder_create(long)` 直抛桩）。注释写明**三条各抓什么**：① 抓 A 回退(193)/落位前(193)；② 抓落位前 stub(194 native)；③ 抓"手工把方法数凑到 194 却不带 AV1 桩"的伪造面。演练：
+
+| 对象 | `GEN_JNI` 方法数 | `GEN_JNI` native | `J.N` 非 native | 结果 |
+|---|---|---|---|---|
+| **B 现行 `0c776934…`** | **194** | **0** | **1** | **PASS** |
+| A 隔离件 `c289b4df…` | 193 | 0 | 0 | **FAIL** |
+| 落位前 `dc5f8919…` | 193 | 194 | 0 | **FAIL** |
+
+**B3｜可复现性判据改钉"载荷 5 件"**：整包 sha **仅作"冻结交付件身份"**（锚点 `30c41ac9…`）；载荷判据为：
+
+| 载荷 | sha256（前 16） | 说明 |
+|---|---|---|
+| `classes.dex` | `a1b2ebdc…` | 44,668,428 B；含 `J.N` |
+| `lib/arm64-v8a/libjingle_peerconnection_so.so` | `757cef81…` | t30 证明对象 |
+| `lib/arm64-v8a/libc++_shared.so` | `c9dbf4ec…` | 与 `jniLibs` 落位件逐字节相同 |
+| `lib/arm64-v8a/libwebrtcdemo_native.so` | `95c44e5a…` | 自有库（strip 后形态） |
+| `lib/arm64-v8a/libandroidx.graphics.path.so` | `41e9a793…` | AndroidX 依赖 |
+
+⚠️ 这 5 件在 `30c41ac9…` 与 `ef29e00c…` 之间**逐字节相同**；**`115aa211…` 是未剥离中间件**（`…/cxx/…/obj/arm64-v8a/`），**钉它必假失败**；`app/src/main/jniLibs/` 只有 2 个 `.so`（另两件由构建中间件产出），故"载荷 5 件"比"只钉 jniLibs"更完整。
+
+**B4｜两条口径**
+- **整包 byte-reproducibility = false**：`ef29e00c…` 与 `30c41ac9…` 属**同输入**（T0/T1 双钉 jar `0c776934…`/aar `8e8f2baf…` 均 OK）却**整包 sha 不同**；正确表述 = **"语义可复现（类集合与逐 dex 分区一致）／整包 sha 不跨构建稳定"**。
+- **`grep -a` 整包恒为 0**（APK 内 dex 为 **deflate 压缩**，必须先解包）；解包后归属 = `LJ/N;`（`classes.dex` 2 + `classes13.dex` 1 ⇒ **3 次 / 2 文件**）、`GEN_JNI;`（`classes13.dex` 2 + `classes14.dex` 1 ⇒ **3 次 / 2 文件**）、`PCF_Jni` **descriptor** `Lorg/webrtc/PeerConnectionFactoryJni;` = **2**（`classes14.dex`）—— 注意**裸串**计数为 **4**（`classes11.dex` 1 + `classes14.dex` 3），**谓词不同、两者都对**。
+- 标准路径 `app/build/outputs/apk/debug/app-debug.apk` 现 **mtime = 19:05:19**（**由冻结交付件还原**，`ctime 19:07:29`）；**`18:41:59` 属 `artifacts/app-debug-30c41ac9.apk`**。
+
+**B5｜另附**：容器 `/tmp`（tmpfs 256M）已由 captain 清理（**98% → 4%**，留档件未动）；**t34 及后续复验的中间件写入 `/data/dsh/home/workspace/tmp/…`，不再写容器 `/tmp`**。
 
 
