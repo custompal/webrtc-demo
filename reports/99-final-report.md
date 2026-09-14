@@ -1214,10 +1214,12 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 - `webrtc-build/src/third_party/jni_zero/common.py:209-212`：`def jni_mangle(name): return name.replace('_','_1').replace('/','_').replace('$','_00024')` ✅ ⇒ **顺序固定为「先 `_`→`_1`，再 `/`→`_`，最后 `$`→`_00024`」**
 - 我按源码顺序自算：`jni_mangle("org/jni_zero/GEN_JNI")` = **`org_jni_1zero_GEN_1JNI`**；`jni_mangle("J/N")` = **`J_N`**（与 `.so` 实际导出吻合）。**反序**会得 `org_1jni_1zero_1GEN_1JNI`（**错**）⇒ 顺序不可颠倒。
 - 假想"经典模式"符号的正确写法 = **`Java_org_jni_1zero_GEN_1JNI_org_1webrtc_1Environment_1create`**；我在 `.so` 上实测该前缀导出 = **0**（`Java_J_N_` = 193、`Java_org_webrtc_` = 0）⇒ **该形态在本 build 不存在**（结论与其一致；写法以其更正版为准）。
+- **"A ≡ B（本 build）"的精确条件（native-dev 细化、我复核）**：以 `handoff/src/J/N.java` 的 193 条 `// Original name:` 为样本 —— **方法名含 `_`/`$` = 0/193**；**类简单名含 `_` = 0**；**类全名含 `_` 的 3 条涉及 2 个类**（`org.jni_zero.CommonApis`、`org.jni_zero.JniZero`），其下划线**来自包名 `jni_zero`** ⇒ **A/B 两侧对包名同样转义，不是分叉条件**。⇒ 正确表述："**本 build 全部 193 条方法名不含 `_`/`$` ⇒ A ≡ B 成立；类（全名）的 `_` 来自包名，不影响等价**"（原"类名含 `_` = 0"把简单名与全名混用，已作废）。
+- **分叉样例（说明 A 才是权威形态；我按源码顺序自算）**：`org/webrtc/Env#create_foo` → A `MSwink6c` / B `M1NEOdMN`；`org/webrtc/Env2#getX$Y` → A `MaWL65s3` / B `M4ZxAtPI`。
 
 #### (c) "两分结论"按落位现状更新（由我给出，非沿用旧口径）
 - **jar/AAR 层（截至 18:33:42 起）**：**类完整性 ✅ 且可绑定性 ✅**（`J/`=1、`J.N` native 193、`GEN_JNI` native 0、`jni_mangle` 双向差集 0/0、两 class = t30 handoff **B** 字节；§13.11）。⚠️ **时间限定（必需）**：`18:17:28` 首落 **B** → **`18:32:24` 被瞬时替换为 A**（jar `c289b4df…`、AAR `f2ea0132…`、未覆盖 = 1）→ **`18:33:42` 回滚为 B**（风险窗口 ≈ 78 s；`.so` 全程未变）⇒ 本结论应表述为"**截至 18:33:42，jar/AAR = B 且可绑定**"，非"A 也是交付"（事故全过程见 §13.21）。
-- **交付 APK 层**：**未重编**（仍 `721df1c8…`，dex 内 `LJ/N;` = 0）⇒ **交付可用性未闭合**（待 t33）。
+- **交付 APK 层（19:3x 更新）**：t33 已重编，**交付锚点 = `30c41ac9…`**（33 309 445 B；dex `LJ/N;` = 3、`GEN_JNI;` = 3、`PCF_Jni` = 2；四 `.so` `p_align=0x4000`；单测 46/0/0 @19:07:05）⇒ **K-15 = 已闭合**（jar/AAR 侧 + APK 侧，详见 §13.24「captain 转录 + verifier 独立复核」）。历史轮次 `721df1c8…`（dex `LJ/N;` = 0）仅作对照。**仍未验证（无设备，不得写成通过）**：真机安装、首次 native 调用、`JNI_OnLoad` 运行期注册、Camera2 采集、首帧渲染、日志导出。
 ⇒ 因此**不能再写"可绑定性 = 未落地"**（那是 18:17:28 之前的状态）；现在的正确两分是 **「jar/AAR：已修且可绑定（B 形态）」/「交付 APK：待重编，未闭合」**。
 
 ### 13.19 AV1 那条桩的**出处**：官方产物 193/193 不含 AV1，交付件的 AV1 桩来自"**扩展输入集 + 官方开关**"（不是官方本目标输入，也不是手写文本）
