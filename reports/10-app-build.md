@@ -866,11 +866,12 @@ size   = 33 309 445 B      mtime = 2026-09-14 18:41:59.794      package = com.ex
 - **瞬时 A 窗口 `[18:32:24, 18:33:42]`（78 秒）内产出 APK 数 = 0**（全盘 `*.apk` 扫描）⇒ **不存在基于 A 件的 APK**；A 变体现仅存 `tmp/jn-fix/QUARANTINE-A/`（chmod 400 + README）。
 - 证据与旁证：`webrtc-build/t36/t36-addendum-transient-reland.md`（2,387 B / `d02ae1b8fa0a065684992d2e9f273ab0af547261ad8e9d59a8c14af9846b6575`）；`reports/15 §19`（A→B 回滚与"仅触碰不改内容"写入登记）；本报告 §9.14.7（恢复后基线时点）。
 
-**(6) 机制更正（captain 追加，采纳 android-dev 的逐 dex 实测）**：交付件 `30c41ac9…` 与等价次生产物 `ef29e00c…` 的差异**不在"dex 分片"层** —— 经自写 DEX 解析（与 `dexdump` 的 7271 条交叉自检）：
-- **类集合完全相同**：各 **26 195** 类，双向差集 **0 / 0**；
-- **逐 dex 类分区完全相同**：**14 / 14** 个 dex 的类集合与类数逐一一致；
-- 真正差异 = **7 个 dex 的内部字节布局**（`classes3/5/6/9/11/12/14`；其中 5 个连文件大小也相同，2 个仅差 ±4/8 字节，`strings/types/methods/classes` 计数全同）；
-- JNI 关键条目**逐字节相同**：`classes.dex`（含 `J.N`）、`classes13.dex`（含 `GEN_JNI`）、四个 `.so`、`AndroidManifest.xml`、`resources.arsc`。
+**(6) 机制更正（captain 追加定稿；采纳 android-dev 的逐 dex 实测，区级标签用 webrtc-builder 更正版）**：`30c41ac9…` vs `ef29e00c…` ——
+- 类集合 **26 195 / 26 195**（双向差集 **0**）、**逐 dex 分区 14/14 完全一致**；
+- 差异 = **每个差异 dex 恰 1 条 D8 `~~~{class→hash}` 元数据串不稳定**（A/B 各 1 条，例如 `classes6.dex` 偏移 69：`AppLog$$ExternalSyntheticLambda0;":"4cdf70569"` vs `"79faa30c4"`）及其连带的 `string_data`(`0x2002`) / `string_ids` / `class_defs` / `map_list` / 注解集合区 / `header`（后几者为**结果**）；
+- **`code_items`(`0x2001`)（编译代码）逐字节相同**（区级 `map_list` + 方法级 `code_off` 两路独立验证），`class_data_items`(`0x2000`) / `debug_info`(`0x2003`) / `method_ids` / `type_ids` / `proto_ids` / `field_ids` 亦相同 ⇒ **运行语义零影响**；
+- **与构建缓存无关**（两次同为 `--no-daemon --no-build-cache clean assembleDebug`）。
+- 区级标签（**webrtc-builder 更正版**，其早期版本整体错位一档）：`code_items(0x2001)`、`class_data_items(0x2000)`、`debug_info(0x2003)`、`string_data(0x2002)`、`encoded_arrays(0x2005)`、`annotations_directories(0x2006)`。
 ⇒ 准确表述：**"语义可复现（类集合与逐 dex 分区一致）／整包 sha 不跨构建稳定"**；`ef29e00c…` 仅作"非逐字节可复现"的证据，**不作为交付候选**（隔离留档 `tmp/t38-unsanctioned-rebuild/` + `artifacts/`）。
 
 **(6b) 根因已定量到"键级"（captain 追加，采纳 android-dev + webrtc-builder 两路独立下钻）**：上述 7 个 dex 的差异**每 dex 恰 1 条字符串**（两件的字符串总数逐 dex 完全相同），该串为 **D8 元数据令牌** `~~~{"L<class>;":"<hex hash>", …}`；token 内**键级**比较显示不稳定项**全部是 `*$$ExternalSyntheticLambda*`**（Kotlin lambda 经 D8 脱糖产生的 synthetic 类），各 dex 不稳定键数 = **26 / 13 / 2 / 10 / 4 / 1 / 91**（`classes3/5/6/9/11/12/14`，合计 **147**，**非 lambda 键 = 0/147**；落在这 7 个 dex 的 **830 个类**上，约占 17.7%）。由此连带 `string_data`(7/7)、`string_ids`/`class_defs`/`map_list`/注解集合区与 `header` 的 checksum/signature（后几者为**结果**）；而 **`code_items`、`class_data_items`、`debug_info`、`method_ids`、`type_ids`、`proto_ids`、`field_ids`、`type_lists` 逐字节相同** ⇒ **运行语义零影响**。⇒ 即：**"不可复现"来自 D8 对 Kotlin lambda synthetic 的内部 hash 令牌不稳定，而非代码或类结构差异**，**且与构建缓存无关**（两次同为 `--no-daemon --no-build-cache clean assembleDebug`；其余 **25 365** 个类所在 dex 两构建逐字节相同，含 `classes.dex` 与 `classes13.dex`）。
