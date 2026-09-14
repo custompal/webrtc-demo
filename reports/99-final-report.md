@@ -789,7 +789,7 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 ⇒ **AV1 的精确符号名就此钉死 = `Java_J_N_M0vTiIkf`**（与 §12.2(5) 一致；早前口述"标不确定"作废）。
 
 
-**(5) AV1 = 设计内抛异常桩**：`jni_zero/codegen/gen_jni_java.py:10-15` `_stub_for_missing_native` → `throw new RuntimeException("Native method not present")`；开关 `jni_registration_generator.py:280/:511`。覆盖率 **193/193**；`GEN_JNI` native 数 **194**，多出的 1 条即 AV1（`Java_J_N_M0vTiIkf`），仅在实际创建 AV1 编码器时抛异常、**不到 JNI**；本项目走 VP9 ⇒ **非缺陷**。
+**(5) AV1 = 设计内抛异常桩**：`jni_zero/codegen/gen_jni_java.py:10-15` `_stub_for_missing_native` → `throw new RuntimeException("Native method not present")`；开关 `jni_registration_generator.py:280/:511`。覆盖率 **193/193**；`GEN_JNI` native 数 **194**，多出的 1 条即 AV1（`Java_J_N_M0vTiIkf`），仅在实际创建 AV1 编码器时抛异常、**不到 JNI**；本项目走 VP9 ⇒ **非缺陷**。（**出处口径见 §13.19**：官方对本目标的产物 = **193/193、不含 AV1**；交付件的 AV1 桩来自**扩展输入集**（`javasources-with-av1.txt` 160→165 行）+ `--add-stubs-for-missing-native`，仍由 jni_zero 官方 `_stub_for_missing_native` 生成。）
 
 **(6) t31 落位（18:17:28）引发的新增/更新勘误候选（我实测，判断权在 captain）**
 
