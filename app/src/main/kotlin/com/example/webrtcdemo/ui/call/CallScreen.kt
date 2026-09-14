@@ -219,24 +219,28 @@ fun CallScreen(
                             "localReleased" to pool.isReleased(localRenderer).toString(),
                         ),
                     )
-                    if (!localOk) {
-                        val old = localRenderer
-                        val fresh = pool.recreateRenderer(context, VideoRendererPool.WHICH_LOCAL)
-                        if (fresh != null) {
-                            renderers = fresh to remoteRenderer
-                            localGeneration++
-                        }
-                        pool.releaseRenderer(old)
-                    }
-                    if (!remoteOk) {
-                        val old = remoteRenderer
-                        val fresh = pool.recreateRenderer(context, VideoRendererPool.WHICH_REMOTE)
-                        if (fresh != null) {
-                            renderers = localRenderer to fresh
-                            remoteGeneration++
-                        }
-                        pool.releaseRenderer(old)
-                    }
+                    // 【t45b 修复】**不再重建渲染器实例**。
+                    // 真机证据（2026-09-14T17:16:13，Mi 10 Pro，默认编码器已出画面）：
+                    //   `preview_recover_attempt attempt=1 localFrame=false remoteFrame=false`
+                    //   → `renderer_recreate/released/surface_destroyed` → 未捕获异常：
+                    //   `java.lang.IllegalStateException: The specified child already has a parent.
+                    //    You must call removeView() on the child's parent first.`
+                    //   （栈：AndroidViewHolder.<init> ← AndroidView，Compose 插入节点时
+                    //    旧实例仍挂在旧 AndroidViewHolder 上）⇒ 出画面后反而被看门狗"修"到闪退。
+                    // 恢复动作改为**幂等重挂 sink + 按需恢复采集**：安全、无新视图、无父容器冲突，
+                    // 且这正是让 surface 重新出画所需的最小动作。
+                    WebRtcEngine.mediaCapture()?.resumeIfNeeded()
+                    pool.attachLocal(localTrack, localRenderer)
+                    pool.attachRemote(remoteTrack, remoteRenderer)
+                    AppLog.i(
+                        TAG,
+                        "preview_recover_reattached",
+                        mapOf(
+                            "attempt" to recoveryPolicy.attempts.toString(),
+                            "localFrame" to localOk.toString(),
+                            "remoteFrame" to remoteOk.toString(),
+                        ),
+                    )
                 }
 
                 RendererRecoveryPolicy.Action.GIVE_UP -> {
@@ -272,7 +276,13 @@ fun CallScreen(
             key(remoteGeneration) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
-                    factory = { remoteRenderer },
+                    // 【t45b 防御】交给 Compose 前先与旧父容器解绑，否则 AndroidViewHolder.<init>
+                    // 的 addView 会抛 "The specified child already has a parent"（真机已实测该崩溃）。
+                    factory = { _ ->
+                        (remoteRenderer.parent as? android.view.ViewGroup)
+                            ?.removeView(remoteRenderer)
+                        remoteRenderer
+                    },
                 )
             }
         }
@@ -288,7 +298,13 @@ fun CallScreen(
             key(localGeneration) {
                 AndroidView(
                     modifier = localViewModifier,
-                    factory = { localRenderer },
+                    factory = { _ ->
+                        // 【t45b 防御】同上：解绑旧父容器，避免 addView 时抛
+                        // "The specified child already has a parent"。
+                        (localRenderer.parent as? android.view.ViewGroup)
+                            ?.removeView(localRenderer)
+                        localRenderer
+                    },
                 )
             }
         }
