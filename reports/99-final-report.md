@@ -986,8 +986,7 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 | 注册表 | `out/Release-arm64/gen` 内 `kMethods` 命中 = **0**；`obj` 内 = **0** | hashing 形态**不产注册源码**，无对象可链 ✅ |
 | `.so` 未漂移 | `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e`；定义动态符号 **194 = `JNI_OnLoad` + 193 个 `Java_J_N_*`**（**无 `JNI_OnUnload`**） | 与 §13.1 一致 |
 
-**未验证（属对方自述）**：`ninja -C out/Release-arm64 sdk/android:libjingle_peerconnection_so__jni_registration` 实跑得到的"**1 个 ACTION、CXX/SOLINK/CC = 0**"——我未复跑该 ninja 目标（`build.ninja` 内该目标为 phony，需 aar 子构建 toolchain 的 action；我确认了 `--use-proxy-hash` **7 条** `generate-final` 命令行与其产物形态，但**未**执行构建）。其**结论**（只产 Java 源）我已由上面的 out 树产物独立佐证。
-
+**未验证（属对方自述）**：`ninja -C out/Release-arm64 sdk/android:libjingle_peerconnection_so__jni_registration` 实跑得到的"**1 个 ACTION、CXX/SOLINK/CC = 0**"——我未复跑该 ninja 目标（`build.ninja` 内该目标为 phony，需 aar 子构建 toolchain 的 action；我确认了 `--use-proxy-hash` **7 条** `generate-final` 命令行与其产物形态，但**未**执行构建）。其**结论**（只产 Java 源）我已由上面的 out 树产物独立佐证。**产物面独立佐证（我复跑；无需在冻结期实跑 ninja）**：① **动作定义在盘**：`webrtc-build/src/out/Release-arm64/toolchain.ninja:3654` 为 `rule __sdk_android_libjingle_peerconnection_so__jni_registration___…_rule`、**:3655** = `command = python3 ../../third_party/jni_zero/jni_zero.py generate-final --srcjar-path gen/sdk/android/libjingle_peerconnection_so__jni_registration.srcjar …`、`:3656` = `description = ACTION //sdk/android:libjingle_peerconnection_so__jni_registration(…)`、`:3659` = 该 srcjar 的 build 语句；② **产物面**：全 `out` 树 `*jni_registration*` 只有 `.srcjar`（`2e352096…` / 62 140 B）、`.d`、`.javasources.txt`、`.nativesources.txt`，**`.cc` = 0、`.o` = 0** ⇒ "**该目标只产 Java 源**"由**产物面**自证；③ **未实跑**的理由：**实跑会写构建树 `out/`**，与维护期冻结冲突（如需"实跑留痕"，解冻后由 captain 指派 env-installer/webrtc-builder 执行）。"**1 ACTION / CXX=0 / SOLINK=0 / CC=0**"仍属其自述，但已被 ①② 佐证。
 **路线 B 四条判据的"假阴性"读法（务必写进 t27/t34 判读）**：以下四项在**修好之后**仍会保持 **0 / 0 / 0 / 193**，这**是预期且正确**，**不得据此判失败**——
 | 我此前的路线 B 判据 | 修好后（路线 A、`.so` 不变） | 读法 |
 |---|---|---|
@@ -1195,7 +1194,7 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 1. **已验证**：落位件在**绑定语义**上完成（判据①②③④全绿，§13.11），且 `*Jni` 成员齐备（48/48，被引用 47、缺失 0）。
 2. **已验证**：**落位件未包含"45 个 `*Jni` 统一到 61"**（它仍是 `{55:51, 61:458}`），而 `FINAL.jar` 才实现了统一（`{55:2, 61:507}`）⇒ **captain 的"全部统一到 61"要求在落位件上未达成**。
 3. **影响评估**：major **55 = Java 11**，AGP 8.5/D8 接受 ≤61 ⇒ **不是交付阻塞**（与早期 major 69 被拒不同）；但它是**与既定交付口径的偏离**，且两个候选的 `*Jni` 字节不同（45 类）⇒ **t33 用哪一份，dex 内容就不同**。
-4. **t33 前需 captain 二选一**：**(甲) 就用落位件**（版本分布按 `{55:51, 61:458}` 记，`J/N`/`GEN_JNI` 为 handoff B 字节）；**(乙) 重新落位 `FINAL.jar`**（达成 `{55:2, 61:507}`，但 `J/N`/`GEN_JNI` 换成其自身字节，须**重新复跑**判据①②③④ + §13.15 回归护栏）。
+4. ~~t33 前需 captain 二选一~~ **已由 captain 裁定 (甲)：保持现落位件 `0c776934…`、不做"统一到 61"（详见 §13.22(d)5 与 §13.24）**——以下措辞保留为当时的过程史：**(甲) 就用落位件**（版本分布按 `{55:51, 61:458}` 记，`J/N`/`GEN_JNI` 为 handoff B 字节）；**(乙) 重新落位 `FINAL.jar`**（达成 `{55:2, 61:507}`，但 `J/N`/`GEN_JNI` 换成其自身字节，须**重新复跑**判据①②③④ + §13.15 回归护栏）。
 
 #### 追加：`comm` 的 locale 陷阱（webrtc-builder 首报）
 其首跑 `comm -3` 得 214 行"伪差异"，加 `LC_ALL=C sort` 后为 0。**我本容器未能复现**：环境默认即 C/POSIX（`LANG` 空、`LC_CTYPE=POSIX`，实测默认与 `LC_ALL=C` 均为 0 行）⇒ 该陷阱依赖 UTF-8 collation 环境。**处置**：凡集合差集命令一律写 **`LC_ALL=C sort` + `LC_ALL=C comm`**（我自己的判定式用 node `Set`，不受 locale 影响）。
@@ -1280,7 +1279,7 @@ stat -c %s J/N.class org/jni_zero/GEN_JNI.class                          # 6 924
    ⚠️ **改名 ≠ 从未落位（必读）**：该 A 件在 **18:32:24 曾被实际拷入交付路径**（jar `c289b4df…`、AAR `f2ea0132…`），**18:33:42 被 captain 回滚为 B**，**之后**才被改名为 `DO-NOT-LAND` 并隔离于 `tmp/jn-fix/QUARANTINE-A/`。证据：`webrtc-build/t36/t36-addendum-transient-reland.md` = `d02ae1b8…` + `webrtc-build/t36/logs/t36-addendum-1832.log` = `1b656cc3…`（我核对存在）。**不要把"现名 DO-NOT-LAND"读成"从未落过"**，全过程见 §13.21。
 2. **已验证**：**落位件与 `FINAL2.jar` 使用同一套绑定类字节**（`1ff8d3ff…`/`a6e7edcf…`），**但落位件没有 `FINAL2` 的版本统一**：`FINAL2` = `{55:2, 61:507}`，落位件 = `{55:51, 61:458}`（45 个 `*Jni` 仍是 55 版）。差值（1 206 602 − 1 181 534 = **25 068 B**）与"45 个 `*Jni` 重编到 61 + 2 个例外"的量级吻合。
    ⇒ 准确表述：**落位 = `FINAL2` 的绑定类 + 旧的 55 版 `*Jni`**，而非 `FINAL2` 本身。
-3. **待裁定**：若交付口径要求"全部统一到 61"，则仅 `FINAL2.jar`（或 `FINAL.jar`）满足；如选 `FINAL2` 重新落位，`J/N`/`GEN_JNI` 字节**不变**（同为 `1ff8d3ff…`/`a6e7edcf…`）⇒ 仅需复跑"jar 侧版本分布 + APK 重编"，绑定判据①②③④不会变化（仍应重跑以留痕）。
+3. ~~待裁定~~ **已由 captain 裁定 (甲)**：若交付口径要求"全部统一到 61"，则仅 `FINAL2.jar`（或 `FINAL.jar`）满足；如选 `FINAL2` 重新落位，`J/N`/`GEN_JNI` 字节**不变**（同为 `1ff8d3ff…`/`a6e7edcf…`）⇒ 仅需复跑"jar 侧版本分布 + APK 重编"，绑定判据①②③④不会变化（仍应重跑以留痕）。
 
 #### 护栏清单（t33/t34，按 native-dev 与 webrtc-builder 的建议合并，已实测）
 1. 新 APK 内 `lib/arm64-v8a/libjingle_peerconnection_so.so` **必须仍 = `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e`**（t30 符号证明的对象；漂移 ⇒ 判据④必须重跑）。
