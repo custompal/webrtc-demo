@@ -920,4 +920,27 @@ reports/10-t33-captain-testDebugUnitTest-20260914-184232.log # BUILD SUCCESSFUL 
 
 **B5｜另附**：容器 `/tmp`（tmpfs 256M）已由 captain 清理（**98% → 4%**，留档件未动）；**t34 及后续复验的中间件写入 `/data/dsh/home/workspace/tmp/…`，不再写容器 `/tmp`**。
 
+### 9.14.13 全盘 APK 位点表（**命名空间 = 宿主**；`[宿主读盘 2026-09-14 19:47:45 / 19:48:10]`）
+
+> **口径（captain B 项第 2 点，已批准）**：凡引用 `/tmp/...` **一律注明命名空间（宿主 or 容器）+ 采样时间戳**。今日已实证两起"同名不同命名空间"的复现扑空：`dl-internal.apk`/`pub-full.apk` 在**容器**侧消失，而**宿主**侧 `resume.apk`/`merged.apk` 仍是 `b0cddd86…` 可复算。
+
+| # | 位点（宿主命名空间） | 大小 | mtime | 属主 | sha256 / 身份 |
+|---|---|---|---|---|---|
+| 1 | `webrtc-build/src/build/android/CheckInstallApk-debug.apk` | 37,106 | 2026-09-13 15:37:52 | root:root | `1dc3593b…`（工具自带样例） |
+| 2 | `/tmp/ap/app-release.apk` | 0 | 2026-09-13 15:54:19 | root:root | —（空文件） |
+| 3 | `/tmp/ap/app-release-unsigned.apk` | 0 | 2026-09-13 15:54:19 | root:root | —（空文件） |
+| 4 | `/tmp/resume.apk` | 33,260,234 | 2026-09-13 21:53:18 | root:root | `b0cddd86…`（t24 代；**仍可在宿主复算**） |
+| 5 | `/tmp/merged.apk` | 33,260,234 | 2026-09-13 21:53:18 | root:root | `b0cddd86…`（同上） |
+| 6 | `artifacts/app-debug-721df1c8.apk` | 33,293,061 | 2026-09-14 11:28:34 | admin:admin | `721df1c8…`（t26 前代；dex `jn=0` 负例） |
+| 7 | **`artifacts/app-debug-30c41ac9.apk`** | 33,309,445 | 2026-09-14 18:41:59 | admin:admin | **`30c41ac9…`（交付锚点）** |
+| 8 | `/opt/apk-http/served/app-debug.apk`（t37 冻结副本） | 33,309,445 | 2026-09-14 18:41:59 | root:root | **`30c41ac9…`** |
+| 9 | `artifacts/app-debug-ef29e00c.apk` | 33,309,445 | 2026-09-14 19:04:43 | root:root | `ef29e00c…`（**非交付**，等价次生产物） |
+| 10 | `tmp/t38-unsanctioned-rebuild/app-debug-ef29e00c.apk` | 33,309,445 | 2026-09-14 19:04:43 | root:root | `ef29e00c…`（captain 归集留档） |
+| 11 | `code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk`（标准路径） | 33,309,445 | **2026-09-14 19:05:19**（还原；ctime 19:07:29） | admin:admin | **`30c41ac9…`** |
+| 12 | `/tmp/reassembled.apk`（宿主，19:41:30 新增） | 33,309,445 | 2026-09-14 19:41:30 | root:root | **`30c41ac9…`** ⇒ 重装/重组得到**与锚点逐字节相同**的件 |
+
+**对照·容器命名空间**（同一时刻采样）：`/tmp` = tmpfs 256M / 已用 **9.4M / 4%**、**容器内 `*.apk` = 0**（大件解包残留已被 captain 清理；`dl-internal.apk`/`pub-full.apk` 已不在）。
+
+⇒ 结论：**锚点 `30c41ac9…` 在宿主命名空间共有 4 个同哈希实体**（#7 仓外留档、#8 服务冻结副本、#11 标准路径、#12 重组件）；`b0cddd86…` 在宿主 `/tmp` 仍可复算（#4/#5）；**容器命名空间内无任何 APK 实体**。
+
 
