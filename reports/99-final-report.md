@@ -1164,7 +1164,7 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 > **读侧核验（我实测）**：`webrtc-build/src/out/gen` 内 `-user root` = **0**、`! -readable` = **0**（仅 505 个 `node:node` 的 600 权限文件）；`out`（14 062 文件）与 `app/build`（860 文件）亦 `! -readable` = 0 ⇒ **读侧当前无阻碍**；如宿主视角确有 root 0600 文件，再按需 `chown -R node:node webrtc-build/src/out`。
 
 
-### 13.16 生成件可复现性：**A 侧我已独立复算**；第三方构建树内的同名 srcjar **对 node 不可读，暂无法验证**
+### 13.16 生成件可复现性：**A 侧我已独立复算**；第三方构建树内的同名 srcjar —— **原"对 node 不可读、暂无法验证"已解除（18:35 起 owner=node、可读；我复核 = `2e352096…` 且与 `out/A` 及两份源逐字节相同）**
 
 #### (a) 我独立复算（**已复现**）：同一 JDK 重编 A 的两份源 ⇒ class 逐字节相同
 对 `webrtc-build/t30/out/A/libjingle_peerconnection_so__jni_registration.srcjar`（`2e352096714d63de52cfc37fa98602313b9f310ab726879134fc25495fc22113`，62 140 B）解包并用构建树同一 JDK（`webrtc-build/src/third_party/jdk/current/bin/javac --release 17`）重编：
@@ -1177,7 +1177,8 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 #### (b) 未验证（**我无法验证**，请勿写成"三方复现成立"）
 native-dev 称 webrtc-builder 在**构建树**内独立跑出同名 srcjar：`webrtc-build/src/out/Release-arm64/gen/sdk/android/libjingle_peerconnection_so__jni_registration.srcjar`，sha256 同为 `2e352096…`。
 **我的实测**：该文件确实存在（**62 140 B**，mtime **11:34:56**），但权限为 **`-rw------- root root`（0600）** ⇒ **uid 1000 读取 `Permission denied`**（`head`/`jar xf`/`sha256sum` 均失败）。
-⇒ **（18:35 更新：该文件 owner 已为 node、可读，我复核 = `2e352096…` 且与 `out/A` srcjar 及两份源逐字节相同 ⇒ 本项已由"未验证"升级为"已验证"，见 §13.21 追加第 4 条。原"未能核对"的记述保留如下以备查。）** 我无法在其不可读期间核对 sha256、也无法比较内容；"大小相同"当时只是**弱证据**；如需我核，请 `chmod 644`（或 `chown node:node`）该文件，我一条命令即可复核（`sha256sum` + 解包比对两份 `.java`）。
+⇒ **（18:35 更新：该文件 owner 已为 node、可读，我复核 = `2e352096…` 且与 `out/A` srcjar 及两份源逐字节相同 ⇒ 本项已由"未验证"升级为"已验证"，见 §13.21 追加第 4 条。原"未能核对"的记述保留如下以备查。）**
+- **读侧终核（我 `[读盘 21:02:53–21:03:03]` 全树实测，采纳 native-dev 的谓词更正）**：**唯一真判据是 `! -readable`，不是 `-perm 600`、也不是 `-user root`**。实测：`gen` 路径下不可读文件 = **0**；`src` 全树（65 692 个目录）不可读**目录 = 8**（`third_party/instrumented_libs/binaries/msan-{chained,no}-origins-noble-lib/{ld,lib,sources}` ×6 + `build/linux/debian_bullseye_{amd64,i386}-sysroot/debian` ×2，均 `root:root 750`）、不可读**文件 = 15**（`third_party/test_fonts/**` 13 个字体 + `third_party/android_sdk/public/.cipd/pkgs/{0,1}/.lock` 2 个）——**全部不在任何构建/交付路径上**。⇒ 结论："**`gen`/`out`/`app/build` 的读侧影响 = 0**；`src` 全树另有 8 目录 / 15 文件对非 root 不可读，属无关资产"。**另采纳其建议：不对构建树做 `chmod`**（该件非交付产物，冻结窗口内写入需同流程协调，收益 0、风险非 0）。 我无法在其不可读期间核对 sha256、也无法比较内容；"大小相同"当时只是**弱证据**；如需我核，请 `chmod 644`（或 `chown node:node`）该文件，我一条命令即可复核（`sha256sum` + 解包比对两份 `.java`）。
 > **读侧口径澄清（19:0x 复核）**：native-dev 报"构建树 `gen/**` 中 `0600 root` 文件 = 506/2793"，并要求 `chmod 644`。我实测（容器内同一路径）：`gen` 下总文件 **2 793**、**`-perm 600` = 505**，但 **`-user root` = 0**、**`! -readable` = 0**、**`! -perm -u+rw` = 0** ⇒ 那些 600 权限文件是 **`node:node` 所有**（我可读），**root 属主文件为 0、不可读文件为 0**；`webrtc-build/src/out`（14 062 文件）与 `app/build`（860 文件）同样 `! -readable = 0`。而**本节讨论的那份 srcjar 现为 `-rw-r--r-- node node`（644、mtime 11:34:56 未变、sha `2e352096…`）**，且与 `t30/out/A` 同名件 `cmp` 逐字节相同 ⇒ **我 18:35 的"已验证"结论成立、无需 chmod 才能复核**。⇒ K-17 的**读侧**在本容器**当前为 0 影响**（**19:13:35 复测仍为**：总 2 793、`-user root` = 0、`-perm 600 -user root` = 0、`! -readable` = 0；`-perm 600` = 505 但**均为 `node:node`**；该 srcjar 现为 `644 node` 可读）；把"0600"当成"root 所有/不可读"会造成误判（建议 `chmod` 请求可撤回，或仅在宿主视角确有 root 0600 时再执行）。
 
 > ⚠️ 这同时是 **K-17 的"读侧"影响**：root 身份产出的构建中间件对 node 成员**不可读** ⇒ "终报可直接引用该路径"**对 node 身份不成立**（引用前须确认可读性）。
