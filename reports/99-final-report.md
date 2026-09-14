@@ -1559,7 +1559,10 @@ APK            = app/build/outputs/apk/debug/app-debug.apk
 jar            = 0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757  1 206 602 B  509 条目  ^J/ = 1
 AAR            = 8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099  6 492 067 B（内 classes.jar == jar，逐字节）
 三值语义身份   = jar 0c776934… + J/N.class 1ff8d3ff…(6 924 B) + GEN_JNI.class a6e7edcf…(24 910 B)   ✅ 全部复算一致
+同目录旁证     = app/build/outputs/apk/debug/output-metadata.json  mtime **19:04:43.947**（404 B；目录 mtime 同为 19:04:43.947）
+                 ⚠️ 该 sidecar **属 19:02–19:04 那次构建（`ef29e00c…`）**，而路径上的 APK 是 19:05:19 从 18:41:59 冻结件拷回的 ⇒ **sidecar 与 APK 不同源**（见 F-5）
 ```
+- **F-5（low，证据链）**：native-dev 报"同目录 `output-metadata.json` 亦 18:41:59"**现盘不成立** —— 实测其 mtime = **19:04:43.947**（对应 `ef29e00c…` 那次 19:02–19:04 构建）。正确口径：**不要用 sidecar 的时间戳给 APK 定年**；本文档反而**佐证了双构建**（§13.23 的双哈希），并与"锚点 APK 19:05:19 由冻结件拷回"互证。
 
 #### (2) 判据逐条结果（captain §3.1–§3.5）
 **§3.1 三值 + §13.3 四条 —— ✅ 通过（用权威脚本实跑，非等价自写）**
@@ -1639,6 +1642,7 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - **F-2（low，环境）**：`check_jn_binding.py` 默认 `--javap` 为宿主路径 ⇒ 容器/其它环境须显式传参（建议把默认值改为基于 `PATH`/环境变量解析，由持写权者实施）。*requiredFix：脚本默认值可移植化。*
 - **F-3（low，环境限制）**：`§3.4` 单测**未在容器内重跑**（无 JDK 17 / AGP 拒绝 JDK 25 / `local.properties` 指宿主 SDK）；以产物 XML（46/0/0，6 用例逐名）+ 两条宿主原始日志为证。*requiredFix：如需"容器内现场重跑"，须提供 JDK 17 或授权宿主执行（不改变已成立的证据层结论）。*
 - **F-4（low，记载）**：native-dev 消息称 `Lorg/jni_zero/GEN_JNI;` = "`classes.dex`=2、`classes14`=1" —— **dex 归属写错**：实测（三法：`grep -a -o` 逐 dex / 去分号串 / `dexdump` 类型表）为 **`classes13.dex`=2、`classes14.dex`=1、`classes.dex`=0**（`dexdump classes.dex` 命中 `Lorg/jni_zero/GEN_JNI;` = **0** ⇒ `classes.dex` **根本不引用** `GEN_JNI`）。其**自己的 t34 附录 §2 写的是"classes13 2 / classes14 1"（正确）**⇒ 本条消息属转写漂移；`LJ/N;`（2/1/0，三处独立测量一致）与 `PCFJni;`（classes14=2）、`LibaomAv1EncoderJni;`（classes14=2）均与我一致。**判据/verdict 不受影响**（`GEN_JNI` 出现于 APK 内且合计 3 成立）。
+- **F-5（low，证据链）**：`output-metadata.json` 的 mtime（**19:04:43.947**）与路径上 APK（19:05:19 拷回、内容 = 18:41:59 构建）**不同源** ⇒ 不得用 sidecar 给 APK 定年（详见 §13.26(1)）。
 - **不写成通过（仍未验证）**：真机安装/首次 native 调用/`JNI_OnLoad` 运行期注册/Camera2 采集/首帧渲染/日志导出；宿主 `/opt/apk-http/served/app-debug.apk`（容器不可见，仅他人报告同哈希）。
 - **附带事实（不改变 verdict）**：APK **整包 byte-reproducibility = false** —— 同一 jar、同一 `--no-build-cache clean` 命令的两次构建分别产出锚点 `30c41ac9…`（18:39–18:42 日志 `6f02e949…`）与 `ef29e00c…`（19:02–19:04 日志 `reports/10-t33-nocache-assembleDebug-20260914-190227.log`）；两者**六载荷逐件相同、类集合 26 195/26 195 相同**（§13.25(b)），故稳定判据落在载荷而非整包 sha。
 
