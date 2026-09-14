@@ -1049,6 +1049,7 @@ $NDK/llvm-objdump -d --start-address=0x29f718 --stop-address=0x29f87c <so> | awk
 #### (d) 工具可用性修正（本容器）
 - **无 `strings`**：`strings -a <so> | grep -c …` 会"静默返回 0"（管道收到空输入）——**不可用作"字符串不存在"的证据**！请用 **`grep -a -c '<pat>' <so>`**（或 node 扫二进制）。我以此复测：`org/jni_zero/GEN_JNI` = 0、`org_webrtc_` = 0、`org_jni_1zero_` = 0 ✅（§13.1 的结论不变，但取证命令须换）。
 - **无 `unzip`**（§13.7(d) 已记）：改用 `jar tf` / `jar xf`。
+- ⚠️ **"静默空输入"陷阱（webrtc-builder 首报、我复核同意）**：容器内**既无 `unzip` 也无 `python3`**，用它们查 zip/class 会**静默得到 0**；而**空输入的 sha256 恒为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`** ⇒ 若某次校验输出该值，几乎一定是"没读到数据"而非"文件为空"。**容器内可复跑**的正解 = `jar`/`javap` + 常量池扫描（本报告全部判据如此）。
 - **`javap -classpath <jar> J.N` 可用（原"单字母包名会失败"的 caveat 已被 native-dev 本人撤回）**：我实测 `javap -p -classpath <jar> J.N`（native=193）与 `… J/N`、`… org.jni_zero.GEN_JNI`（native=0）**均正常**；"先抽条目再 `javap -p <dir>/J/N.class`"**同样可用、非必需**，仅作更稳的规范做法（t34 采用后者以留原样文本）。该 caveat **从未进入任何文件**（我复核其 `logs/{t34-gate,README-logs,commands-portable}.md` 中 `classpath` 命中 = **0/0/0**）⇒ 复现命令段**不含**"必须抽条目"的约束。
 - **读方法名前缀别用 `grep -c 'org_'`**（会把**签名里的 `org.`** 也计入）：正确做法是先筛 `^  public static` 行再按前缀分组。我实测落位件 = **`org_webrtc_` 191 + `org_jni_1zero_` 3 = 194**（`grep -c 'org_'` 同为 194 属巧合），A 变体 = **190 + 3 = 193**；`org_webrtc_audio_` = 5（含于 191）。
 
@@ -1254,6 +1255,7 @@ javap -p -c org/jni_zero/GEN_JNI.class | awk "/LibaomAv1Encoder_create/,/^$/"  #
 stat -c %s J/N.class org/jni_zero/GEN_JNI.class                          # 6 924/24 910(B) vs 6 898/24 828(FINAL)
 ```
 ⚠️ **不要用 `javap -p J/N.class | grep -i av1`**：对 `FINAL.jar` 的哈希名 `M0vTiIkf` **0 命中**，且 `-i` 会误命中 `Dav1dDecoder`（大小写不敏感）。
+- **建议再加一条"语义级"判据（webrtc-builder 提议、我已复跑）**：`javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -c 'LibaomAv1Encoder_create'` → **A(隔离件) = 0 / B(交付件) = 1（`athrow` 桩）**；与 `grep -cE ' static '`（A 193 / B 194）并用。理由：只数 `static` 行在他人改动 `javap` 输出格式或构造器写法时有被带偏的风险，**按方法名 grep 是语义级判据**。
 
 
 **结论（三段式）**：
@@ -1379,6 +1381,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 - **断言精确化（防假 FAIL，webrtc-builder 实测 + 我已复核）**：`GEN_JNI` = **方法 194 / `static` 194 / `native` 0 / 转发目标（`invokestatic J/N.`）193（全为 native）/ `athrow` 桩 1（不计入转发目标）**；`J.N` = **方法 194 / native 193 / 非 native 桩 1**。⇒ **不要**写 `forward_stub == 1`（会 FAIL）；应写 `gen_jni_methods == 194 ∧ gen_jni_native == 0 ∧ jn_native == 193`，或按 captain 口径"**194/194 且 `static native` = 0**"。我 `javap -c` 实测：`invokestatic J/N.` = **193**、`athrow` = **1**；AV1 桩字节码 = `new RuntimeException` → `ldc "Native method not present"` → `invokespecial` → `athrow`。
 - 两条均含**正负例验证**，且会原样出现在 t33 的构建日志里 ⇒ **t34 把它们作为输入证据引用，并在 APK 实体上独立复跑一次**。
 - 实现细节提醒：**P-11 的脚本体用 `unzip -q -o`（`scripts/build_app.sh:402`）⇒ 其执行环境须有 `unzip`（宿主有、容器无）**；我在容器侧的等价复算一律用 **`jar xf`**（结果等价，t34 两口径都给）。
+- **`check_jn_binding.py` 的版本与豁免边界（对齐 webrtc-builder）**：**权威 = 工作树版 `aa2e96922f5313f7f3a740942d7460e42391ea7b41ebee090b3d7f60e199683f`**（mode 600 / mtime 18:08:57；`git diff --stat` = 9+/3−；最后入库提交 `1621d72` 为旧版）——它是 captain 授权的 out-of-scope 例外，**不计入任何 `changedPaths`**；`KNOWN_EXEMPT = {org_webrtc_LibaomAv1Encoder_create}` 使 **A/B 都会 PASS**，故它**只证 ①②④、不能证"AV1 路径安全"**；**在交付件（B）上豁免数为 0**（E3 = 调用点 194 / 覆盖 194 / 未覆盖 0 / 已知豁免 0 / 真缺失 0）⇒ `RESULT` 文案应写明"**闸门绿 ≠ AV1 路径安全；B 下豁免未触发**"（我处无写权改其文件，留待持写权者）。
 - ⚠️ **t33 构建过程会重写 `app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so`**（我实测 mtime 19:02:06）⇒ t34 必须在**构建结束后**核该 `.so` 仍为 `757cef81…`（P-12 覆盖同一断言；构建期间的 mtime 变化**不是**漂移证据）。
 
 #### (e) 跨报告口径标注（captain 2026-09-14 指令，逐条落实；**不修改被标注的报告文件**）
