@@ -71,7 +71,7 @@ struct I420Frame {
   int stride_y = 0;
   int stride_u = 0;
   int stride_v = 0;
-  int rotation_degrees = 0;  // 0/90/180/270（非法按 0 处理）
+  int rotation_degrees = 0;  // 0/90/180/270（非法按 0 处理）；t46：编码器按此角度**旋转像素+交换尺寸**
   int64_t capture_time_ns = 0;
 };
 
@@ -163,6 +163,14 @@ class Vp9Encoder {
   // 最近一帧编码结果（内部拷贝，见契约 §5.5：vpx 缓冲会被复用）。
   std::vector<uint8_t> encoded_;
   EncodedFrameMeta meta_;
+
+  // 【t46】旋转暂存缓冲：rotation=90/180/270 时把输入 I420 旋转到这里再送 vpx。
+  //
+  // 为什么需要：VP9 码流**不携带 CVO/rotation 元数据**，而 doc/14:518/:635 要求编码侧
+  // 处理 rotation（:518 明确"rotation 90/270 时交换"）⇒ 必须把角度**烘进像素**，
+  // 否则远端解出的是未旋转画面（仅交换尺寸会得到错乱图像）。
+  // 缓冲按"旋转后尺寸"单调增长并复用（避免逐帧分配），`Release()` 时释放。
+  std::vector<uint8_t> rotate_buf_;
 
   int64_t frame_count_ = 0;
   int64_t slow_frame_count_ = 0;

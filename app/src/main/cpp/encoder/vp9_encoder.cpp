@@ -23,9 +23,11 @@
 #include <time.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <vector>
 
+#include "encoder/i420_rotator.h"
 #include "jni/callback_bridge.h"
 #include "log/log_macros.h"
 
@@ -44,6 +46,8 @@ constexpr int kRcBufferMs = 600;
 constexpr int kRcBufferInitialMs = 400;
 constexpr int kRcBufferOptimalMs = 500;
 constexpr int kMaxDimension = 4096;  // 契约 §6.7 尺寸上限
+// 【t46】旋转暂存缓冲上限（防御性）：4096x4096 的 I420 = 25 MB；超过即视为尺寸异常。
+constexpr size_t kMaxRotateBufferBytes = 64u * 1024u * 1024u;
 constexpr int32_t kDefaultStartBps = 300 * 1000;
 constexpr int64_t kSlowFrameThresholdUs =
     33 * 1000;  // >33 ms 记 WARN（契约 §5.4）
@@ -390,6 +394,9 @@ int32_t Vp9Encoder::Release() {
   std::lock_guard<std::mutex> lock(mutex_);
   DestroyCodecLocked();
   encoded_.clear();
+  // 【t46】释放旋转暂存（挂断/重建编码器时归还内存；下次 Encode 按需重新分配）
+  std::vector<uint8_t>().swap(rotate_buf_);
+  rotation_warned_ = false;
   return kVp9Ok;  // 幂等
 }
 
@@ -416,21 +423,32 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
   if (frame_width <= 0 || frame_height <= 0) {
     return kVp9ErrParameter;
   }
-  if (frame.rotation_degrees != 0 && frame.rotation_degrees != 90 &&
-      frame.rotation_degrees != 180 && frame.rotation_degrees != 270) {
-    if (!rotation_warned_) {
-      rotation_warned_ = true;
-      NLOG_WARN(kTagEncoder, "encode_bad_rotation rot=%d treat_as=0",
-                frame.rotation_degrees);
-    }
+  // 【t46】旋转语义（doc/14:518「rotation 90/270 时交换」+ :635「0|90|180|270；非法按 0」）：
+  //   VP9 码流**不携带 CVO/rotation 元数据**，因此编码器必须把角度**烘进像素**：
+  //     R=0   ：原样直通（零拷贝，保持既有行为）
+  //     R=90  ：顺时针 90°（旋转 + 宽高交换）
+  //     R=180 ：顺时针 180°（只旋转，尺寸不变）
+  //     R=270 ：顺时针 270°（旋转 + 宽高交换）
+  //   只交换 g_w/g_h 而不旋转像素会得到**错乱图像**，故两者必须一起做。
+  //   非法值（非 0/90/180/270）按 0 处理并只 WARN 一次（既有行为保持）。
+  const int rotation = NormalizeRotationDegrees(frame.rotation_degrees);
+  if (frame.rotation_degrees != rotation && !rotation_warned_) {
+    rotation_warned_ = true;
+    NLOG_WARN(kTagEncoder, "encode_bad_rotation rot=%d treat_as=0",
+              frame.rotation_degrees);
   }
+  // 旋转后的编码尺寸（90/270 交换；0/180 不变）
+  const int target_width = RotatedWidth(frame_width, frame_height, rotation);
+  const int target_height = RotatedHeight(frame_width, frame_height, rotation);
 
   // 分辨率变化（SDK 的 VideoAdapter 会按带宽下调分辨率）：允许在单通+低延迟
   // 模式下用 vpx_codec_enc_config_set 直接改 g_w/g_h
   // （vp9_cx_iface.c:878 明确允许 g_lag_in_frames<=1 && pass==ONE_PASS）。
-  if (frame_width != width_ || frame_height != height_) {
-    width_ = frame_width;
-    height_ = frame_height;
+  // 【t46】此处用**旋转后**尺寸 ⇒ doc/14:518 的"90/270 时交换"经同一路径生效
+  // （Init 时 g_w/g_h 仍是请求尺寸；带 rotation 的首帧按需 config_set 交换一次）。
+  if (target_width != width_ || target_height != height_) {
+    width_ = target_width;
+    height_ = target_height;
     cfg_.g_w = static_cast<unsigned int>(width_);
     cfg_.g_h = static_cast<unsigned int>(height_);
     if (vpx_codec_enc_config_set(&codec_, &cfg_) != VPX_CODEC_OK) {
@@ -441,7 +459,62 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
     NLOG_INFO(kTagEncoder, "encoder_resize w=%d h=%d", width_, height_);
   }
 
-  // ---- 组装 vpx_image_t：只“借用”平面指针，不做额外拷贝 --------------------
+  // ---- 组装 vpx_image_t --------------------------------------------------
+  // rotation==0：**零拷贝**借用调用方平面（既有语义；direct ByteBuffer 前提不变）；
+  // rotation!=0：旋转到内部 rotate_buf_（三平面紧密排列，stride = 旋转后宽度）。
+  const uint8_t* plane_y = frame.y;
+  const uint8_t* plane_u = frame.u;
+  const uint8_t* plane_v = frame.v;
+  int plane_stride_y = frame.stride_y;
+  int plane_stride_u = frame.stride_u;
+  int plane_stride_v = frame.stride_v;
+  if (rotation != 0) {
+    const size_t needed = RotatedTotalSize(frame_width, frame_height, rotation);
+    if (needed == 0 || needed > kMaxRotateBufferBytes) {
+      NLOG_ERROR(kTagEncoder, "encode_rotate_buf_invalid need=%zu rot=%d", needed,
+                 rotation);
+      return kVp9ErrSize;
+    }
+    if (rotate_buf_.size() < needed) {
+      // 复用优先：仅在尺寸增长时分配（本工程 -fno-exceptions，分配失败即 abort，
+      // 与既有 encoded_.assign 的策略一致）。
+      rotate_buf_.assign(needed, 0);
+    }
+    const int rot_w = RotatedWidth(frame_width, frame_height, rotation);
+    const int rot_h = RotatedHeight(frame_width, frame_height, rotation);
+    const size_t y_size = static_cast<size_t>(rot_w) * static_cast<size_t>(rot_h);
+    const size_t uv_size = static_cast<size_t>(rot_w / 2) * static_cast<size_t>(rot_h / 2);
+
+    I420View src_view{};
+    src_view.y.data = frame.y;
+    src_view.y.stride = frame.stride_y;
+    src_view.u.data = frame.u;
+    src_view.u.stride = frame.stride_u;
+    src_view.v.data = frame.v;
+    src_view.v.stride = frame.stride_v;
+    src_view.width = frame_width;
+    src_view.height = frame_height;
+
+    I420MutView dst_view{};
+    dst_view.y.data = rotate_buf_.data();
+    dst_view.y.stride = rot_w;
+    dst_view.u.data = rotate_buf_.data() + y_size;
+    dst_view.u.stride = rot_w / 2;
+    dst_view.v.data = dst_view.u.data + uv_size;
+    dst_view.v.stride = rot_w / 2;
+
+    RotateI420(src_view, rotation, dst_view);
+
+    plane_y = dst_view.y.data;
+    plane_u = dst_view.u.data;
+    plane_v = dst_view.v.data;
+    plane_stride_y = dst_view.y.stride;
+    plane_stride_u = dst_view.u.stride;
+    plane_stride_v = dst_view.v.stride;
+    NLOG_INFO(kTagEncoder, "encoder_rotate rot=%d in=%dx%d out=%dx%d", rotation,
+              frame_width, frame_height, rot_w, rot_h);
+  }
+
   vpx_image_t image;
   memset(&image, 0, sizeof(image));
   if (vpx_img_wrap(&image, VPX_IMG_FMT_I420, static_cast<unsigned int>(width_),
@@ -449,12 +522,12 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
     NLOG_ERROR(kTagEncoder, "encode_img_wrap_failed");
     return kVp9Error;
   }
-  image.planes[VPX_PLANE_Y] = const_cast<uint8_t*>(frame.y);
-  image.planes[VPX_PLANE_U] = const_cast<uint8_t*>(frame.u);
-  image.planes[VPX_PLANE_V] = const_cast<uint8_t*>(frame.v);
-  image.stride[VPX_PLANE_Y] = frame.stride_y;
-  image.stride[VPX_PLANE_U] = frame.stride_u;
-  image.stride[VPX_PLANE_V] = frame.stride_v;
+  image.planes[VPX_PLANE_Y] = const_cast<uint8_t*>(plane_y);
+  image.planes[VPX_PLANE_U] = const_cast<uint8_t*>(plane_u);
+  image.planes[VPX_PLANE_V] = const_cast<uint8_t*>(plane_v);
+  image.stride[VPX_PLANE_Y] = plane_stride_y;
+  image.stride[VPX_PLANE_U] = plane_stride_u;
+  image.stride[VPX_PLANE_V] = plane_stride_v;
 
   // pts 单调递增（libvpx 用 pts 差值推断帧率；重复时间戳会告警）。
   int64_t pts_us = (frame.capture_time_ns > 0) ? frame.capture_time_ns / 1000

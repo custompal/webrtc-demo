@@ -358,6 +358,9 @@ class Vp9VideoEncoder : VideoEncoder {
                 if (meta[2] == 1) EncodedImage.FrameType.VideoFrameKey
                 else EncodedImage.FrameType.VideoFrameDelta
             )
+            // 【t46】编码帧的**旋转已烘进像素**（native 按 rotationDegrees 旋转 I420 并交换尺寸），
+            // EncodedImage 自身不再携带角度 ⇒ 保持 0 是**语义正确**的（与 doc/14:490 冻结写法一致）；
+            // `meta[0]/meta[1]` 已是旋转后的编码尺寸（90/270 时宽高已交换）。
             .setRotation(0)
         if (meta[5] >= 0) builder.setQp(meta[5])
         cb.onEncodedFrame(builder.createEncodedImage(), VideoEncoder.CodecSpecificInfoVP9())
