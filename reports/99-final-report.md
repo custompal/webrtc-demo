@@ -1537,6 +1537,12 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 - **我不能复算的一侧**：`artifacts/pre-deploy-7dbe8400.jar` **此刻复测仍为 `root:root` mode `600`（uid 1000 不可读）** ⇒ webrtc-builder 新给的"`7dbe8400…` = 宿主机 `/tmp/pre-deploy.jar`；与 `dc5f8919…` **508/508 条目内容逐字节相同、508/508 时间戳不同、两者 compress_type 均 0（ZIP_STORED）**"**仍属宿主侧读数，我无法验证**。要闭环需持写权者把该件 `chmod 644`/`chown 1000:1000`（或在容器可见路径留一份）。
 - **口径**：其结论"**同一内容、仅 zip 时间戳不同 ⇒ sha256 不同**"**与本报告 §13.22(e) 既有记录一致**（该点我已按 native-dev 更正采纳，**不是**新增分歧）；**唯一仍开放的是"容器侧可复算性"**。K-17 相关：本条消息①的"已闭合"与我的记录（§13.21 追加、§13.22(d)3）**同向，无冲突**——我此刻复测 `find .git ! -user node` = **0**，`.git/objects/{33,c6}` 均为 `node:node 775`（`56`/`ac` 已不存在）。
 
+#### (j) native-dev 的 **v1/v2 指针提醒** + `FINAL.jar` 变体复核（我 20:13 实测）
+- **指纹（现读，`[读盘 20:13:16]`）**：`webrtc-build/t30/logs/t34-gate.md` = **`6d1112dd…` / 59 行 / 4 395 B / mtime 18:19:37**；`webrtc-build/t30/logs/t34-gate-post-landing.md` = **`c87bb1cd…` / 33 行 / 2 781 B / mtime 18:36:02**。v1 的两行确为**落位前**措辞：`:21` = `jar tf "$J" | grep -c '^J/'   # 期望 ≥ 1（落位前 = 0）`；`:58` = "**落位前两条断言必红**（`J/` = 0、`GEN_JNI` `static native` = 194）"。
+- **认则（与 §13.22(g) 一致，此处显式化以免再被引用错）**：**命令段** v1/v2 可共用；**钉值段只认 v2**（`J/` 期望 = **1**、`GEN_JNI.class` **只认 `a6e7edcf…`**、含"双钉"片段）⇒ **v1 = 落位前历史、v2 = 落位后现行**；任何后续复跑**不得**把 v1 的 `:21`/`:58` 当断言期望（此即 P-13 第③条"必须核对文件生效时点"的实例）。
+- **`FINAL.jar`（未采用变体）复核 ✅ 与 native-dev 主张一致**：`d0d05244…` / 1 181 426 B / major 分布 **{55: 2, 61: 507}**；两个 major-55 类 = `org/webrtc/EglBase10Impl$FakeSurfaceHolder`（`2e62e9f7…` / 236 B）与 `org/webrtc/PeerConnection$Builder`（`e304e7ce…` / 219 B），二者**与交付 jar 同名类逐字节相同**，且都在交付 jar **51 个 major-55** 名单内（我实测交付 jar = `{55: 51, 61: 458}`，51 含 45 个 `*Jni` + 6 个其它，含上述两名）。其绑定类 `J/N.class` = `0eac3fb5…`（6 898 B）、`GEN_JNI.class` = `32448db8…`（24 828 B），**均与交付件（`1ff8d3ff…`/6 924 B、`a6e7edcf…`/24 910 B）不同** ⇒ 印证 §13.22(g) 判据边界：**若改落 `FINAL.jar`，六数与 t36 必须重跑**；此次复核**不改变** captain 裁定 **(甲) 保持现落位件**。
+- **过期口径提示**：native-dev 本条 §3（"现行 APK 仍为 `721df1c8…`（`J/` = 0）⇒ K-15 仍开放；t33 已 in_progress"）**已被取代** —— 现行锚点 = **`30c41ac9…`**（dex `LJ/N;` = 3）、t33 与 t34 **均 completed** ⇒ 见 §13.25(h) 的 D-13 提示，勿据此重开 K-15。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
