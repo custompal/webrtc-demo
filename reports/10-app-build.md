@@ -1194,3 +1194,48 @@ parts/  SOURCE.sha256 = 22225633… ；sha256sum -c = 4/4 OK ；四片拼接 = 2
 
 
 
+
+## 9.19 **t47c：第三轮修复合并构建（t50 编码器崩溃 + t51 远端消息竞态 + t51b 类型修复）** — 新 APK `a7062ef7…`
+
+> 执行者：**captain**（env-installer / native-dev / android-dev 在本轮先后遭遇平台级不可恢复 turn 失败；t50/t51b 由 captain 直接实现并提交）。
+
+### 9.19.1 本轮修复
+
+| 缺陷 | 定因（真机第一手） | 修复 | 提交 |
+|---|---|---|---|
+| **通话中 App 闪退** | 首帧把编码尺寸由 640×480 改为旋转后的 480×640 走 `vpx_codec_enc_config_set`（返回 OK），随后 `vpx_codec_encode` **进程死亡**（`encode_vpx_begin`=2 / `encode_vpx_done`=0；16:23:50 与 16:24:15 两次重启） | 尺寸变化改为 `DestroyCodecLocked()` + 新尺寸 `vpx_codec_enc_init`，并强制重新出关键帧；新增 `encoder_reinit` 日志 | `5cdfa2e`（t52 登记） |
+| **joiner 偶发不回 answer** | `offer/候选` 在 `session == null`（`pc_starting` 之前）时只打日志即丢弃（t44 未覆盖的窗口）：真机 `offer_received` → `ice_without_session` → `pc_starting` → `remote_replay_done offer=false` | 统一入队 `remote_deferred` + `start()` 成功后按序回放 `remote_replay_done`；新增 20 s 无对端响应看门狗与可见提示 | `ec1f53d`（t51） |
+| **首建编译失败** | t51 的 `enqueueIce(candidate, sdpMid, sdpLineIndex: Int)` 与 `SignalingMessage.Ice.sdpMLineIndex: Int?` 不匹配 | 签名改为 `Int?` 并在内部 `?: 0` | `55e6d89`（t51b，captain） |
+
+### 9.19.2 首次尝试作废（`10-t47b-*-20260915-003855.log`）
+
+`CHECK=0 / **COMPILE=1** / ASSEMBLE 未执行`：`CallViewModel.kt:377 Argument type mismatch: actual type is 'kotlin.Int?'`（t51b 修掉）。发布脚本因"新 APK 与 served 同哈希"**正确拒绝发布**（PUB_EXIT=8），未污染下载链路。
+
+### 9.19.3 最终构建（`10-t47b-*-20260915-004148.log`，T0 = `55e6d89`）
+
+```
+check-only EXIT=0 → :app:compileDebugKotlin EXIT=0 → clean assembleDebug EXIT=0（42 executed / FROM-CACHE=0 / :app:clean=1）
+→ --rerun-tasks :app:testDebugUnitTest EXIT=0：**SUM tests=74 / skipped=0 / failures=0 / errors=0**（XML 最新 mtime 00:47:41.249894155）
+APK sha256 = a7062ef7614181b5fae8a61b4bcd8fd07d5909e44e12d5be0f64ba8043ca9976
+size = 33 357 301 B      mtime = 2026-09-15 00:47:41 前后
+T0/T2 双钉（逐位未变）：jar 0c776934… / aar 8e8f2baf… / libjingle 757cef81… / libc++_shared c9dbf4ec…
+自有 native 库（含 t46/t48/t50 的 C++ 改动）：libwebrtcdemo_native.so = 80a4846832efb086311c8a347f904b74fa1b5dc51163927fc1101a777a7ebe45
+与上一版 a7062ef7 前身（22225633…）逐条目差异：165/165、相同 155 / 不同 10 = 8 个 dex + resources.arsc + 自有 .so
+四 .so p_align 全 0x4000
+```
+
+**测试数演进**：46（基线）→ 53（t45 +7）→ 67（t44 +14）→ **74**（t51 +7）。
+
+### 9.19.4 发布
+
+```
+served = artifacts/app-debug-a7062ef7.apk = parts 四片拼接 = a7062ef7…（CONCAT==APK: True；SHA256SUMS -c 4/4 OK；SOURCE.sha256 同步）
+旧 parts 归档 parts-archive/parts-22225633-20260915-004745/
+服务 enabled/active、MainPID 664402 未重启；公网 HEAD 200 / Range 206
+下载地址不变：http://47.238.144.66:8080/app-debug.apk
+```
+
+### 9.19.5 证据与未验证项
+
+- 被跟踪日志：`reports/10-t47b-captain-*-20260915-003855.log`（作废批）、`…-20260915-004148.log`（最终批，test 日志 `63d70282…`）、`reports/10-t47b-captain-publish-20260915-004745.log`。
+- **仍未验证（只能真机判据）**：① 是否还闪退（U3：≥10 s 内不出现新的 `native_lib_loaded`/`main_activity_create` 序列）；② 是否出画面（U1 `encoder_reinit`、U2 `encode_vpx_done`+`encoded_frame`+`encoded_bytes>0`）；③ joiner 是否必然回 answer（`remote_deferred`/`remote_replay_done source=viewmodel`）；④ 切后台回前台 3 s 恢复；⑤ 对端画面正立；⑥ 20 s 无响应提示是否出现。

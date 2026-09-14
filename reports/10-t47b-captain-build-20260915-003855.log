@@ -1,0 +1,19 @@
+# t47（captain 接管执行）：用 t44 修复重编：宿主机构建 t39 修复
+# 脚本=/opt/dsh-workspaces/tmp/t47b-captain-build.sh  TS=20260915-003855  T0=2026-09-15T00:38:55+08:00
+# 前置：HEAD=ec1f53d522a05a3937237ac99da57fd66e12a010  porcelain=1 行
+# 门禁：gradle/java 进程数=0
+# 门禁：近5分钟 app/src 写入文件数=2
+# 门禁：近5分钟 third_party/libwebrtc/java 写入=0
+# T0 双钉：jar=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+# T0 双钉：aar=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+# T0 双钉：so =757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+# T0 双钉：libcxx=c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+
+===== 1. build_app.sh --check-only =====
+CHECK_ONLY_EXIT=0  log=/opt/dsh-workspaces/code/webrtc-demo/reports/10-t47b-captain-checkonly-20260915-003855.log
+
+===== 2. :app:compileDebugKotlin（快速编译闸门） =====
+COMPILE_EXIT=1  log=/opt/dsh-workspaces/code/webrtc-demo/reports/10-t47b-captain-compileDebugKotlin-20260915-003855.log
+e: file:///opt/dsh-workspaces/code/webrtc-demo/app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallViewModel.kt:377:94 Argument type mismatch: actual type is 'kotlin.Int?', but 'kotlin.Int' was expected.
+BUILD FAILED in 1m 6s
+ABORT at compileDebugKotlin

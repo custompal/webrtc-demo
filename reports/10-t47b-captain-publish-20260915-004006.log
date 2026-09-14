@@ -1,0 +1,5 @@
+# t42 发布：20260915-004006
+# 新 APK: /opt/dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk
+#   sha256=2222563361716837c8892d81ce8c98501973e3457ca4102e4afe5c2bf381e1c0  size=33340757  mtime=2026-09-14 23:41:43.165828767 +0800
+# 上一版(served): 2222563361716837c8892d81ce8c98501973e3457ca4102e4afe5c2bf381e1c0
+WARN: 新 APK 与旧锚点同值 ⇒ 修复可能未进入构建，发布将被拒绝
