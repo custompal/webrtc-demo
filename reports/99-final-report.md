@@ -1062,6 +1062,27 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 2. **`GEN_JNI` 引用类数两种口径**：含 `GEN_JNI.class` 自身 = **49**，**外部引用 = 48**（我两次扫描分别得 49/48）——报告/脚本引用时须注明是否含自身，否则"49 vs 48"会被当矛盾。
 3. **TSV 第 1 列已是 mangled 符号**：与 `.so` 的 `Java_J_N_*` **直接求差集即可**（我实测：193 ≡ 193，**双向差集 0/0**，无需 mangle）；只有从 `J.N` 的 Java 方法名出发时才需**正向** `jni_mangle`（193 名中 37 名含 `_`/`$`）。
 
+### 13.14 交付 APK 的补充实测 + 单测"真实执行"判据（env-installer 披露 + 我方复跑）
+
+#### (a) 交付 APK 未被重建（我复核，与其陈述一致）
+`app/build/outputs/apk/debug/app-debug.apk` = **33 293 061 B** / `sha256 721df1c82841ad99…b724` / mtime **2026-09-14 11:28:34.950734908 +0800** —— 与 §13.11 记录**逐项相同**，未被覆盖、未被重建。
+
+#### (b) 该 APK **已包含** 11:12 的 `FileLogger.kt` 改动（我独立扫 dex，非采信）
+我在 APK 内 14 个 `.dex` 上按字节计数：`app-fallback.log` = **1**、`writeFailures` = **1**、`critical` = **7**、`FileLogger` = **42**。
+源头侧：`app/src/main/kotlin/com/example/webrtcdemo/log/FileLogger.kt` mtime = **11:12:31**，而 T0（交付构建开始）= **11:26:08** ⇒ **该改动必然在交付 APK 内**，"APK 早于 FileLogger 改动"的担忧不成立 ✅
+> ⚠️ 时点更新：`app/src` 全树**最新** mtime 现为 **18:20:45**（`app/src/test/.../JniBindingClasspathTest.kt`，android-dev 的 t32 在途改动），已晚于 env-installer 观察到的 11:19:51 ⇒ 任何"app/src 最新 mtime"类论断须带取数时刻。
+
+#### (c) 单测证据链：**弃用 FROM-CACHE 那次，改用真实执行那次**
+| 日志 | 结果 | 性质 |
+|---|---|---|
+| `reports/logs/t26d-testDebugUnitTest-20260914-112836.log` | `:app:testDebugUnitTest` **FROM-CACHE**；`3 executed, 3 from cache, 18 up-to-date` | ⚠️ **缓存恢复，不是当场执行**（env-installer 主动更正）⇒ **不得**作为"刚跑过"的证据 |
+| `reports/logs/final2-testDebugUnitTest-20260914-114748.log`（11:50:18） | **BUILD SUCCESSFUL in 2m 29s**；**`24 actionable tasks: 24 executed`** | ✅ **真实全量执行**（`--no-build-cache --rerun-tasks`）；对应 XML mtime **11:50:17** = **42 用例 / 0 失败 / 0 错误**（11+17+2+4+8） |
+| 我 t27 自跑（11:39） | `BUILD SUCCESSFUL in 1m 44s`；**`24 actionable tasks: 24 executed`** | ✅ 真实全量执行（报告 §12/§13 引用即此） |
+⇒ **三态结论不变**：单测 **42/0/0 且为真实执行**；报告此前引用的是**我自跑的那次**（非 t26d 缓存恢复那次），故无需更正结论，但**必须记录该披露**，并且**引用 11:26/11:28 那条日志时不得写"当场重跑"**。
+
+#### (d) 新增流程教训 **P-9**（与 P-7 同类）
+**`--rerun-tasks` 单独使用仍可能命中构建缓存**（实测：`testDebugUnitTest` 报 `FROM-CACHE`）⇒ 凡"某测试/构建刚真实执行过"的断言，必须同时满足 **`--no-build-cache --rerun-tasks`** 且输出 **`N actionable tasks: N executed`（FROM-CACHE = 0）**；只凭 `BUILD SUCCESSFUL` 或 XML 时间来推断"刚跑过"会误判。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
