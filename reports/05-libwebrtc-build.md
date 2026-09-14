@@ -469,6 +469,8 @@ AAR 内 `.so` 与交付的 `jni/arm64-v8a/*.so` 相同（**`757cef8128bf9151`**�
 
 ## 10. t23：补齐 jni_zero `*Jni` 绑定类（现行交付更新）
 
+> ⚠️ **本节内「LoggingJni/CommonApisJni/JniZeroJni 全树无 `.class`」的表述是错的**，已被 **§17** 更正（权威）；另 §10.3 的版本分布与 §14.3 的被引用数以 §14/§17 为准。
+
 ### 10.1 缺陷（t23 前）
 
 t5/t16/t17 交付的 jar 内 **`*Jni.class` 数量 = 0**，而构建树里 jni_zero 生成的 `*Jni.java` 源共 **48 个**。

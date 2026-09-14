@@ -338,6 +338,8 @@ t16 的修补落在**仓外未跟踪**的构建树 `<WS>/webrtc-build/src/build/
 
 ## 10. t23：补齐 jni_zero `*Jni` 绑定类（现行交付由此更新）
 
+> ⚠️ **本节内「LoggingJni/CommonApisJni/JniZeroJni 全树无 `.class`」的表述是错的**，已被 **§15** 更正（权威）。
+
 ### 10.1 缺陷
 
 t16/t17 交付的 jar 内 **`*Jni.class` 数量 = 0**，而构建树里 jni_zero 生成的 `*Jni.java` 源共 **48 个**：
