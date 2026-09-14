@@ -1398,7 +1398,13 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
   ```
   六数关系：`J.N` 194/193 + `GEN_JNI` 194/0 = **193 转发 + 1 桩**（字节码级口径；与 §13.22(f) 上文"194/194 且 `static native`=0"等价，但**不可**表述为"194 native"）。
   **负对照（我实测，证明数字对过滤器敏感）**：`javap -p J/N.class | grep -cE '^  public static .*static native'` = **0**（混用）；`javap -p J/N.class | grep -c '('` = **195**（计入构造器）。⇒ t34 引用六数时必须同时附**命令原文**，只写数字不可复核。
-  **t34 用法**：这六数在 v2 门禁（`t34-gate-post-landing.md`）中为**基线断言**；t34 将在**新 APK 的 dex 侧**与 jar 侧各跑一次，并断言"jar 侧六数不变 + dex 内 `LJ/N;` = 1（v2 期望值）"。
+  **t34 用法**：这六数在 v2 门禁（`t34-gate-post-landing.md`）中为**基线断言**；t34 在新 APK 的 **dex 侧**与 jar 侧各跑一次，断言"jar 侧六数不变 **+ dex 内 `LJ/N;` 存在**"。
+  **⚠️⚠️ 本行原写"dex 内 `LJ/N;` = **1**（v2 期望值）"，是**我自己的错**（`webrtc-builder` 19:02 提醒后我复核确认，见 F-7）**：那是**两把尺子**被混写 ——
+  | 口径 | 命令 | 期望值 |
+  |---|---|---|
+  | **jar 条目前缀**（v2 差异点①）| `jar tf <jar> \| grep -c '^J/'` | **1**（仅 `J/N.class`）|
+  | **APK dex 内串**（本轮实测）| 逐 dex `grep -a -o 'LJ/N;'` | **3**（`classes.dex` 2 + `classes13.dex` 1；历史件为 0）|
+  ⇒ **断言写法**：jar 侧用 `^J/` **= 1**；dex 侧用 **"存在 / ≥ 1"**（实测 3，跨 2 个 dex）——**不得写成 dex `== 1`**（会假红）。
   **⚠️ 追加作用域限定（我 20:32:50 首次实测，`grep -c 'org_'` 一类"可读名前缀"计数只对 `GEN_JNI` 成立）**：
   | 目标类 | B（`1ff8d3ff…` / `a6e7edcf…`） | A（`9ada0641…` / `8f3ce613…`） |
   |---|---|---|
@@ -1406,6 +1412,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
   | `GEN_JNI` `grep -c 'org_'` | **194**（= `org_webrtc_` 191 + `org_jni_1zero_` 3）| **193**（= 190 + 3）|
   | `org_webrtc_audio_` | 5 | 5 |
   ⇒ **A↔B 在 `GEN_JNI` 侧只差 1 条方法**（`org_webrtc_LibaomAv1Encoder_create`），其余逐类前缀计数**完全相同**（含 `org_webrtc_PeerConnection` 41、`PeerConnectionFactory` 22、`RtpTransceiver` 11、`audio` 5）；而 `J.N` 侧因 native 名为**哈希**（`M$…`）故 `org_` 计数极小 ⇒ **`grep -c 'org_'` 的 194/193 必须标注"作用于 `GEN_JNI`"**，否则会得到 1/0 的假值。
+  **为什么在 `GEN_JNI` 上两者恰好相等（解释，非巧合于签名）**：`GEN_JNI` 的 **194 条方法全为 `public static` 且方法名均以 `org_` 开头**，而 `javap` 每个方法名只出现一次 ⇒ `grep -c 'org_'` 与 `grep -cE '^  public static '` 同值。**注意**：`org.`（点号）与 `org_`（下划线）**不同字符**，`grep 'org_'` 不会匹配 `org.jni_zero` 这类**签名/类名**——故"把签名里的 `org.` 也数进去"这一解释**不成立**（我实测 `GEN_JNI` 中 `org_` 命中行 = 194 = 方法数）。
 - 两条均含**正负例验证**，且会原样出现在 t33 的构建日志里 ⇒ **t34 把它们作为输入证据引用，并在 APK 实体上独立复跑一次**。
 - 实现细节提醒：**P-11 的脚本体用 `unzip -q -o`（`scripts/build_app.sh:402`）⇒ 其执行环境须有 `unzip`（宿主有、容器无）**；我在容器侧的等价复算一律用 **`jar xf`**（结果等价，t34 两口径都给）。
 - **`check_jn_binding.py` 的版本与豁免边界（对齐 webrtc-builder）**：**权威 = 工作树版 `aa2e96922f5313f7f3a740942d7460e42391ea7b41ebee090b3d7f60e199683f`**（mode 600 / mtime 18:08:57；`git diff --stat` = 9+/3−；最后入库提交 `1621d72` 为旧版）——它是 captain 授权的 out-of-scope 例外，**不计入任何 `changedPaths`**；`KNOWN_EXEMPT = {org_webrtc_LibaomAv1Encoder_create}` 使 **A/B 都会 PASS**，故它**只证 ①②④、不能证"AV1 路径安全"**；**在交付件（B）上豁免数为 0**（E3 = 调用点 194 / 覆盖 194 / 未覆盖 0 / 已知豁免 0 / 真缺失 0）⇒ `RESULT` 文案应写明"**闸门绿 ≠ AV1 路径安全；B 下豁免未触发**"（我处无写权改其文件，留待持写权者）。
@@ -1653,6 +1660,7 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - **F-4（low，记载）**：native-dev 消息称 `Lorg/jni_zero/GEN_JNI;` = "`classes.dex`=2、`classes14`=1" —— **dex 归属写错**：实测（三法：`grep -a -o` 逐 dex / 去分号串 / `dexdump` 类型表）为 **`classes13.dex`=2、`classes14.dex`=1、`classes.dex`=0**（`dexdump classes.dex` 命中 `Lorg/jni_zero/GEN_JNI;` = **0** ⇒ `classes.dex` **根本不引用** `GEN_JNI`）。其**自己的 t34 附录 §2 写的是"classes13 2 / classes14 1"（正确）**⇒ 本条消息属转写漂移；`LJ/N;`（2/1/0，三处独立测量一致）与 `PCFJni;`（classes14=2）、`LibaomAv1EncoderJni;`（classes14=2）均与我一致。**判据/verdict 不受影响**（`GEN_JNI` 出现于 APK 内且合计 3 成立）。
 - **F-5（low，证据链）**：`output-metadata.json` 的 mtime（**19:04:43.947**）与路径上 APK（19:05:19 拷回、内容 = 18:41:59 构建）**不同源** ⇒ 不得用 sidecar 给 APK 定年（详见 §13.26(1)）。
 - **F-6（low，作用域）**：native-dev 的"`grep -c 'org_'`：落位件 = 194 / A = 193（`191+3` / `190+3`）"**只对 `GEN_JNI` 成立**；对 `J/N` 实测为 **1 / 0**（B 仅 AV1 可读名 `org_webrtc_LibaomAv1Encoder_create`，其余 native 名均为哈希 `M$…`）⇒ 该类断言**必须写明目标类**（详见 §13.22(f) 追加表）。**同时该表给出一个新的精确定量**：A↔B 在 `GEN_JNI` 侧**仅差 1 条**（AV1），其余前缀计数逐项相同 —— 与"差异只在 AV1 absent-proxy 桩"的结论自洽。
+- **F-7（low，**本报告自身错误**，由 webrtc-builder 19:02 提醒后我复核确认）**：§13.22(f) 原写"dex 内 `LJ/N;` = **1**（v2 期望值）"**是错的** —— `= 1` 属 **jar 条目前缀**口径（`jar tf | grep -c '^J/'`，v2 差异点①），而 **APK dex 内 `LJ/N;` 串计数 = 3**（`classes.dex` 2 + `classes13.dex` 1）。**两者是两把尺子**（与 P-14 同族），已就地改为对照表 + 断言写法（jar `^J/` = 1；dex "存在/≥1"，实测 3）。**教训**：把"期望值"从一个对象（jar 条目）搬到另一个对象（dex 串）时，必须**重述命令**，否则会出现"看起来有据、实则假红"的断言。
 - **不写成通过（仍未验证）**：真机安装/首次 native 调用/`JNI_OnLoad` 运行期注册/Camera2 采集/首帧渲染/日志导出；宿主 `/opt/apk-http/served/app-debug.apk`（容器不可见，仅他人报告同哈希）。
 - **附带事实（不改变 verdict）**：APK **整包 byte-reproducibility = false** —— 同一 jar、同一 `--no-build-cache clean` 命令的两次构建分别产出锚点 `30c41ac9…`（18:39–18:42 日志 `6f02e949…`）与 `ef29e00c…`（19:02–19:04 日志 `reports/10-t33-nocache-assembleDebug-20260914-190227.log`）；两者**六载荷逐件相同、类集合 26 195/26 195 相同**（§13.25(b)），故稳定判据落在载荷而非整包 sha。
 
