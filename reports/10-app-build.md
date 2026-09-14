@@ -1135,6 +1135,62 @@ resources.arsc、四个 .so、AndroidManifest.xml、resources.arsc 之外全部�
 
 **时点限定（P-16 口径，采纳 verifier 建议）**：`reports/99` 中以下三句只对各自采样时点成立，**不得当作现态引用**：① §13.26 的"`[读盘 21:13:13]` app/build 非 uid1000 = 0（总 1343 项）"；② §13.26(11) 的"t42 步骤 5 `app/build`/`.gradle` root 条目 = 0"；③ K-17 行"全仓（含 `.git`）`! -uid 1000` = 0，残余 12 个 `app/.cxx` root 件现已不存在"（该 12 项在 22:08 事故链中**重新出现**，已于 22:17 再次归零）。**汇总推荐口径**："**tracked 树非 1000 = 0**；构建缓存 `app/build`/`app/.cxx` 归零时点 = 22:17（其前 22:08–22:09 曾被事故链置为 root，1337+12 项，已清理）"。
 
+## 9.18 **t47b：第二轮真机缺陷合并构建（t44+t45+t46+t48+t49）** — 新 APK `22225633…`
+
+> 执行者：**captain**（t47 attempt 3 接管）。原派 env-installer，其两次 claim 后均立即遭遇平台级不可恢复 turn 失败（`session event "turn/end" carries non-JSON-serializable data`），任务卡在 claimed 无活 attempt；用户等待可测 APK，故由 captain 本轮完成。**口径变更如实登记**：本轮不再只改 Kotlin —— t46/t48 修改了 C++ 编码器，故**自有 `libwebrtcdemo_native.so` 按设计发生变化**（`95c44e5a…` → `865a117e…`），原 t47 验收里"自有 native 库与 t33 一致"一条**对本轮不适用**；`jar`/`aar`/`libjingle_peerconnection_so.so`/`libc++_shared.so` 四件**仍须逐位不变**（已满足）。
+
+### 9.18.1 背景：第二轮真机缺陷与定因（详见 `reports/15`、`reports/16`、`reports/17`、`reports/18`、`reports/19`）
+
+| 缺陷 | 定因（第一手证据） | 修复 |
+|---|---|---|
+| 两端"一直正在连接会议" | ① joiner 收到 offer 后**不回 answer**（`CallViewModel` 静默丢弃 + `CallSession` 早退）② Kotlin 日志等级过滤方向写反（阈值 DEBUG 时 INFO/WARN/ERROR 全丢，`rtc_config`/ICE 状态/错误都没落盘） | t44（`60ddc4c`） |
+| 通话中 **0 bps、远端永远无画面** | **应用在编码第一帧时崩溃**：`native.log` 每会话仅 1 次 `nativeEncode` → 0.2–0.7 s 内该进程全部日志停止 → 3.9–6.3 s 后出现**新进程初始化**；`encoded_bytes` 恒 0；且 **ICE 实际已 SUCCEEDED**（`CRWS\|S`，同网段 host↔host，rtt 100 ms）⇒ 断点在 `vpx_codec_encode` 段 | t48（`0c65de0`）：D-1 每帧 460 800 B 泄漏、D-2 SDK **5×4** 层矩阵被 3×3 校验拒收（含**越界写 11 个 int** 风险）、D-3 JNI 注册表锁跨 Encode、D-4 `encode_vpx_begin/done/no_packet` 取证标记 |
+| 切后台→回前台预览黑屏 | `CallScreen` 无任何 onPause/onResume 处理；`SurfaceViewRenderer.release()` 后实例**永不再出画**、`surfaceDestroyed` 为空实现 | t45（`f7ded55`）：ON_PAUSE 不释放 + ON_RESUME 幂等重挂 + 采集按需恢复 + 3 s 看门狗换实例重建 + 15 诊断事件 + 7 单测 |
+| 对端画面朝向 | `vp9_encoder.cpp` 未按 `doc/14:518` 做 90/270 尺寸交换、也未旋转像素 | t46（`bc3c785`）：I420 像素旋转 + 尺寸交换（header-only `i420_rotator.h` + 离线自测 36 项 OK） |
+| （阻塞发布的单测失败） | `IceCandidateInfo.parse()` 用 `tokens.drop(1)` 把**与 foundation 同 token 的 `candidate:` 前缀整块丢掉** ⇒ protocol/address/port 整体前移一格 | t49（`2293572`）：仅剥前缀保留 foundation |
+
+### 9.18.2 首次构建作废（t47b 23:26:47 批）
+
+`CHECK=0 / COMPILE=0 / ASSEMBLE=0 / **TEST=1**`（67 用例 / **4 失败**，全部在 `IceCandidateInfoTest`）⇒ **APK `11cfab83…` 不予发布**，仅留作过程证据（日志 `reports/10-t47b-captain-*-20260914-232647.log`）。根因与修复见 `reports/19`（t49）。
+
+### 9.18.3 最终构建（t47b 23:37:52 批，T0 = `2293572`）
+
+```
+1) bash scripts/build_app.sh --check-only                         EXIT=0
+2) ./gradlew --no-daemon --no-build-cache -PwebrtcDemo.skipNative=true :app:compileDebugKotlin
+   → BUILD SUCCESSFUL in 1m 28s
+3) ./gradlew --no-daemon --no-build-cache clean assembleDebug     T1 23:39:25 → T2 23:41:43
+   → BUILD SUCCESSFUL in 2m 18s ; 43 tasks = 42 executed + 1 up-to-date ; FROM-CACHE=0 ; :app:clean=1
+   → APK sha256 = 2222563361716837c8892d81ce8c98501973e3457ca4102e4afe5c2bf381e1c0
+     size = 33 340 757 B      mtime = 2026-09-14 23:41:43.165828767 +0800
+4) ./gradlew --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest
+   → BUILD SUCCESSFUL in 2m 2s ; 24 executed ; **SUM tests=67 / skipped=0 / failures=0 / errors=0**（XML 最新 mtime 23:43:46.700951488）
+T0/T2 双钉（逐位未变）：jar 0c776934… / aar 8e8f2baf… / libjingle 757cef81… / libc++_shared c9dbf4ec…
+自有 native 库（按设计变化）：libwebrtcdemo_native.so = 865a117e800ec320bc1fed62c5bc9b1e3f796f6f9f236901488ade9a4820d5db（1 245 200 B）
+```
+
+**与上一交付锚点 `36ba3ec6…` 的逐条目差异**：165/165 条目、**相同 155 / 不同 10 / 仅旧 0 / 仅新 0**；变化 = `classes{2,3,5,6,9,11,12,14}.dex`（8 个）+ `resources.arsc` + **`lib/arm64-v8a/libwebrtcdemo_native.so`**（t46/t48 的 C++ 改动，符合预期）。四 `.so` `p_align` 全部 **0x4000**（16 KB 页门禁不回退）。
+
+### 9.18.4 发布与四路一致
+
+```
+served  /opt/apk-http/served/app-debug.apk                        = 22225633…（与构建输出逐位同）
+archive /opt/dsh-workspaces/artifacts/app-debug-22225633.apk      = 22225633…
+parts/  SOURCE.sha256 = 22225633… ；sha256sum -c = 4/4 OK ；四片拼接 = 22225633… ⇒ CONCAT == APK : True
+服务 enabled / active ；MainPID 664402（未重启，零停机）；公网 HEAD 200 / Range 206 ；/parts-archive/ 404
+旧 parts 归档：/opt/apk-http/parts-archive/parts-36ba3ec6-20260914-234353/
+下载地址不变：http://47.238.144.66:8080/app-debug.apk
+```
+
+### 9.18.5 被跟踪证据与属主
+
+- 日志（`reports/10-t47b-captain-*-20260914-233752.log` 与 `-232647.log`，sha256 见提交记录；publish = `10-t47b-captain-publish-20260914-234353.log` / `5fe2a6a3e45de05d7c2ff1bf61881ae6ae51de6d25185b8d7122efdc80335695`）。
+- `chown -R 1000:1000 app/build app/.cxx .gradle .kotlin` 后 root 条目 = 0。
+
+### 9.18.6 仍未验证（不得写成已通过）
+
+新 APK 的**真机表现**：① 通话是否真的出画面（`encode_vpx_done`/`encoded_frame` 出现、CSV `encoded_bytes>0`、不再出现 `nativeSetRates_rejected reason=bad_dim`）② 切后台→回前台 3 秒内是否恢复、连续 3 次 ③ 对端画面是否正立 ④ joiner 竞态是否消失 ⑤ DTLS/transport 运行期状态（本版本 libwebrtc 成功握手不打日志 ⇒ 只能由 t44 新增的 `pc_connection_state`/`dtls` 诊断判定）。若 `native.log` 仍停在 `encode_vpx_begin`，则说明崩/卡仍在 libvpx 内部（t48 §7 判据）。
+
 
 
 

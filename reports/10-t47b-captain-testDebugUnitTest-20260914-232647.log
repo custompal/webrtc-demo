@@ -1,0 +1,60 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.7/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugBuildConfig
+> Task :app:generateDebugResValues
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:mergeDebugResources
+> Task :app:parseDebugLocalResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebug
+> Task :app:processDebugManifestForPackage
+> Task :app:javaPreCompileDebugUnitTest
+> Task :app:processDebugResources
+> Task :app:compileDebugKotlin
+> Task :app:compileDebugJavaWithJavac
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:processDebugJavaRes
+> Task :app:compileDebugUnitTestKotlin
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes
+
+> Task :app:testDebugUnitTest
+
+com.example.webrtcdemo.webrtc.IceCandidateInfoTest > 解析 relay 候选（中继路径判定的关键） FAILED
+    java.lang.AssertionError at IceCandidateInfoTest.kt:54
+
+com.example.webrtcdemo.webrtc.IceCandidateInfoTest > 兼容 a= 前缀与多余空白 FAILED
+    java.lang.AssertionError at IceCandidateInfoTest.kt:61
+
+com.example.webrtcdemo.webrtc.IceCandidateInfoTest > 解析 host 候选 FAILED
+    org.junit.ComparisonFailure at IceCandidateInfoTest.kt:31
+
+com.example.webrtcdemo.webrtc.IceCandidateInfoTest > 解析 srflx 候选并带 raddr rport FAILED
+    org.junit.ComparisonFailure at IceCandidateInfoTest.kt:43
+
+67 tests completed, 4 failed
+
+> Task :app:testDebugUnitTest FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:testDebugUnitTest'.
+> There were failing tests. See the report at: file:///opt/dsh-workspaces/code/webrtc-demo/app/build/reports/tests/testDebugUnitTest/index.html
+
+* Try:
+> Run with --scan to get full insights.
+
+BUILD FAILED in 2m 6s
+24 actionable tasks: 24 executed
