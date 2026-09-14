@@ -1447,11 +1447,13 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 
 **(4) verifier 独立复核（我自跑，截至 19:3x；未修改上面任何数字）**
 - ✅ **交付锚点哈希/大小**：标准路径 `app/build/outputs/apk/debug/app-debug.apk` = **`30c41ac9…`**、**33 309 445 B**；仓外留档 `artifacts/app-debug-30c41ac9.apk` = **同哈希、同大小**。**一处 mtime 口径需注明**：**仓内路径 mtime = `19:05:19.310`**（captain 拷回时未保留时间戳），**留档件 mtime = `18:41:59.79`** —— §13.24 的"mtime 18:41:59"对应**留档件**。
-- ⚠️ **未能复核的一项**：第三处同哈希 `/opt/apk-http/served/app-debug.apk`（t37 下载服务冻结副本）为**宿主路径，容器内不可见** ⇒ 按"captain/宿主侧声明"记录，待宿主机核对。
+- ✅ **第三处同哈希（原"未能复核"项）已由宿主侧闭合**：`/opt/apk-http/served/app-debug.apk`（t37 下载服务冻结副本）= **`30c41ac9…`**（33 309 445 B），与标准路径、`artifacts/` 留档 **`cmp` 逐字节相同**（captain 实测 + coturn-installer 19:37:43 只读快照 + android-dev 独立复核）。（本项原先按"宿主路径容器不可见 ⇒ 待核对"记录，现已闭合。）
 - ✅ **dex 侧**：14 dex；`LJ/N;` = **3**、`Lorg/jni_zero/GEN_JNI;` = **3**、`PeerConnectionFactoryJni` = **2**（与 §13.24 一致）；历史件 `721df1c8…` 的 `LJ/N;` = **0** ⇒ P-11 闸门有效。
 - ✅ **四 `.so`**：`757cef81…` / `c9dbf4ec…` / `95c44e5a…` / `41e9a793…`，**四者 `LOAD` 段全 `0x4000`**；APK 内 `libc++_shared.so` 与 `app/src/main/jniLibs/arm64-v8a/libc++_shared.so` **逐字节相同**（`cmp`）。
 - ✅ **单测**：5 份 XML @**19:07:05** = `8 + 4 + 17 + 11 + 6` = **46 / 0 / 0**（`JniBindingClasspathTest` 由 2 → **6** 用例，即 t32 加固已生效）。
+- ✅ **第三处同哈希已由宿主侧核对闭合**（captain 追加）：`/opt/apk-http/served/app-debug.apk` = **`30c41ac9…`**（33 309 445 B），与标准路径、`artifacts/` 留档 **`cmp` 逐字节相同**；且**公网直下（`GET /app-debug.apk`）与分片重组两条路径**均等于 `30c41ac9…`（android-dev 独立复核）⇒ 交付锚点共 **5 个可复算位点**同哈希。
 - ⏳ **留待 t34 复算（本节未复核）**：① `.dex` **方法级**计数（`J.N` 195/193、`GEN_JNI` 195/0）需 dex 解析器或 `dexdump` 级工具；② `ef29e00c…` 与锚点的"**`code_items` 逐字节相同**"结论（我已有的旁证是：7 个差异 dex **长度仅差 4 B / 8 B、其余同长**、类计数一致 ⇒ 与"元数据/指针级差异"相容，但**不等于**已证"机器码逐字节相同"）。⇒ 这两项我在 **t34** 用可复算方式补齐或如实标"未复核"。
+  - **✅ 两项均已由 t34 补齐（captain 追加，`reports/99-t34-appendix.md` = 184 行 / `36bad740…`，verdict = pass）**：① 方法级计数实测 `J.N`（classes.dex）**195/193**、`GEN_JNI`（classes13.dex）**195/0 且声明 AV1 桩**、`PCFJni`（classes14.dex）25/0/1；② **`code_items` 机器码逐字节相同**（区级 `map_list` + 方法级 `code_off` 两路独立），且根因已定量到键级（147 条 D8 `~~~{class→hash}` 不稳定令牌，全部为 Kotlin lambda 的 `*$$ExternalSyntheticLambda*`）。旁证冻结件：`webrtc-build/t39-apk-crosscheck/t39-apk-diff.freeze-682e02cad862cd76.log`（242 行 / `682e02cad862cd760b9326af1e46f934dfa48f93e87d00c7c4de76efbaee1ba2`）。
 - ⚠️ **口径提醒**：`ef29e00c…` 已由 captain 裁定为**非交付**（依据过期指令、未获当次授权的重复构建），本报告 §13.23 记录的双哈希至此**已定论**（详见该节新增的裁定注记）。
 
 
