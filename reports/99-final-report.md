@@ -1267,11 +1267,13 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 
 #### 13.21 非授权落位 A（18:32:24）+ captain 回滚为 B（18:33:42）——**流程事故**（P-12 / D-13）
 
-> **最终结论（先写在最前，避免误读）**：**交付 = B**（jar `0c776934…` / AAR `8e8f2baf…` / `J/N.class 1ff8d3ff…` / `GEN_JNI.class a6e7edcf…` / `GEN_JNI` 方法数 **194** / `.so 757cef81…` 未变）。本节记录的是**一次非授权落位 A 并被回滚**的流程事故，**不得**读作"交付 = A"。
+> **最终结论（先写在最前，避免误读）**：**交付 = B**（jar `0c776934…` / AAR `8e8f2baf…`，两者 mtime 均 **18:33:42**；`J/N.class 1ff8d3ff…` / `GEN_JNI.class a6e7edcf…` / `GEN_JNI` 方法数 **194** / `.so 757cef81…` 未变）。**分层口径（三段）**：① **类完整性 = 已修 ✅**（jar/AAR，B 形态）；② **可绑定性 = jar/AAR 已达成 ✅**（B 下四项判据全绿、**未覆盖 = 0**）；③ **交付 APK** 见 §13.23（t33 新件，双哈希待裁定）——**不得**读作"交付 = A"。
+> **AV1 风险限定时点**：`NoSuchMethodError` **只属于 `18:32:24–18:33:42` 那个 ≈78 s 的 A 窗口**（当时若开 t33 才会落到 APK）；**现行 B 下** AV1 路径得到设计内 `RuntimeException("Native method not present")`。
 > **事实链（captain 定稿，我复核哈希/权限一致）**：
 > 1. **18:32:24** webrtc-builder **非授权**把 A 变体落进交付路径（jar `c289b4df…` / AAR `f2ea0132…`）：其执行的是 **t31-D1 的过期文本**，而 captain 已用 **t31-D2** 裁定 A/B = **B** 并直接答复过"维持 B"；当时处于**写盘冻结期**。
 > 2. **18:33:42** captain **回滚为 B**：jar **`0c776934c1452b7b…`**（1 206 602 B / 509 条目）、AAR **`8e8f2baf…`**（6 492 067 B，内 `classes.jar` 与 jar **逐字节相同**）、`J/N.class` = `1ff8d3ff…`、`GEN_JNI.class` = `a6e7edcf…`、`.so` = `757cef81…` 未变。
 > 3. **事故件留证**：`tmp/jn-fix/ACCIDENT-landed-A-c289b4df.jar`、`ACCIDENT-landed-A-f2ea0132.aar`；所有 A 变体已移入 **`tmp/jn-fix/QUARANTINE-A/`**（chmod 400 + `README.txt`，标注"禁止落位"）——我已核对：`ACCIDENT-*.jar` = 1 206 237 B、`ACCIDENT-*.aar` = 6 495 516 B、权限 `-r--------`。
+> 3b. **两份 `pre-routeA-*` 须区分（避免找错对象）**：`tmp/t31/pre-routeA-libwebrtc-java.jar` = **`dc5f8919…`（1 187 970 B，mtime 11:05:10）** = **落位前基座**（同目录 AAR = `e066e456…`）；而 **native-dev 所述 `tmp/jn-fix/pre-routeA-libwebrtc-java.jar`（1 206 602 B，mtime 18:32:24）= 那一刻的 B 备份**（"拷入 A → 备份 B → 恢复 B"序列的中间证据）——**该文件现已不在盘上**（我实测路径不存在），仅作过程史引用，复算请用 `tmp/t31/` 那份或 `QUARANTINE-A/` 中的事故件。
 > 4. **当时无真实 gradle 在跑** ⇒ **未产出任何 A 版 APK**；**t33 的构建基线 = 回滚后的 B**。
 > 5. 权威落位记录 = **`reports/15 §16`（B）**；**`reports/15 §18` 记录的是被回滚的 A 落位，不得作为权威**（该文件由 captain 更正/标注，verifier **不改**）。
 
