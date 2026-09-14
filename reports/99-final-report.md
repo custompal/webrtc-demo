@@ -1385,6 +1385,36 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 3. **APK 非逐字节可复现**再获一例：同源、同绑定类的两次构建在 7 个 dex 上字节不同 ⇒ 与我既有结论（APK 非字节可复现）一致，**t34 以"钉死的单一哈希"为判定对象**。
 4. t34 复验清单不变（`LJ/N;` 出现、`J/`≥1、`GEN_JNI` 方法 **194**、`J.N` native 193 ↔ `.so` 193、四 `.so` `p_align=0x4000`、`libjingle`==`757cef81…`、`libc++_shared`==`c9dbf4ec…` 且与 `jniLibs` 落位件逐字节相同），**只把"新 APK sha"换成裁定后的那一个**。
 
+---
+
+## 13.24 K-15 交付层收口（**captain 转录**）
+
+> 本节由 **captain** 写入：结论来自**四名成员的独立实测**（native-dev、webrtc-builder、android-dev、env-installer），captain 仅转录并统一口径；**不构成实现者自证**（t33 的实现者是 captain，故本节所有数字均可由下列命令复算）。
+
+**(1) 裁定：交付锚点（唯一）**
+- **`30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2`**（33 309 445 B；mtime 18:41:59；构建背景与原始输出见 `reports/10-app-build.md §9.13` 与 `reports/10-t33-captain-assembleDebug-20260914-183903.log`，后者头部含 T0/T1 双钉 `jar 0c776934… / aar 8e8f2baf…` 与 `APK sha256=30c41ac9…`）
+- **三处同哈希**：标准路径 `app/build/outputs/apk/debug/app-debug.apk`、下载服务冻结副本 `/opt/apk-http/served/app-debug.apk`（t37）、仓外留档 `artifacts/app-debug-30c41ac9.apk`
+- **`ef29e00c…` = 非交付**：19:02 一次**依据过期指令、未获当次授权**的重复构建产物（不采纳）；与锚点差异**仅限注解/元数据/指针偏移与 header 校验和**，**编译代码逐字节相同**
+- **19:05:19 的交付路径覆盖 = captain 本人**（把冻结交付件拷回），非第三方、非"第三次构建复现同 sha"
+
+**(2) 交付层判据（全部实测）**
+
+| 判据 | 实测 |
+|---|---|
+| APK sha256 | `30c41ac9…`（三处同哈希） |
+| dex `LJ/N;` / `Lorg/jni_zero/GEN_JNI;` / `PeerConnectionFactoryJni` | **3 / 3 / 2**（历史件 `721df1c8…` = **0** / 3 / 2 ⇒ P-11 闸门有效） |
+| 定义级 | `J.N`（classes.dex）**195 方法 / 193 native**；`GEN_JNI`（classes13.dex）**195 / 0**，且声明 AV1 非 native 桩（**B 独有**） |
+| 四 `.so` | `p_align` 全 **0x4000**；`libjingle 757cef81…`、`libc++_shared c9dbf4ec…`、`libwebrtcdemo_native 95c44e5a…`、`libandroidx.graphics.path 41e9a793…` |
+| `libc++_shared` ↔ `jniLibs` | **逐字节相同** |
+| 单测 | **46 / 0 / 0**（5 份 XML @19:07:05；`8+4+17+11+6`；`JniBindingClasspathTest` = 6） |
+| 载荷钉（跨两次独立构建稳定） | `classes.dex a1b2ebdc…` + `classes13.dex` + 四 `.so` 共 6 件 |
+| 语义等价旁证（三条独立证据） | 类集合 26 195 / 26 195（双向差集 0）；逐 dex 分区 **14/14** 一致；7 个差异 dex 的 **`code_items` 机器码逐字节相同**（区级 `map_list` 与方法级 `code_off` 两路独立） |
+
+**(3) 结论**
+- **K-15 = 已闭合**（jar/AAR 侧 + **APK 侧**）。
+- **APK 非逐字节可复现**（同源、同 jar、同命令的两次构建产出不同整包 sha）⇒ 复验判据用**载荷不变量**，整包 sha 仅作"交付件身份"。
+- **仍未验证（不可省，不得写成通过）**：真机安装、首次 native 调用、`JNI_OnLoad` 运行期注册、Camera2 采集、首帧渲染、日志导出 —— 无设备，本轮不作通过结论；`t34` 的 verdict 判据不覆盖这些项。
+
 
 ---
 
