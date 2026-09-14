@@ -1683,6 +1683,26 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - **K-17 归因更新（不点名、只归因"机制"）**：**两名成员自述在 root 侧跑过 git** —— env-installer（`t18/t26/c6fcfcd/3acc1d2` 等提交）与 **webrtc-builder（约 18:31–18:55 的 `git status/diff/log/show`）**；其自述的**首条 git 命令 ≈18:31 晚于 18:25/18:27 两次抢占** ⇒ 那两次不能归到它头上。**结论不变**：根因 = **root 侧 git 会重写 `.git/index`（root:root 0644）**，属机制问题而非个人过失；**护栏 = 仓库内禁止 root 侧 git（必要时仅 `git --no-optional-locks`，该选项不写 index）**，叠加 captain 的 `chown -R 1000:1000` 与"uid-1000-only"规则。
 - **顺带更正一处他方假设**：**"容器内无 `python3`"不成立** —— 我用**交付树自带**的 `webrtc-build/src/third_party/cpython3/host/bin/python3`（3.11.9）在容器内**真实执行**了 `check_jn_binding.py`（§3.1 的 PASS/EXIT=0 即容器内读数；另需显式 `--javap/--nm`，见 F-2）。
 
+#### (7) **第一手复跑**：`jni_zero generate-final` 四格对照（我**容器内**完成，升级此前"仅宿主侧"的结论；读盘 20:29）
+- **阻断与解法（方法论留痕）**：容器 **`/dev/shm` 不可写**（`touch /dev/shm/x` → `Permission denied`）⇒ 生成器 `jni_registration_generator.py:68` 的 `multiprocessing.Pool()` 建 `SemLock` 直接 `PermissionError`。我用 `PYTHONPATH` 注入 `sitecustomize.py` 把 **`Pool` 串行化**（`imap/imap_unordered` 保序、逐项串行），**不改动任何输入文件**，其余 `multiprocessing` 属性原样。
+- **四格（cwd = `src/out/Release-arm64/aar/arm64-v8a`，命令与 `t30/logs/generate-final-B-with-av1.log` 同形；`--use-proxy-hash`）**：
+  | 格 | java 清单 | `--add-stubs-for-missing-native` | 产出 | rc |
+  |---|---|---|---|---|
+  | **A1** | `javasources-official.txt`(160) | 无 | **`2e352096…` 62 140 B** | 1 |
+  | **A2** | 同上 | 有 | **`2e352096…` 62 140 B** | 1 |
+  | **B1** | `javasources-with-av1.txt`(165) | 有 | **`dca67dc7…` 62 424 B** | 1 |
+  | **B1b**（复跑）| 同上 | 有 | **`dca67dc7…`**（确定性 ✅）| 1 |
+  | **B2** | 同上 | 无 | **不产出** | 1 |
+- **B2 拒绝原文**：`To bypass this check, add stubs to Java with --add-stubs-for-missing-jni.` / `Excess Java files:` / `../../../../sdk/android/api/org/webrtc/LibaomAv1Encoder.java`。
+- **逐字节对照既证值**：**A1 == A2 == `t30/out/A` == 构建树实际使用的那份 srcjar**（三者同一哈希）；**B1 == B1b == `t30/handoff`** ⇒ **精确复现 B**。
+- **srcjar 内容（两份均 2 条目：`J/N.java` + `org/jni_zero/GEN_JNI.java`）**：
+  - `A1`：`LibaomAv1Encoder_create` = **0**、`Native method not present` = **0**；`J/N.java` 576 行 / 28 316 B。
+  - `B1`：`J/N.java:576` = **`public static long org_webrtc_LibaomAv1Encoder_create(long webrtcEnvRef) {`**（**可读名、非 native 抛异常桩**）；`GEN_JNI.java:1036` = `throw new RuntimeException("Native method not present");`；`J/N.java` **579 行** / 28 458 B。
+  - ⇒ **三层链条首次完整闭合（均我第一手）**：生成源 `B1:J/N.java:576`（含 `webrtcEnvRef`，与 §13.12 早先记录的位置**一致**）→ 编译类 `1ff8d3ff…`/`a6e7edcf…` → APK dex 内该方法 **`positions: line=1036`**（§13.25(b) 的 dexdump 读数）**逐层对应**。
+- **rc=1 的语义（重要，与 webrtc-builder 审计说明一致）**：A1/A2/B1/B1b 的 `rc=1` 发生在**写盘之后**的 `assert not os.path.isabs(path)`（我传了绝对 `--depfile/--srcjar-path`，承 `jni_registration_generator.py:465`）⇒ **srcjar 已写出且哈希正确**，产物有效。
+- **结论升级 + 限定语确认**：此前记"宿主侧可复算、容器侧不可复算"的这项 ⇒ **升级为"我容器内第一手复跑，逐字节一致"**；同时确认 webrtc-builder 的限定：**在官方输入集上 `--add-stubs-for-missing-native` 是 no-op**（A1≡A2），**B 的差异来自输入清单扩展（160 → 165，恰 +1 文件）**，flag 的作用是"让扩展通过检查并生成 absent-proxy 桩" ⇒ **两者缺一不可**。
+- **附带核对**：`Java_J_N_M0vTiIkf`（AV1 的哈希名）在 `.so` 动态符号中 = **0**，`.so` 导出 `Java_J_N_*` = **193** ⇒ 与 t36 的"AV1 行 = `no`（头内有原型、`.so` 无导出）"及 E1 的 193↔193 双向相等**自洽**。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
