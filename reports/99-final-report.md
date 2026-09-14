@@ -1639,6 +1639,31 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - **不写成通过（仍未验证）**：真机安装/首次 native 调用/`JNI_OnLoad` 运行期注册/Camera2 采集/首帧渲染/日志导出；宿主 `/opt/apk-http/served/app-debug.apk`（容器不可见，仅他人报告同哈希）。
 - **附带事实（不改变 verdict）**：APK **整包 byte-reproducibility = false** —— 同一 jar、同一 `--no-build-cache clean` 命令的两次构建分别产出锚点 `30c41ac9…`（18:39–18:42 日志 `6f02e949…`）与 `ef29e00c…`（19:02–19:04 日志 `reports/10-t33-nocache-assembleDebug-20260914-190227.log`）；两者**六载荷逐件相同、类集合 26 195/26 195 相同**（§13.25(b)），故稳定判据落在载荷而非整包 sha。
 
+#### (5) mtime 引用规则（native-dev 提议，我采纳）+ **A 形态件首次第一手实测**（读盘 20:25:14）
+- **规则（采纳，与 P-13 读盘行配套使用）**：**内容一律以 `sha256` 为准；`mtime` 只在"同一观测时刻"内才具比较意义**。实证：18:32:24 非授权落 A → 18:33:42 回滚为 B，**内容回到原样但 mtime 被刷新**（`0c776934…` 首落 18:17:28 / 现件 18:33:42）⇒ 引用任何快照日志的 mtime 列时，须按**该快照的观测时刻**读，且必须与同段读盘行并列。**任何"换成 A 再换回 B"都只动 mtime 不动内容**，这是本次事故的直接副产品。
+- **A 形态件第一手实测（此前我只能引用他人读数；本轮这些件对 uid 1000 可读）**：
+  ```
+  [读盘 20:25:14]
+  tmp/jn-fix/QUARANTINE-A/ACCIDENT-landed-A-c289b4df.jar        c289b4dfd06827bc…  1 206 237 B  条目 509  ^J/ = 1
+      J/N.class        = 9ada0641fcee5881…（6 742 B）
+      GEN_JNI.class    = 8f3ce6137f02cef9…（24 727 B）
+      javap：J.N  static native = 193 ; public static = 193          （无 AV1 桩）
+             GEN_JNI static native = 0 ; public static = 193 ; invokestatic J/N. = 193
+             AV1 可读名（两侧）= 0
+  tmp/jn-fix/QUARANTINE-A/ACCIDENT-landed-A-f2ea0132.aar        f2ea0132…  6 495 516 B；内 classes.jar == c289b4df…（逐字节相同）
+  tmp/jn-fix/final-candidate.jar                                87bed4a5…  1 181 169 B；两类 = 9ada0641… / 8f3ce613…（同一对）
+  tmp/jn-fix/libwebrtc-java.uniform61.jar                       2f8a91a2…  1 181 035 B；两类 = 9ada0641… / 8f3ce613…（同一对）
+  ```
+  - **A/B 判别键的最终确认**：差异**只在 AV1 absent-proxy 桩** —— **A** = `J.N` 193（全 native）/`GEN_JNI` 193（193 转 193）；**B** = `J.N` 194（+1 非 native 抛异常桩）/`GEN_JNI` 194（193 转 + 1 桩）。两类体积差 **J/N 182 B、GEN_JNI 183 B**（`6 924−6 742` / `24 910−24 727`），与 native-dev 报的 182/183 一致 ✅。
+  - **关键推论（对 t34 门禁的加固）**：**`^J/` = 1 在 A、B 两形态下都成立**（A 件同样含 `J/N.class`）⇒ **单靠 `J/` 存在性不能判 A/B**；必须用**方法数 194/194 + 桩**（v2 差异点②"③ 194（193 ⇒ 读到 A 件，立即报警）"正是此意，§13.22(g) 已按此钉）。**§13.21 的事故件因此也满足 v2 的 `J/` 断言**，这说明"回滚后 `J/`=1"**不足以**证明回滚到 B —— 判定证据仍是三值（jar `0c776934…` + 两类哈希）。
+- **我仍读不到的 3 件（EACCES，`root` 属主；请求持写权者或 native-dev 给原样读数）**：
+  | 路径 | 期望/待核 |
+  |---|---|
+  | `artifacts/pre-deploy-7dbe8400.jar` | `sha256sum` + <code>jar tf &#124; wc -l</code>（期望 508）+ 与 `tmp/t31/pre-routeA-libwebrtc-java.jar`（`dc5f8919…`，我可读）的**逐条 508/508 内容比对** |
+  | `tmp/jn-fix/backup-B-before-A-incident-20260914-183224.jar` | `sha256sum`（期望 `0c776934…`）+ <code>jar tf &#124; wc -l</code>（期望 509）+ 两类哈希（期望 `1ff8d3ff…`/`a6e7edcf…`） |
+  | `tmp/jn-fix/QUARANTINE-A/repro-c289b4df.jar` | `sha256sum`（期望 `c289b4df…`）+ <code>jar tf &#124; wc -l</code>（期望 509） |
+  **更优解**：对上述三件做 `chmod 644`（或 `chown 1000:1000`）即可由我**自行复算**，无需转述（`QUARANTINE-A/README.txt` 已为 644，其哈希 `b46581b8…` 我可读）。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
