@@ -1140,6 +1140,7 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 > **已执行**：`chown -R 1000:1000 /opt-dsh-workspaces/code/webrtc-demo/.git`（含 `.git/index` 与全部 objects），并以 uid 1000 实测 `git status/log/rev-parse` 正常；**全队规则：仓库内所有 git 命令一律以 uid 1000 执行**（SSH 场景 `su -s /bin/bash admin -c "cd <repo> && git …"`），**禁止 root 身份跑 git**。
 > **verifier 复核与一次复发留痕**：chown 之后我又观察到 **`.git/index` 于 18:54:11 再次变为 `root:root`**（⇒ chown 本身不足以长期维持，**规则才是操作性根治**）；我按就地修复重建（18:55:47 恢复 `node:node`，`find .git ! -user node` = **0**）。**四次时间点**：`18:25`、`18:27`、`18:31:18`、`18:46:11`（+ 复核时 `18:54:11`）。
 > **结论**：K-17 记为**已闭合（captain chown + uid-1000-only 规则；verifier 就地修复配方保留于 §10.11）**。
+> **读侧核验（我实测）**：`webrtc-build/src/out/gen` 内 `-user root` = **0**、`! -readable` = **0**（仅 505 个 `node:node` 的 600 权限文件）；`out`（14 062 文件）与 `app/build`（860 文件）亦 `! -readable` = 0 ⇒ **读侧当前无阻碍**；如宿主视角确有 root 0600 文件，再按需 `chown -R node:node webrtc-build/src/out`。
 
 
 ### 13.16 生成件可复现性：**A 侧我已独立复算**；第三方构建树内的同名 srcjar **对 node 不可读，暂无法验证**
@@ -1156,6 +1157,8 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 native-dev 称 webrtc-builder 在**构建树**内独立跑出同名 srcjar：`webrtc-build/src/out/Release-arm64/gen/sdk/android/libjingle_peerconnection_so__jni_registration.srcjar`，sha256 同为 `2e352096…`。
 **我的实测**：该文件确实存在（**62 140 B**，mtime **11:34:56**），但权限为 **`-rw------- root root`（0600）** ⇒ **uid 1000 读取 `Permission denied`**（`head`/`jar xf`/`sha256sum` 均失败）。
 ⇒ **（18:35 更新：该文件 owner 已为 node、可读，我复核 = `2e352096…` 且与 `out/A` srcjar 及两份源逐字节相同 ⇒ 本项已由"未验证"升级为"已验证"，见 §13.21 追加第 4 条。原"未能核对"的记述保留如下以备查。）** 我无法在其不可读期间核对 sha256、也无法比较内容；"大小相同"当时只是**弱证据**；如需我核，请 `chmod 644`（或 `chown node:node`）该文件，我一条命令即可复核（`sha256sum` + 解包比对两份 `.java`）。
+> **读侧口径澄清（19:0x 复核）**：native-dev 报"构建树 `gen/**` 中 `0600 root` 文件 = 506/2793"，并要求 `chmod 644`。我实测（容器内同一路径）：`gen` 下总文件 **2 793**、**`-perm 600` = 505**，但 **`-user root` = 0**、**`! -readable` = 0**、**`! -perm -u+rw` = 0** ⇒ 那些 600 权限文件是 **`node:node` 所有**（我可读），**root 属主文件为 0、不可读文件为 0**；`webrtc-build/src/out`（14 062 文件）与 `app/build`（860 文件）同样 `! -readable = 0`。而**本节讨论的那份 srcjar 现为 `-rw-r--r-- node node`（644、mtime 11:34:56 未变、sha `2e352096…`）**，且与 `t30/out/A` 同名件 `cmp` 逐字节相同 ⇒ **我 18:35 的"已验证"结论成立、无需 chmod 才能复核**。⇒ K-17 的**读侧**在本容器**当前为 0 影响**；把"0600"当成"root 所有/不可读"会造成误判（建议 `chmod` 请求可撤回，或仅在宿主视角确有 root 0600 时再执行）。
+
 > ⚠️ 这同时是 **K-17 的"读侧"影响**：root 身份产出的构建中间件对 node 成员**不可读** ⇒ "终报可直接引用该路径"**对 node 身份不成立**（引用前须确认可读性）。
 
 #### (c) 与落位现状的关系（勿混）
