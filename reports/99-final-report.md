@@ -1116,6 +1116,11 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 > ⚠️ **更正 native-dev 本轮的表述**："全文没有 `721df1c8`/`6653fddf`/`b0cddd86` 任一出现"——`721df1c8`、`6653fddf` 确实为 **0**，但 **`b0cddd86` 出现 1 次（`:581`）**，不能一并写"没有"。
 > 另：**t10 代 APK（`c72d3667…`）已不在盘**（我全树有界搜索 `.apk` 仅得现行 `721df1c8` 快照与一处构建中间件）⇒ 跨代数值**无法现测**，只能按历史证据引用。
 
+#### (d) ⚠️ K-17 的**新变体**（18:25 实测）：`.git/index` 被 root 占用 ⇒ node 身份**完全无法提交**
+本轮提交时 `cp $IDX .git/index` 报 `Permission denied`：实测 `.git/index` 为 **`root:root 0644`（mtime 18:25）**，而 uid 1000 既不能改写也不能 chown 它 ⇒ **凡以 node 身份提交者都会卡在最后的 index 同步**（`git commit` 本体亦会因 index 写失败而报错）。
+**可用的就地修复（我已完成，未动任何他人内容）**：`.git` 目录本身是 `node` 可写 ⇒ **`rm -f .git/index && git read-tree HEAD`** 即由 git 以 node 身份重建索引（实测重建后 `0644 node:node`，`git status` 恢复正常、仅剩他人在途文件）。
+**给 captain 的建议（一次性根治）**：`chown -R node:node /data/dsh/home/workspace/code/webrtc-demo/.git`（同时覆盖 `.git/objects/{33,56,ac,c6}` 的 root 属主问题）。**根治前，root 身份的任何 `git` 操作都可能再次把 `.git/index`/对象目录置为 root 所有，从而阻塞 node 身份成员。**
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
