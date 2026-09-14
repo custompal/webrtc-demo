@@ -1118,5 +1118,23 @@ resources.arsc、四个 .so、AndroidManifest.xml、resources.arsc 之外全部�
 3. **盯盘判据要含"标准路径产物变化"**：本次是 verifier 的只读盯盘（对比 served/artifacts 与标准路径）先发现的，说明"多源产物 sha 交叉对比"是有效探针，应保留为例行检查。
 4. **归属纪律**：`f1b36244…` 与 `ef29e00c…` 同类 —— 一律**归档为非交付件**、不进服务快照、不作锚点、不进 v3 钉集。
 
+### 9.17.5 事故残留：构建缓存属主被回退（已归零）+ 三处"已闭合"表述的时点限定
+
+> 发现者：**verifier**（22:16 只读 `find/stat` 实测）；处置者：**captain**（22:17，宿主 `chown -R`）。
+
+```
+[22:16 实测] app/build 非 uid1000 = 1337 项（全 root；intermediates/incremental 277、tmp/kotlin-classes 234、
+             project_dex_archive 218、merged_res* 189 …）；app/.cxx 非 uid1000 = 12 项（Debug/3n4t43a2/**：
+             11 个 *.cpp.o + configure_fingerprint.bin）；reports/logs 非 uid1000 = 2
+             （build_app-20260914-215241.log / -220259.log）
+             ⇒ 与 §9.17.1 的 22:08–22:09 root 侧并行链**同源**（不是新事故）；tracked 树 = 0 项非 1000
+[22:17 处置] chown -R 1000:1000 app/build app/.cxx reports/logs
+[22:17 复核] app/build = 0、app/.cxx = 0、reports/logs = 0；全仓（除 .git）非 uid1000 = **0**；
+             锚点未动：标准路径 = served = 36ba3ec6…、jar = 0c776934…；`git status -uall` = 0
+```
+
+**时点限定（P-16 口径，采纳 verifier 建议）**：`reports/99` 中以下三句只对各自采样时点成立，**不得当作现态引用**：① §13.26 的"`[读盘 21:13:13]` app/build 非 uid1000 = 0（总 1343 项）"；② §13.26(11) 的"t42 步骤 5 `app/build`/`.gradle` root 条目 = 0"；③ K-17 行"全仓（含 `.git`）`! -uid 1000` = 0，残余 12 个 `app/.cxx` root 件现已不存在"（该 12 项在 22:08 事故链中**重新出现**，已于 22:17 再次归零）。**汇总推荐口径**："**tracked 树非 1000 = 0**；构建缓存 `app/build`/`app/.cxx` 归零时点 = 22:17（其前 22:08–22:09 曾被事故链置为 root，1337+12 项，已清理）"。
+
+
 
 
