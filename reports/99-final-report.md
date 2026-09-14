@@ -14,10 +14,12 @@
 | **t11 开工时磁盘指纹** | **1337 行 / `sha256 b3b6743825eababc51d41944d61d0f4ab542c8a0f3cdfc4d7a754cefd1cc0f4d`**（执行期间两次断言，值稳定） |
 | V 项 | V01–V64（实测计数 64，无重排；另 §12.9 追加 V60–V64） |
 | 仓库根 | 容器 `/data/dsh/home/workspace/code/webrtc-demo` ＝ 宿主机 `/opt/dsh-workspaces/code/webrtc-demo` |
-| **最终 HEAD（t19 收口）** | **`b66c1664a059202b1b2d020060b9083a8d5cb6ca`**（`t18: 闭合 t11 findings F-1/F-2 + reports/07 v1.6 与 reports/99 入库 + no-cache 决定性构建证据`）—— **该提交只含报告文件**（`reports/07-native-dev.md` +44 / `reports/10-app-build.md` +67 / `reports/99-final-report.md` 572 行），**不含任何产物字节**；收口时 `git status --porcelain` = **空** ✅ |
-| 本报告自身的收口提交 | 上表 `b66c166` 已把本报告（572 行版）入库；**此后 verifier 仅为本节的 HEAD 回填/APK 终值确认提交了一次 `reports/99` 更新（只改本文件，不含产物字节）**——该后续提交的哈希不写进本报告（避免自引用）；**项目交付物的最终 HEAD 以 `b66c166` 为准** |
-| 提交谱系（全部） | `7a02694`（初始化文档）→ `ad2e553`（submodule）→ `1a9d3ff`（t3 报告）→ `198d514`（**t10 统一提交**）→ `8a8611e`（t10 收尾/属主归一）→ `1a3a8e6` → `10aa709` → `39a62bd` → `d7a2471` → `a57c057` → `14ef053`（退役脚本 `git rm`）→ **`b66c166`（t18 收尾，最终）** |
-| 收尾提交与判据（**t19 收口，全部达成**） | ① `git ls-files scripts/` **不含** `fix_jar_class_version.sh` ✓（F-01 闭合，`14ef053`）；② `reports/10` 的 v69 归属**已写对** —— 原件归档为 `.aar.orig`（6 457 598 B / `fe26d97f…d178e`，其 `classes.jar` = `ad54a0a2…` v69），现行 AAR 内 `classes.jar` = `d98939bb…`（major 61）✓（F-02 闭合，`b66c166`）；③ `git status --porcelain` = **空** ✓（`reports/07` v1.6、`reports/10`、`reports/99` 均随 `b66c166` 入库） |
+| **t26 交付时 HEAD** | **`3486d58a9295e517ee62fae6a89b13d1c4b451e5`**（`reports/05,15: 更正 t23 章节…`）；其前一提交 **`8a2c4000`**（`fix(android): jni_zero 绑定类 + 16KB 页对齐 + 引擎失败可诊断化（最终交付，静默窗口构建）`）为 **t26 交付提交**；t26 收口时 `git status --porcelain` = **空** ✅ |
+| **t27 复测时 HEAD（真实值，勿按上一条引用）** | **`1621d72dcea6da6d7d6770e7fd4ff247ba174cc0`**（`reports/10 §9.4: 标注 10:59 构建为中间产物… + 入库 scripts/check_jn_binding.py`）。t26 之后新增 3 个提交：`806aa71`（`reports/10 §9.7` jar↔.so 边界一致性）、`7d0e0cc`（`§9.8` 构建窗口精确事实）、`1621d72`（`§9.4` + 新增 `scripts/check_jn_binding.py`）。**已实测确认均未触及交付物**：`sha256 doc/14` 仍 `b3b67438…`（1337 行）、APK 仍 `721df1c8…`（33,293,061 B）、`libwebrtc-java.so` 仍 `757cef81…`；故下文各项 APK/契约证据在本 HEAD 上依然成立 |
+| t27 复测时 `git status --porcelain` | 非空，且**均为他人在途文件**：` M scripts/check_jar_link_integrity.py`（非本任务修改）、` M reports/99-final-report.md`（本报告待提交项）。本任务**只提交** `reports/99-final-report.md`（见 §10 复跑命令） |
+| 本报告自身的提交 | `b66c166`（t18）→ **`bda87e4`（verifier t19 收口，仅改 `reports/99`）**；此后 t26 链路新增 `35a7e7f`→`8a2c400`→`3486d58`（t23/t24/t25 实现 + `reports/05,15` 勘误）与 t27 前的 `806aa71`→`7d0e0cc`→`1621d72`（`reports/10` + `scripts/check_jn_binding.py`），**均不含本报告** |
+| 提交谱系（全部） | `7a02694`→`ad2e553`→`1a9d3ff`→`198d514`（t10 统一提交）→`8a8611e`→`1a3a8e6`→`10aa709`→`39a62bd`→`d7a2471`→`a57c057`→`14ef053`（退役脚本 `git rm`）→`b66c166`（t18 收尾）→`bda87e4`（verifier t19）→`35a7e7f`（t23/t24/t25 实现首提）→**`8a2c400`（t26 最终交付）**→**`3486d58`（reports/05,15 勘误）**→`806aa71`→`7d0e0cc`→**`1621d72`（t27 复测时 HEAD）** |
+| 收尾提交与判据 | t19：① 退役脚本已 `git rm`（`14ef053`）✓；② `reports/10` 的 v69 归属已写对 ✓；③ `status` 空 ✓。t26：④ 交付提交 `8a2c400`（14 文件 +1524/−264）后 `status` 空 ✓；⑤ `git ls-files scripts/` 无 `fix_jar_class_version.sh` ✓；⑥ 受版控树与全项目非 1000 属主项 = 0 ✓ |
 | 在途文件（**授权，非缺陷**） | `reports/07-native-dev.md` 在验证期间处于**在途提交状态**：native-dev 已 idle 收工的 **v1.6 / 531 行**（新增 §9.1.2「APK 内实体证据」、N5 标为已闭合），captain 已指派 env-installer 随最终收尾提交带上；**最终提交哈希待该提交落地后回填**。其 §9.1.2 的两条哈希与 ELF 结论**我已独立复跑**（见 §3.8） |
 | tracked 文件数 | 169（signaling 23；`app/src/**/*.kt` 43 = main 40 + test 3；`scripts/patches/libwebrtc-java-release17.patch` 已入库） |
 | 本报告只写的文件 | 本文件（未修改任何被验证产物） |
@@ -43,7 +45,8 @@
 
 | 交付物 | sha256（前 16） | 对应提交 / 来源 | 证据 |
 |---|---|---|---|
-| **交付 APK（终版）** `app/build/outputs/apk/debug/app-debug.apk`（33 260 234 B，mtime **21:42:38**） | **`b0cddd86718a75a0`**（全量 `b0cddd86718a75a0aadb82424d0ce5ab24bae2f52edede27f86cd0c2d7bbb12b`） | **不在任何提交内**（`app/build/**` 被 gitignore）；由 t18 的**决定性 no-cache clean 构建**产出（`--no-daemon --no-build-cache clean assembleDebug`，日志 `reports/logs/final-nocache-assembleDebug-20260913-214035.log`），使用 t16 的 v61 jar `d98939bb…` | 我的产物级复核（§3.8/§3.13）；构建日志 |
+| **交付 APK（t27 终版）** `app/build/outputs/apk/debug/app-debug.apk`（**33 293 061 B**，mtime **2026-09-14 11:28:34.950**） | **`721df1c82841ad992ffef016cdb4fc09335028869fa443e98f24fe797055b724`** | **不在任何提交内**（`app/build/**` gitignore）；由 **t26** 在"静默窗口 + 完全执行"下重编（`--no-daemon --no-build-cache clean assembleDebug`，日志 `reports/logs/t26d-nocache-assembleDebug-20260914-112608.log`；FROM-CACHE=0、`:app:clean` 出现、43 tasks = 42 executed/1 up-to-date），使用 t23 修复后的 jar `dc5f8919…` | 我的产物级复核（§3.8/§12） |
+| ~~过程值 APK（已被取代）~~ | `b0cddd86…`（t18，33 260 234 B）/ `58834b5a…`（11:04）/ `6653fddf…`（10:55） | 均为**过程值**：`b0cddd86…` 是 t18 的 no-cache clean 构建产物，**其后被 t23–t26 的 jar 修复链取代**；`58834b5a…`/`6653fddf…` 按 t26 判据作废（构建窗口内输入变更）。仅存哈希与当时核验记录 | §3.13/§12 |
 | ~~前一次 APK（已被覆盖）~~ | `c72d366706569b6d` | 20:21:25 产物，**其字节已被上述 clean 构建覆盖且无备份**；仅存哈希与我当时的核验记录（`.so` 两个哈希与终版相同，见 §3.8） | §3.8 历史记录 |
 | 现行 libwebrtc jar `third_party/libwebrtc/java/libwebrtc-java.jar`（1 048 264 B） | `d98939bbf0c0cd07` | **t16 重编产物**（`--release 17`），由 `1a3a8e6`/`10aa709` 起的报告记录其状态；jar 本身在 gitignore 的 `third_party/libwebrtc/` 内 | `javap` major 61；AAR 内 `classes.jar` 同哈希 |
 | AAR `libwebrtc-arm64.aar`（6 456 926 B） | `456e3f2ffbc40758` | 同上（t16，20:00 重打，内 `classes.jar` = `d98939bb…`） | `unzip` + sha256 |
@@ -68,8 +71,9 @@
 
 | 维度 | 结论 |
 |---|---|
-| 交付完整性 | **通过**：仓库、submodule×2、`libvpx.a`+头、libwebrtc jar/so/aar、自研 `libwebrtcdemo_native.so`、Go 二进制、部署单元、**终版 APK `b0cddd86…`** 均在位且经我复核（§3.8/§3.13） |
-| 可复现性 | **Go：逐字节可复现（VCS-free 基线两次 `cmp` 相同）**；**APK：非逐字节可复现**（4 次缓存辅助 = `c72d3667…`，1 次完全执行 = `b0cddd86…`；差异在打包元数据/生成顺序，载荷语义未证实有差异）——见 §3.13 |
+| 交付完整性 | **通过**：仓库、submodule×2、`libvpx.a`+头、libwebrtc jar/so/aar（含 jni_zero 绑定类）、自研 `libwebrtcdemo_native.so`、Go 二进制、部署单元、**t27 终版 APK `721df1c8…`** 均在位且经我复核（§3.8/§12） |
+| 真机缺陷修复（t23–t26） | **类存在性 ✅ / 16 KB 对齐 ✅ / 可诊断化 ✅ / 单测 42/0 ✅**；**运行期可绑定 ✗（未闭合）** —— `J/N.class` 缺失、`GEN_JNI` 仍为 Placeholder 实现 ⇒ 静态预期真机首次 native 调用 `UnsatisfiedLinkError`；按 captain 定向由 **t29/t30（路线 A）** 补齐（§12/§13） |
+| 可复现性 | **Go：逐字节可复现**（VCS-free 基线两次 `cmp` 相同，§3.9）。**APK：非逐字节可复现** —— 4 次**缓存辅助**构建同哈希 `c72d3667…`，1 次**完全执行**得 `b0cddd86…`（§3.13）；**t27 终版 APK `721df1c8…`** 由 t26 的 `--no-build-cache clean` 完全执行构建产出（FROM-CACHE=0，§12），**其与 `b0cddd86…` 不同属预期**（jar 已更换为 t23 修复版）。结论不变：**APK 不能靠"同哈希"证明干净复现** |
 | 契约一致性（静态/构建级） | **通过**：JNI 15/15 逐字一致、信令 14/14 一致、NAT 枚举 6/6 一致、CMake 路径与实际布局一致、APK 内 arm64 .so 齐备 |
 | 服务端与联调 | **通过**：Go `build`/`vet` 0、e2e 19/19（公网+内网）、coturn V60–V62/V64 通过、systemd active、日志在写 |
 | 设备级（整机通话） | **未能验证**：无 Android 真机（V54–V59） |
@@ -168,7 +172,7 @@
 |---|---|---|
 | V47 | **已验证** | `third_party/libwebrtc/java/`：`libwebrtc-java.jar` 1048264 B、`libwebrtc-arm64.aar` 6456926 B、`jni/arm64-v8a/libjingle_peerconnection_so.so` 12946912 B |
 | V48 | **已验证** | `llvm-objdump -f third_party/libvpx/lib/libvpx.a` → **156/156 成员 `architecture: aarch64`**（判定按输出，不按退出码）；`libjingle_peerconnection_so.so` → `elf64-littleaarch64`；`file(1)` 对 `.a` 只报 `current ar archive`（宿主机实测），不得据此判失败 |
-| V49 | **部分验证（构建未由我重跑；产物与单测已复核）** | ① 产物（**终版**）：`app/build/outputs/apk/debug/app-debug.apk` 33,260,234 B / mtime `2026-09-13 21:42:38.205` / `sha256 b0cddd86718a75a0aadb82424d0ce5ab24bae2f52edede27f86cd0c2d7bbb12b`；构建证据 = `reports/logs/final-nocache-assembleDebug-20260913-214035.log`（`--no-build-cache`，`:app:clean` 执行，`43 actionable tasks: 42 executed, 1 up-to-date`，**FROM-CACHE = 0**，`dexBuilderDebug`/`packageDebug`/`assembleDebug` 均实际执行）。**前一次 `c72d3667…`（20:21:25）已被该 clean 构建覆盖**；`find app/build -name libwebrtcdemo_native.so` → 3 条（cxx/merged/stripped，均 aarch64）。② **我未重跑 `./gradlew :app:assembleDebug`**：debug APK 含签名与时间戳，重跑会改变交付物字节；以产物复核 + t10 原始输出路径（`reports/10-app-build.md`、`scripts/build_app.sh` 10 阶段自检）为证据。③ **单元测试（强制重跑，非 UP-TO-DATE）**：`./gradlew :app:testDebugUnitTest --rerun-tasks` → `BUILD SUCCESSFUL in 1m 44s`、**24/24 executed**；结果 XML = **3 类 / 36 用例 / failures 0 / errors 0**（AppConfigUrlTest 8、SignalingErrorPolicyTest 17、SignalingIdentityTest 11），详见 §3.9。⚠️ 首次在线复跑曾因 `dl.google.com` 读超时 `BUILD FAILED in 15m 4s`（环境），离线模式亦因 AGP 依赖未缓存失败——最终以缓存就绪后的成功运行为准 |
+| V49 | **部分验证（构建未由我重跑；产物与单测已复核）** | ① 产物（**t27 终版**）：`app-debug.apk` 33,293,061 B / mtime `2026-09-14 11:28:34.950` / `sha256 721df1c82841ad992ffef016cdb4fc09335028869fa443e98f24fe797055b724`；构建证据 = `reports/logs/t26d-nocache-assembleDebug-20260914-112608.log`（`--no-build-cache`、`:app:clean` 执行、FROM-CACHE=0、42 executed）② **我未重跑 `assembleDebug`**（重编归 t26；重跑会改变交付字节）③ **单元测试**：`./gradlew :app:testDebugUnitTest --rerun-tasks` → **`BUILD SUCCESSFUL in 2m 19s`、`24 actionable tasks: 24 executed`**；XML（11:39:00）= **5 类 / 42 用例 / failures 0 / errors 0**（AppConfigUrlTest 8、NativeInterfaceContractTest 4、SignalingErrorPolicyTest 17、SignalingIdentityTest 11、**JniBindingClasspathTest 2**），详见 §3.9 与 §12 |
 | V50 | **已验证（在交付的 debug APK 上）** | `unzip -l app-debug.apk` → `lib/arm64-v8a/libwebrtcdemo_native.so`（1231512）、`lib/arm64-v8a/libjingle_peerconnection_so.so`（12946912），另含 `libc++_shared.so`、`libandroidx.graphics.path.so`；从 APK 抽出后 `llvm-objdump -f` → 两者均 `elf64-littleaarch64`。**注**：交付为 **debug** APK，`app/build/outputs/apk/release/` 不存在（release 未构建） |
 | V51 | **已验证** | `aapt2 dump badging` → `package: name='com.example.webrtcdemo'` versionCode 1 / versionName 1.0、compileSdk 34；权限 `INTERNET/CAMERA/RECORD_AUDIO/ACCESS_NETWORK_STATE/MODIFY_AUDIO_SETTINGS`；`aapt2 dump xmltree --file AndroidManifest.xml` → `usesCleartextTraffic=true`、`FileProvider authorities=com.example.webrtcdemo.fileprovider exported=false`、MainActivity `exported=true` |
 | V52 | **已验证（附口径注记）** | `find signaling -type f -name "signaling*" -not -name "*.log"` → `signaling/signaling`、`signaling/dist/signaling-linux-amd64`；`file` → `ELF 64-bit LSB executable, x86-64 … statically linked … stripped`。**注**：交付/部署二进制为 `c298235a…c068`（`/opt/signaling/signaling`，运行中 PID 200623），而仓库 `signaling/dist/` 于 20:37 被重建为 `b3e502a0c7d233…`（差异仅嵌入的 VCS stamp；见 commit `39a62bd`） |
@@ -251,7 +255,7 @@
 | 项 | 结论 | 证据 |
 |---|---|---|
 | D-3 身份推导 | **已验证（静态）／运行时未验证** | `SignalingIdentity` 9 处真实使用；`invert` = `SLOT_A→SLOT_B`、`SLOT_B→SLOT_A`、else `null`（`SignalingClient.kt:579–583`）；我用 Node 独立复算 6 用例全 OK；剥离注释后全源树仅两处 `const val` 出现 `peer-00`，**无槽位顺序推断**；UI `StatusPanel.kt:54/76` 未知显示 `—` |
-| D-6 Offerer 不变量 | **已验证** | `sendOffer` 全仓仅 1 处调用（`CallSession.kt:160`）← `createOffer()` 唯一调用者 `CallViewModel.kt:359` ← `maybeCreateOffer()` 唯一出口，闸门 `:356 if (role != ROLE_HOST || !peerJoined || !sessionReady) return`；触发路径 3 条（`:258/:265/:301`）；joiner 仅 `createAnswer`（`CallSession.kt:184+`）→ **同一时刻只有一方发 Offer 成立** |
+| D-6 Offerer 不变量 | **已验证** | `sendOffer` 全仓仅 1 处调用（`CallSession.kt:160`）← `createOffer()` 唯一调用者 `CallViewModel.kt:359` ← `maybeCreateOffer()` 唯一出口，闸门 <code>:356 if (role != ROLE_HOST &#124;&#124; !peerJoined &#124;&#124; !sessionReady) return</code>；触发路径 3 条（`:258/:265/:301`）；joiner 仅 `createAnswer`（`CallSession.kt:184+`）→ **同一时刻只有一方发 Offer 成立** |
 | `ROOM_FULL` 非终态 | **已验证（上轮 medium 已修复）** | `SignalingErrorPolicy.TERMINAL_CODES` **不含** `ROOM_FULL`；`actionFor(ROOM_FULL, rejoinAfterDrop=true)=RETRY_REJOIN`、首入房 `=SURFACE`；`Action.clearsRoomIntent` 仅终态为 true；退避 `1,2,4,8…`（封顶 8s）×10 → 我用 Node 独立复算累计 **63 000 ms = 63 s > 45 s** |
 | 读流按 `type` 分发 | **已验证** | `SignalingClient.kt:166 SignalingCodec.decode(text)`（kotlinx sealed + `classDiscriminator="type"`）→ `logIncoming/advanceStateOnIncoming/SignalingIdentity.update/listener.onMessage`；`Pong` 在 `:172–175` 就地消费；无"下一条必是 joined"假设 |
 
@@ -410,6 +414,8 @@
 | K-12 | 中（结构性） | **仓库不含 third_party 编译产物**：`.gitignore:12–13` 排除 `third_party/libwebrtc/`、`third_party/libvpx/` → **仅凭 clone 无法重建 APK**，必须重跑 `scripts/t5-libwebrtc-libvpx-build.sh`（约 49 min + 源码下载）；`--release 25→17` 的修补由 `scripts/patches/libwebrtc-java-release17.patch` 提供，t5 脚本按文件逐项 `patch -p1 --forward` **幂等应用**（实测脚本逻辑含 dry-run 反向校验） | 结构性限制，非可修复缺陷；终报如实标注 |
 | K-13 | ~~medium~~ **已闭合** | `scripts/fix_jar_class_version.sh` 曾被 `198d514` 误入库，**已由 `14ef053` 执行 `git rm`**（复核：`git ls-files scripts/` = 0 命中） | 无需动作；残留 `reports/07-native-dev.md` 为 captain 授权在途 |
 | K-14 | 信息 | 基线口径差异见 §5.2 CD-5（dist 二进制 vs 部署件） | 以"部署件 `c298235a…`（vcs.revision=1a9d3ff）为交付证据"记录 |
+| **K-15** | **高（未闭合，已定方向）** | **运行期绑定缺口**：jar 内 `org.jni_zero.GEN_JNI` 仍是 **Placeholder 实现**（194 个 `public static native <可读名>`、非 native static = 0），`.so` 侧是 **hashing/short-proxy** 模式（193 个 `Java_J_N_<hash>`；`.rodata` 无 `org/jni_zero/GEN_JNI` 类名串、无可读方法名、无 `kMethods`）⇒ **两条绑定路径都不成立**，静态预期真机首次 native 调用 **`UnsatisfiedLinkError`** | 按 captain 定向走**路线 A**（Java 侧补 `J.N` + 转发 `GEN_JNI`，`.so` 不重链），由 **t29/t30** 实施，判据见 §13.3；**最终可用性以修复后重编的 APK 为准** |
+| **K-16** | **中** | **t25 回归测试只证明"类存在性"**：`JniBindingClasspathTest` 仅断言 `Class.forName` 可解析（43 条 = 1 `GEN_JNI` + 42 `*Jni`），**对 `J.N`/转发形态/native-ness 零断言** ⇒ 在当前 jar 上**会绿灯而绑定仍是断的**（假绿）；清单另漏 5 项（`org/webrtc/audio/*Jni` ×3、`org/jni_zero/*Jni` ×2；真值 47） | 建议 android-dev 加固（补 `J.N`/转发断言 + 清单 42→47）；**存在性回归不得替代可绑定判据**（§13.4） |
 
 ---
 
@@ -476,6 +482,8 @@
 5. **单元测试复跑**：`./gradlew :app:testDebugUnitTest --rerun` 已通过（36/0）；建议把 AGP/Gradle 依赖预置进缓存，避免 `dl.google.com` 超时导致 `--offline` 不可用。
 6. **清理**：`third_party/libwebrtc/java/*.orig*`、`*.prev-v61`、`*.v55-java11`、`*.v61-java17` 备份文件；修 `run_host_tests.sh` 默认 `REPO`（K-6）。
 7. 可选：TCP 3478/5349 放行；将 `/signal` 兼容别名（若将来加回）显式标注 deprecated。
+8. **【最高优先·新增】路线 A 修复（t30）后重编 APK**：补齐 `J.N` + 转发 `GEN_JNI` ⇒ 按 §13.3 判据复验（`J/N.class` 存在；`jni_mangle(J.N 的 native 名)` 集合 == `.so` 的 193 个 `Java_J_N_*`；`GEN_JNI` native = 0），并对新 APK 重跑 §12 的产物级检查。**在此之前，当前 `721df1c8…` 不构成"可运行交付"**。
+9. **加固 `JniBindingClasspathTest`**：补 `J.N`/转发断言、清单 42→47；另清理报告注释里的过期值（`reports/07 §14.3` 的 187 等，见 §13.2 勘误清单，按 captain 裁定由本报告承载）。
 
 ---
 
@@ -568,6 +576,160 @@ llvm-readelf --dyn-syms /tmp/apkfull/lib/arm64-v8a/libwebrtcdemo_native.so | gre
 | P-5 | **可复现性缺口已补** | 本轮新增 `scripts/patches/libwebrtc-java-release17.patch` + t5 脚本幂等应用，使 `--release 25→17` 的修补可复现 | 保留；K-12 已说明"clone 不可直接重建"的结构性限制 |
 | P-6 | **验证期间的"在途报告"管理** | `reports/07-native-dev.md` 在 t11 执行期间处于未提交状态（v1.6 升级），captain 判定为**授权在途项**并随收尾提交带上；我按其 §9.1.2 复跑了两条哈希与 ELF 检查（§3.8） | 建议：验证窗口内凡"已定稿待提交"的文件，由 captain 显式标注"授权在途"，避免验收方误判为失控改动 |
 | P-7 | **"缓存辅助构建"会被误当成复现证据** | 三次 `authoritative-*` 日志均有 `FROM-CACHE = 21`，得到与旧构建相同的 APK 哈希 `c72d3667…`；而一次 `--no-build-cache + clean` 的完全执行得到 **不同** 的 `b0cddd86…` ⇒ "同哈希"是缓存的结果，不是独立复现 | 结论要写"**APK 非逐字节可复现**"；判定构建证据必须要求 **`clean` + `--no-build-cache`** 且日志中 `FROM-CACHE = 0`、关键任务非 UP-TO-DATE。**该点 android-dev 最早提出，captain 曾错误否定，现由实测确立（captain 承担该错误）** |
+| P-8 | **"运行期才解析的依赖"必须有交付物级断言** | 真机 `NoClassDefFoundError`（D-1）在"编译通过 + APK 打包成功 + 单测全绿"的情况下依然发生：debug 链只到 **D8**，而 D8 不解析被引用但缺失的类 ⇒ 静态流程一路绿灯 | 凡运行期才解析的依赖，必须补 **jar 常量池引用闭合性检查**（N-1）、**绑定类存在性回归**（N-2，且须防假绿，§13.4）与 **dex/APK 内实体断言**（N-4）；详见 §12.3/§12.4 |
+
+---
+
+## 12. 真机缺陷修复复核（t23–t26 · 本轮 t27 主题）
+
+### 12.1 两个独立缺陷与修复链
+
+| # | 缺陷 | 现象 | 根因（源码级） | 修复 |
+|---|---|---|---|---|
+| **D-1** | 交付 jar **缺 jni_zero 绑定类** | 真机进通话页即 `NoClassDefFoundError: org.webrtc.PeerConnectionFactoryJni`（t22 定位） | `libwebrtc.jar` 由 `zip.py --input-zips=@FileArg(...:dist_classpath)` 打包，该集合 `direct_deps_only=true` ⇒ `generated_*_jni_java` 属**传递依赖被系统性排除**；48 个 `*Jni.class` 从未进 jar，且**不存在合并后的 `GEN_JNI`** | **t23**：补齐 48 个 `*Jni` + 合成 194 native 的 `GEN_JNI`（jar `dc5f8919…`，508 类；AAR 同步 `e066e456…`，AAR 内 `classes.jar` 与 jar 同哈希） |
+| **D-2** | **16 KB 页对齐不达标** | 16 KB 页设备 `loadLibrary` 失败（独立于 D-1） | NDK r26 默认 `max-page-size=0x1000`；自有库与 `libc++_shared.so` 的 LOAD 段 `p_align=0x1000` | **t24/t28**：自有库加 `-Wl,-z,max-page-size=16384`；`libc++_shared` 采用"**用 r26 的 `libc++_static.a`+`libc++abi.a` 自链接 16 KB 同名库**"（`c9dbf4ec…`，1,356,968 B）并经 `jniLibs`+`pickFirsts` 打包 |
+
+**辅助修复**：**t25** 引擎失败可诊断化（异常类名/message/cause 透传 UI 与日志 + 绑定类回归测试）；**t26** 在"写者静默窗口 + `--no-build-cache clean`"下重编 APK 并提交；**t17** 把 `--release 25→17` 补丁固化为 `scripts/patches/libwebrtc-java-release17.patch` + 幂等守卫。
+
+### 12.2 我的独立复核（不采信任何自述）
+
+**(a) jar 完整性 —— 我自写的常量池引用检查**（ZIP 解包 + 每个 `.class` 做类名引用正则匹配并排除自引用）
+```
+JAR = third_party/libwebrtc/java/libwebrtc-java.jar   (sha256 dc5f89193d55c971… , 1 187 970 B)
+class 总数             = 508 （解析失败 = 0）
+major 版本分布         = {"55":51,"61":457}  ⇒ max = 61   ✅ (≤61)
+*Jni.class 数          = 48
+*Natives.class 数      = 48
+GEN_JNI.class 存在     = true
+J/N.class 存在         = false
+被引用的 *Jni（含子包）= 47
+被引用但缺失（须 0）   = 0 []
+存在但未被引用         = [ 'org/webrtc/Dav1dDecoderJni' ]
+```
+- **自洽性**：构建树 `out/Release-arm64/gen` 下 `*Jni.java` = **48** ⇒ 与 jar 内 48 个 `*Jni.class` **数量一致**；`GEN_JNI.java`/`N.java` 在 gen 下为 0（jni_zero 直接写入 srcjar，不落散文件）。
+- **javap 抽验**：`class org.webrtc.PeerConnectionFactoryJni implements org.webrtc.PeerConnectionFactory$Natives`，含 `public static org.webrtc.PeerConnectionFactory$Natives get();`；该类自身 `native` 方法数 = **0**（符合 jni_zero 设计：native 全在 `GEN_JNI`；实测 `GEN_JNI` native = **194**、非 native static = **0**）。
+
+**(b) 新 APK 产物级复验**（`app/build/outputs/apk/debug/app-debug.apk` = **`721df1c82841ad99…`**，33,293,061 B，mtime `2026-09-14 11:28:34.950`）
+
+| 检查 | 我的实测 |
+|---|---|
+| 解包四项 | `AndroidManifest.xml` / `resources.arsc`（`aapt2 dump resources` → `Binary APK`、`Package name=com.example.webrtcdemo id=7f`，可解析）/ `res/xml/file_paths.xml` / `lib/arm64-v8a/` 均存在 |
+| 包名/权限/cleartext/Provider | `package=com.example.webrtcdemo`；CAMERA/RECORD_AUDIO/INTERNET(+ACCESS_NETWORK_STATE/MODIFY_AUDIO_SETTINGS)；`usesCleartextTraffic=true`；FileProvider `authorities=com.example.webrtcdemo.fileprovider` |
+| **四个 `.so` 的 `p_align`** | `libandroidx.graphics.path.so` `41e9a793…` = **0x4000**；`libc++_shared.so` `c9dbf4ec…` = **0x4000**；`libjingle_peerconnection_so.so` `757cef81…` = **0x4000**；`libwebrtcdemo_native.so` `95c44e5a…` = **0x4000** ✅ |
+| `libc++_shared` 选对了吗 | APK 内该件与落位件 `app/src/main/jniLibs/arm64-v8a/libc++_shared.so` **`cmp` 逐字节相同**（同 `c9dbf4ec15e931f5…`）⇒ `pickFirsts` 选中自链接的 16 KB 版；**反误判**：`cxx/**/obj/…` 那份仍是 NDK r26 官方 4 KB 件（`4e843755…`，1,822,720 B，`p_align=0x1000`），**仅作合并输入、不参与打包** |
+| 自研库导出 | 仍仅 `JNI_OnLoad` + `JNI_OnUnload`（`NEEDED` 含 `libc++_shared.so`） |
+| **dex 内绑定类（本轮关键证据）** | 共 14 个 dex；**`Lorg/webrtc/PeerConnectionFactoryJni;` 出现在 `classes14.dex`** ✅；`Lorg/jni_zero/GEN_JNI;` 出现在 `classes13/14.dex`；`LJ/N;` 计数 = **0**（与"缺 `J.N`"一致） |
+
+**(c) t25 新增单测复跑（强制，非 UP-TO-DATE）**
+```
+./gradlew :app:testDebugUnitTest --rerun-tasks
+→ BUILD SUCCESSFUL in 2m 19s ；24 actionable tasks: 24 executed
+→ 结果 XML（11:39:00）：
+   AppConfigUrlTest                    tests=8   failures=0 errors=0
+   NativeInterfaceContractTest         tests=4   failures=0 errors=0
+   SignalingErrorPolicyTest            tests=17  failures=0 errors=0
+   SignalingIdentityTest               tests=11  failures=0 errors=0
+   JniBindingClasspathTest             tests=2   failures=0 errors=0   ← t25 新增
+   TOTAL                               tests=42  failures=0 errors=0
+# ===== t27（真机缺陷修复复核）新增复现命令 =====
+# 契约指纹
+sha256sum doc/14-interface-contract.md   # b3b6743825eababc51d41944d61d0f4ab542c8a0f3cdfc4d7a754cefd1cc0f4d（1337 行）
+# jar 完整性（自写常量池引用扫描）：见 §12.2(a)
+node /tmp/jarcheck_t27.mjs third_party/libwebrtc/java/libwebrtc-java.jar
+#   → class 508 / major {"55":51,"61":457} max=61 / *Jni.class=48 / *Natives=48 / GEN_JNI=true / J/N=false
+#   → 被引用 *Jni（含子包）=47 / 被引用但缺失=0 / 未引用=1（Dav1dDecoderJni）
+# APK 内实体
+sha256sum app/build/outputs/apk/debug/app-debug.apk   # 721df1c82841ad99…（33 293 061 B / mtime 2026-09-14 11:28:34.950）
+unzip -oq app-debug.apk -d /tmp/apk_t27 && sha256sum /tmp/apk_t27/lib/arm64-v8a/*.so
+llvm-readelf -l /tmp/apk_t27/lib/arm64-v8a/*.so | grep LOAD     # 四件 p_align 全 0x4000
+for d in app/build/outputs/apk/debug/app-debug.apk; do unzip -p $d classes14.dex > /tmp/c14.dex; done
+strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1（绑定类在交付物内）
+# 单测（强制重跑）
+./gradlew :app:testDebugUnitTest --rerun-tasks   # 24/24 executed；42 用例 0 失败（含 JniBindingClasspathTest 2）
+
+```
+
+### 12.3 新增 / 强化的检查项（本轮真正补上的工程能力）
+
+| # | 检查项 | 为什么必须新增 |
+|---|---|---|
+| N-1 | **jar 内"被引用但缺失的 `*Jni`"= 0**（常量池级引用扫描，含子包） | t22 之前**没有任何静态检查**覆盖"jar 是否自带运行期所需类"；只看"能编译/能打 APK"必然漏 |
+| N-2 | **绑定类存在性回归测试**（`JniBindingClasspathTest`） | 把"缺类"从"真机才炸"提前到"单测即红"（t25 已实现；覆盖度不足见 §13.4 / K-16） |
+| N-3 | **APK 内实体的 `p_align` + `libc++_shared` 与落位件字节相同** | 16 KB 兼容无法靠中间产物判定（`cxx/` 那份恒为 4 KB），必须在 **APK 内实体**上判 |
+| N-4 | **dex `class_defs` 含关键绑定类** | 这是"修复真的进了交付物"的**唯一**不含糊证据（源码/jar 都对 ≠ APK 里有） |
+| N-5 | **构建窗口静默 + `--no-build-cache` + FROM-CACHE=0** | 避免缓存辅助构建被误当"干净复现"（§11 P-7） |
+
+### 12.4 为什么静态验证会漏掉 D-1（教训）
+- debug 构建链只到 **D8**：D8 **不解析**被引用但缺失的类（由运行期 ART 解析）⇒ "编译通过 + APK 打得出来"**完全不能**证明绑定类在位；
+- 交付链里**没有任何一步**检查"jar 的引用闭合性"——直到我们补上**常量池引用扫描**（N-1）与**绑定类回归测试**（N-2）；
+- 结论（已登记为流程留痕 **P-8**）：**凡"运行期才解析的依赖"，必须有交付物级（jar/dex/APK）存在性断言**，不能依赖编译器/打包器默认行为。
+
+### 12.5 未闭合项（**必须带走，不得当成已修好**）
+**K-15 运行期绑定缺口**：jar 内 `GEN_JNI` 仍是 **Placeholder 实现**（194 native 可读名、0 转发），`.so` 侧为 **hashing/short-proxy** 模式（193 `Java_J_N_<hash>`、无 `kMethods`）⇒ 静态预期真机首次 native 调用 **`UnsatisfiedLinkError`**。按 captain 定向由 **t29/t30 路线 A** 修复（§13.3），**修复后须重编 APK 并复跑本节全部检查**。
+
+---
+
+## 13. 绑定机制取证、验收判据与报告勘误（t27 附带收口）
+
+### 13.1 取证（**主论证 = 字符串证据**；`blr` 仅旁证）
+对象：`libjingle_peerconnection_so.so`（`757cef81…`，12,946,912 B）
+
+| 判据 | 实测 | 说明 |
+|---|---|---|
+| `.rodata` 含 `org/jni_zero/GEN_JNI`（RegisterNatives 的 FindClass 目标） | **0** | 主论证 |
+| `.rodata` 含 GEN_JNI 那 194 条可读 native 方法名（`^org_webrtc_`） | **0** | 主论证 |
+| 排除"表里用哈希名"的替代解释（`^M[A-Za-z0-9_$]{7,8}$`） | 仅 **4** 条无关串（`Moderate`/`MLKEM1024`/`MymxOyox1`/`Mih8kih8`） | 主论证 |
+| `JNI_OnLoad`（`0x29f718–0x29f78c`）内 `blr` / `bl` | **0 / 6** | **旁证**（只排除其自身注册，不排除其 helper） |
+| 导出符号 | 定义动态符号 **194 = `JNI_OnLoad` + 193 个 `Java_J_N_*`**（**该库不含 `JNI_OnUnload`**） | 更正 reports/07 组成错误 |
+| **对照实验**（证明"0"不是 strip 假阴性） | 自研库（RegisterNatives）：`onNatTypeDetected` = **2**、`com/example/webrtcdemo/nativebridge/NativeCallbacks` = **1**、`nativeInit` = **5** | 真做注册的库必留类名+方法名串 |
+
+**工具陷阱**：`llvm-objdump -d --disassemble-symbols=JNI_OnLoad` 若符号匹配失败会**静默退化为全文件反汇编**（webrtc-builder 首报）；必须用**显式地址区间**（本报告即如此）。
+
+### 13.2 `reports/07-native-dev.md` 勘误清单（**按 captain 裁定 (A)：由本报告承载，不改其文件**）
+> 报告指纹（我复核）：**791 行 / `ed00dfd40c0844612dff21e97040b181748b543140fc0d11abb3cbfb10fc1154` / mtime 2026-09-14 11:14:49**；TSV `65ff70064355ca099c4f11fb9e21c7cc5406b0893f11cb3bf4babd969b6894f1`（**194 数据行 × 4 列** = 10 注释 + 1 表头 + 194 数据；早前"193 行"作废）。
+
+**(1) 事实错误 2 处** —— 来源：**verifier 独立定位 + native-dev 自查复验认账**
+- **`:551`（§14.2）** 与 **`:523`（v1.7 变更记录）**：现写"**194** 个动态符号 = `JNI_OnLoad` + `JNI_OnUnload` + **193 个 `Java_J_N_<hash>`**" → 正确为 **194 = `JNI_OnLoad` + 193 个 `Java_J_N_*`**；**libjingle 不含 `JNI_OnUnload`**（`JNI_OnLoad`+`JNI_OnUnload` 是**自研库** `libwebrtcdemo_native.so` 的形态）。
+- `:523` 中"14 个模块共 **45** 个 `*Jni.class`"属**版本史旧值，保留不动**，仅注明"该历史条目内 42/45 为当时值，现行见 §16.5/§16.2"。
+- `:411`（§9.1.2"导出 `JNI_OnLoad`（194 个动态符号）"）与其余 `JNI_OnUnload`（14/201/354/380/408/487/520）**均正确、不改**。
+
+**(2) 结论口径"合并即闭环"→ 已被取代（5 条，覆盖 6 行）** —— 来源：**webrtc-builder 报 → native-dev 独立复验并撤回旧判断 → webrtc-builder 已就其"可能不同代际"正式更正（`reports/05 §12.2`、`reports/15 §12`）→ 两方独立复算一致 → verifier 独立复核落点**
+- **`:721`**（§16.2 结论 2）：判据只说"193 个 `Java_J_N_*` 都能在合并 `GEN_JNI` 找到对应方法" → 追加"**符号集合一致 ≠ 运行期可绑定**"；
+- **`:723`**（§16.2 结论 3）与 **`:565`**（§14.3 第 2 条续行）：两处"`.so` 无需重编／缺陷只在 Java 侧打包（缺 `*Jni` + 缺 `GEN_JNI`）" → 更正为"**t23 合并必要但不充分**；jar 侧还须以运行期 srcjar 的 **`J.N` + forwarding `GEN_JNI`** 替换 Placeholder"；
+- **`:564`**（§14.3 第 2 条"最小修复"）：追加"（必要但不充分：须用运行期 srcjar 的 `J/N` + forwarding `GEN_JNI` 替换 jar 内的 Placeholder GEN_JNI）"；
+- **`:569`**（§14.3 第 5 条）：追加"**若类已补齐仍失败，搜 `UnsatisfiedLinkError`**"；
+- **`:769`**（§16.5 B 标题"t23 修复结果的本层复核"）：追加限定"（**仅证明类存在性**：48/48 + `GEN_JNI` 194/194；**不证明可绑定**）"；§16.5 小节标题在 `:751`。
+> ⚠️ 行号以 **verifier 内容定位的权威值**为准：native-dev 早前给的 `:561-562` 实为 `:561` 小节标题与 `:562` 第 1 条，**"最小修复"在 `:564`**；另"无需重编"有 **`:565` 与 `:723` 两处**。
+
+**(3) 过期数字 1 处** —— 来源：**native-dev 自查认账 + verifier 定位**
+- **`:567-568`**（§14.3 第 4 条）："分包 `GEN_JNI` native 合计 **187**、与 `.so` 边界 193 相差 6"为**当时值**（只扫 14 个 `generated_*` jar，漏 `base_java_jni_java`（`LoggingJni`）与 `third_party/jni_zero/generate_jni_java`（`CommonApisJni`/`JniZeroJni`））→ **现行 = 16 分片并集 194**，与 `.so` 193 的差值为 **1 = `org_webrtc_LibaomAv1Encoder_create`**；该条"**不宜只塞某一模块的 `GEN_JNI`**"结论**仍有效**。
+
+**(4) 47/48 与 194/193：三方独立一致**
+
+| 来源 | 方法 | 结果 |
+|---|---|---|
+| native-dev | 从 `gen/jni_headers/**/*_jni.h` boundary 宏反验 + 与 `.so` 导出取交 | TSV **194 行**（193 导出 + 1 AV1） |
+| webrtc-builder | 从 Java 侧 194 条 native 名**正算**符号集、与 TSV 逐条比对 | 交集 **194**、不一致 **0**、双方独有 0；`.so ⊇ TSV` = False，差恰 **1 = AV1** |
+| **verifier（我）** | 自实现 mangling 全量复算（194/194）＋自写常量池引用扫描 | 与 `.so` 集合相等 **193/193**；`*Jni` **48 存在 / 47 被引用 / 0 缺失 / 1 未引用 = `Dav1dDecoderJni`** |
+
+**方法论留痕**：verifier 第一版正则**不支持子包** ⇒ "46 被引用 / 4 未引用"；加 `(?:子包/)*` 后收敛为 **47 / 1** —— 与 native-dev 最初只扫 `org/webrtc/<Class>Jni` 得 **42** 是**同一类漏检**（漏 `org/webrtc/audio/*Jni` ×3 与 `org/jni_zero/*Jni` ×2）。47/48 现行口径 = "**native-dev 自查更正 + webrtc-builder 与 verifier 分别独立复算确认**"。
+
+**(5) AV1 = 设计内抛异常桩**：`jni_zero/codegen/gen_jni_java.py:10-15` `_stub_for_missing_native` → `throw new RuntimeException("Native method not present")`；开关 `jni_registration_generator.py:280/:511`。覆盖率 **193/193**；`GEN_JNI` native 数 **194**，多出的 1 条即 AV1（`Java_J_N_M0vTiIkf`），仅在实际创建 AV1 编码器时抛异常、**不到 JNI**；本项目走 VP9 ⇒ **非缺陷**。
+
+### 13.3 "修好"判据必须**按路线分支**（我先前给出的四条只适用路线 B）
+- **我此前的四条**（`.rodata` 出现 `org/jni_zero/GEN_JNI` + ≈194 条可读名；`JNI_OnLoad` 出现 `blr`；导出仍 193）**只描述路线 B**（把 RegisterNatives 注册表链进 `.so`）。**用在路线 A 上会假阴性**（`.so` 字节不变 ⇒ 四项仍全为 0/0/0/193）。
+- **路线 A（captain 已定、t30 在做；`.so` 不变）= jar 侧判据**：
+  1. `unzip -Z1 $J | grep -c '^J/N\.class$'` = **1**（当前 **0**）；
+  2. `jni_mangle(J.N 的 native 名)` 集合 == `.so` 的 `Java_J_N_` 后缀集合，**双向差集为空（各 193）**（映射方向须为 mangle(Java 名)：`_`→`_1`、`$`→`_00024`；**不要**对符号做朴素反转义，连续 `_1x` 有歧义）；
+  3. `javap -p org.jni_zero.GEN_JNI | grep -c ' native '` = **0**（转发层；当前 **194**）；
+  4. 方法总数：`J.N` = **194**（193 native + 1 AV1 桩）、`GEN_JNI` = **194**（193 转发 + 1 桩）。
+- **路线 B（重链 `.so`）才适用**我此前四条；代价：`.so` 字节变 ⇒ APK 必须重编、t24/t28 的 16 KB 链需全部复验。**captain 已选路线 A，B 仅作备选且需批准**。
+- **两路线共同点**：AV1（`Java_J_N_M0vTiIkf`）**不得**计入"集合相等"（是 **193↔193**，不是 194）。
+
+### 13.4 t25 回归测试的断言强度（review finding，**不判失败但不得当作可绑定证据**）
+- `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt`（123 行 / sha256 `f52555cc9a9b4afc…`）**2 个测试**、断言方式**仅 `Class.forName` 可解析**；`REQUIRED_BINDINGS` = **43 条（1 `GEN_JNI` + 42 `*Jni`）**；对 `J.N`/转发形态/native-ness 断言 = **0**；
+- ⇒ 当前 jar 上**绿灯而绑定仍断**（假绿）；清单另漏 5 项（真值 47）；注释 `:36` 含过期"187"；
+- **建议**：android-dev 加固（补 `J.N` 与转发断言 + 清单 42→47）；**存在性回归不得替代可绑定判据**（已登记 K-16）。
 
 ---
 
