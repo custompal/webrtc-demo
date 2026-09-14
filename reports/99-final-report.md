@@ -930,6 +930,32 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 
 
 
+### 13.10 构建面事实复核（webrtc-builder 的路线 A 定论）与"路线 B 判据假阴性"读法
+
+**已验证（我自跑）**：
+| 项 | 我的实测 | 说明 |
+|---|---|---|
+| 源码分支 | `webrtc-build/src/third_party/jni_zero/jni_registration_generator.py`：**`:212`** `if jni_mode.is_hashing or jni_mode.is_muxing:`（选 `short_gen_jni_class`，`:213`）、**`:232`** 同判定的 srcjar 分支（`:233` 注释 `org/jni_zero/GEN_JNI.java` → `generate_forwarding`；`:244-252` 注释 `J/N.java` → `generate_impl`） | 与 webrtc-builder 引的 `:232-262` 覆盖同一块 ✅ |
+| out 树产物 | `*jni_registration*` 共 **16** 个文件：**`.cc` = 0**、**`.srcjar` = 1**、**`.o` = 0** | 即"该目标只产 Java 源"✅ |
+| 注册表 | `out/Release-arm64/gen` 内 `kMethods` 命中 = **0**；`obj` 内 = **0** | hashing 形态**不产注册源码**，无对象可链 ✅ |
+| `.so` 未漂移 | `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e`；定义动态符号 **194 = `JNI_OnLoad` + 193 个 `Java_J_N_*`**（**无 `JNI_OnUnload`**） | 与 §13.1 一致 |
+
+**未验证（属对方自述）**：`ninja -C out/Release-arm64 sdk/android:libjingle_peerconnection_so__jni_registration` 实跑得到的"**1 个 ACTION、CXX/SOLINK/CC = 0**"——我未复跑该 ninja 目标（`build.ninja` 内该目标为 phony，需 aar 子构建 toolchain 的 action；我确认了 `--use-proxy-hash` **7 条** `generate-final` 命令行与其产物形态，但**未**执行构建）。其**结论**（只产 Java 源）我已由上面的 out 树产物独立佐证。
+
+**路线 B 四条判据的"假阴性"读法（务必写进 t27/t34 判读）**：以下四项在**修好之后**仍会保持 **0 / 0 / 0 / 193**，这**是预期且正确**，**不得据此判失败**——
+| 我此前的路线 B 判据 | 修好后（路线 A、`.so` 不变） | 读法 |
+|---|---|---|
+| `.rodata` 含 `org/jni_zero/GEN_JNI`（FindClass 目标） | **0** | 静态符号绑定**不需要** FindClass |
+| `.rodata` 含 ≈194 条可读 native 名 | **0** | 可读名在 **Java 侧** `GEN_JNI`，不在 `.so` |
+| `JNI_OnLoad` 内 `blr` | **0** | 无注册调用 |
+| `Java_J_N_*` 导出数 | **193** | 不变 |
+⇒ 这四项**只适用路线 B**（已由 §13.3 事先声明）；**路线 A 的判据见 §13.3/§13.6/§13.7/§13.8**（`J/N.class` + `jni_mangle` 双向集合相等 + `GEN_JNI` native=0 [+ 形态 A/B 判别]）。
+
+**工具陷阱（对方首报、我复现认同）**：`llvm-objdump -d --disassemble-symbols=JNI_OnLoad` 在符号匹配失败时会**静默退化为全文件反汇编**（其第一遍误数出 `blr=324`）⇒ 数 `blr` 必须用显式 `--start-address/--stop-address`（本报告 §13.1 即如此，`0x29f718–0x29f78c` → **0 blr / 6 bl**）。
+
+**门禁脚本可执行性提醒（重复强调）**：`scripts/check_jn_binding.py` 需要 `python3`，而**本容器无 `python3`**（§13.8 已记）⇒ 在容器内不可复跑；其 `KNOWN_EXEMPT` 白名单使 A/B 两形态都会 PASS（不构成"AV1 安全"证据）。**t34 我会用 `jar`/`javap` + 我自写的 `jni_mangle` 双向集合脚本独立复算，不依赖该脚本。**
+
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
