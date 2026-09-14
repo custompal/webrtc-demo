@@ -978,5 +978,97 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 **原始输出（被跟踪路径，非 `reports/logs/**`——该目录被 `.gitignore:83` 忽略，参见 P-17）**：
 `reports/10-t34-captain-testDebugUnitTest-20260914-2050.log`（2 799 B / `cdb0c5b342873a93363b13ab2096ab6808004704170f7fbb3256a1ed225a08b9`）。
 
+## 9.16 **t42：t39 真机两缺陷修复版重编与发布（captain 接管执行）** — 新 APK `36ba3ec6…`
+
+> 执行者：**captain**（t42 attempt 3）。原派 env-installer：第一次建单漏填依赖被 captain 收回（t40，未执行任何命令），第二次（t42 attempt 2）认领后立即遭遇**平台级不可恢复 turn 失败** `session event "turn/end" carries non-JSON-serializable data`（与 t37/t38 时 coturn-installer 同一故障类），任务卡在 claimed 且无 open attempt ⇒ 按用户"修复真机缺陷"的指令与 t33/t37/t38 同口径先例，由 captain 本轮接管完成。
+>
+> 修复内容（t39，android-dev，提交 `bc56901`）：① `webrtc/FrameNormalizer.kt` texture→I420 分支保留 `frame.rotation` 元数据（原写死 0 ⇒ 本地预览逆时针 90°）；② `ui/call/CallScreen.kt` 会议号改为通话页顶部**常驻**覆盖层 + 点击复制 + Toast 反馈 + 空值守卫（原只在 `isConnecting` 遮罩内渲染 ⇒ 房主看不到房间号、第二台设备无法加入）；③ `res/values/strings.xml` 新增 3 条字符串。
+
+### 9.16.1 门禁与双钉（T0/T1/T2）
+
+```
+T0 = 2026-09-14T21:52:40+08:00    T1 = 2026-09-14T21:54:52+08:00    T2 = 2026-09-14T21:57:54+08:00
+gate：gradle/java 进程数 = 0；近 5 分钟 app/src 写入 = 0；third_party/libwebrtc/java 写入 = 0
+      前置 HEAD = abf1c0b（t39 修复 = bc56901，工作树内 app/src 无未提交改动）
+T0/T2 双钉（逐位相同）：jar = 0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+                        aar = 8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+                        .so = 757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+                    libc++_shared = c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+```
+
+### 9.16.2 构建（完全执行）
+
+```
+1) bash scripts/build_app.sh --check-only                        EXIT=0
+2) ./gradlew --no-daemon --no-build-cache -PwebrtcDemo.skipNative=true :app:compileDebugKotlin
+   → BUILD SUCCESSFUL in 2m 6s（t39 的 Kotlin/资源改动编译通过，含 clipboard/strings/ContentCopy 引用）
+3) ./gradlew --no-daemon --no-build-cache clean assembleDebug    T1 21:54:52 → T2 21:57:54
+   → BUILD SUCCESSFUL in 3m 2s ; 43 actionable tasks: 42 executed, 1 up-to-date
+   → `> Task :app:clean` 出现（clean 生效）；FROM-CACHE 行数 = 0
+```
+
+### 9.16.3 新交付 APK 与产物级判据
+
+```
+APK = app/build/outputs/apk/debug/app-debug.apk
+sha256 = 36ba3ec6e4b69c47281ab258ea681420440db81d7e739ea2af77cc37f6c0d50c
+size   = 33 310 685 B        mtime = 2026-09-14 21:57:54.292423083 +0800
+旧锚点 = 30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2（33 309 445 B，保留在册，不覆盖）
+```
+
+**与旧锚点 APK 的逐条目差异（sha256 逐条目比对，165 / 165 条目）**
+
+```
+相同 = 156 ；不同 = 9 ；仅旧 = 0 ；仅新 = 0
+不同的 9 项：
+  classes2.dex   40 748 B 3a94eb4f… → 40 868 B 4f9c752c…
+  classes3.dex  164 988 B 9b8e2455… → 164 996 B 08c05340…
+  classes5.dex   94 468 B 35fc006f… →  99 912 B b76e40dc…
+  classes6.dex   39 368 B 6919236a… →  39 368 B 166f4297…
+  classes9.dex   91 916 B 0408a67e… →  91 916 B 82b98c1b…
+  classes11.dex  67 608 B eb7ae550… →  67 640 B 2270074b…
+  classes12.dex  14 304 B d07ba068… →  14 304 B 5da65229…
+  classes14.dex 558 984 B 006ba159… → 558 976 B 79fbcfd8…
+  resources.arsc 438 772 B ecbf1aa8… → 440 012 B e5550e42…   （strings.xml 三条新资源）
+```
+
+⇒ **v2 六载荷钉中的 `classes.dex` 与 `classes13.dex` 逐位未变**，四个 `.so` 亦未变；变化只落在**含 `CallScreen`/`FrameNormalizer` 的 dex 分片**与**资源表**，与"只改 Kotlin/资源"的改动面完全一致。四 `.so`（APK 内实体）`p_align` 复核 = `0x4000`（`libandroidx.graphics.path` / `libc++_shared` / `libjingle_peerconnection_so` / `libwebrtcdemo_native`，四件全 0x4000，16 KB 页门禁不回退）。
+
+### 9.16.4 单元测试（真实执行，非 UP-TO-DATE）
+
+```
+./gradlew --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest   EXIT=0
+→ BUILD SUCCESSFUL in 2m 46s ; 24 actionable tasks: 24 executed
+→ 5 份 XML（最新 mtime 22:00:41.310167198）：tests=46 / skipped=0 / failures=0 / errors=0
+```
+
+### 9.16.5 发布与四路一致（冻结副本 + 分片 + 归档）
+
+```
+served   /opt/apk-http/served/app-debug.apk            = 36ba3ec6…（与构建输出逐位同）
+archive  /opt/dsh-workspaces/artifacts/app-debug-36ba3ec6.apk = 36ba3ec6…
+parts/   SOURCE.sha256 = 36ba3ec6… ；SHA256SUMS `-c` = 4/4 OK ；四片拼接 sha256 = 36ba3ec6…  ⇒ CONCAT == APK : True
+旧 parts 快照整体归档：/opt/apk-http/parts-archive/parts-30c41ac9-20260914-220045/（6 件，保留）
+服务：enabled / active ；MainPID = 664402（**未重启**，零停机）
+公网复验：HEAD 200 ；Range 206 / 1024 B ；回环同值 ；/parts-archive/ → 404（未进白名单）
+下载地址不变：http://47.238.144.66:8080/app-debug.apk  → 现指 `36ba3ec6…`
+```
+
+### 9.16.6 属主与日志
+
+- `chown -R 1000:1000 app/build app/.cxx .gradle .kotlin` 后：`app/build` 内 root 条目 = **0**、`.gradle` = **0**（t26/t33 后反复出现的 root:root 残留坑本轮已即时归零）。
+- 原始输出（被跟踪路径，非 `reports/logs/**`）：
+  - `reports/10-t42-captain-checkonly-20260914-215240.log`（5 257 B / `f5946e83e8d8eca970cbe8c6bafaabb30602b1e40601ab406b76dda13e9d48a1`）
+  - `reports/10-t42-captain-compileDebugKotlin-20260914-215240.log`（1 112 B / `729a10da7d02bba07f69d3b77c754347c33f7f7c10869b771c901762d5f6853f`）
+  - `reports/10-t42-captain-assembleDebug-20260914-215240.log`（2 210 B / `673fb2717daf311a7b8d3b049ea31c64a298658913f89c5b31bd39e05528e5bd`）
+  - `reports/10-t42-captain-testDebugUnitTest-20260914-215240.log`（1 450 B / `c384d0d5491dc54b1b4fc62482065427a30cfb3bbf21f909bea6755ecd171df3`）
+  - `reports/10-t42-captain-build-20260914-215240.log`（2 452 B / `45646f9457c05fd80f1d880fa846675acaa9b961523543fdc778a261b0107c9a`）
+  - `reports/10-t42-captain-publish-20260914-220045.log`（4 378 B / `51a431ce95ed50993e3419aab4d40b4f3a060290e7a2698852d05e439ad4a47b`）
+
+### 9.16.7 契约偏差与仍未验证项（如实登记）
+
+- **命令口径偏差**：t42 契约 verify 列表写的是 `cd …/app && ./gradlew …`，但 `app/` 下**不存在** `gradlew`（Gradle 工程根 = 仓库根，见 `settings.gradle.kts`）⇒ 实际执行 = `cd …/code/webrtc-demo && ./gradlew …`，其余参数与顺序逐字相同；原始日志可查。此为 captain 建单时的路径笔误（D-19 类偏差）。
+- **仍未验证**：新 APK 的真机表现（预览朝向是否纠正、会议号是否常驻可见/可复制、第二台设备能否用会议号加入）**只能由用户真机重测定论**；APK 侧全部锚点级判据需在新实体上重跑（由 t43 承担，verdict 未出前不得写成已通过）。
+
 
 
