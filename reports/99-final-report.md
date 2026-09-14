@@ -907,6 +907,8 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 > **更正说明**：native-dev 提醒的"`:65-68` 应为 `:74`""`:75-78` 起点偏 2 行"——**本报告从未引用这两个行号**（`grep gen_jni_java.py` 全文仅 §12.2(5) 一处，引的是 `:10-15`，实测准确）；其提醒对**其他材料**（或我早期消息）有效，此处不构成报告缺陷。
 
 **落位后可复用的同一条命令（我据此预演）**：t30 的两个 `.class` 即落位字节本身（`J/N.class 1ff8d3ff…`、`GEN_JNI.class a6e7edcf…`）⇒ t29 落位后从 jar 抽同名条目（本容器用 `jar xf`，**无 `unzip`**）再跑**完全相同的 `javap -p`**，两份文本与两个 class 的 sha256 应逐字节相同；若不同即说明落位未取 B/handoff 那份（与 §13.8 的 A/B 判别式互为交叉校验）。
+> **该预期已被当前 staging jar 实测证伪（判定 A 形态的字节级证据）**：从 `tmp/jn-fix/libwebrtc-java.jar` 抽出同名条目后与 handoff(B) 逐字节 `cmp` = **不相同** —— `J/N.class`：staging `9ada0641fcee…`（**6 742 B**）vs handoff `1ff8d3ff…`（**6 924 B**）；`GEN_JNI.class`：staging `8f3ce6137f02…`（**24 727 B**）vs handoff `a6e7edcf…`（**24 910 B**）；差值 **182 / 183 B**，与「少一个 AV1 抛异常桩方法（方法体 + 常量池条目）」的体量吻合，且与 `javap` 方法数（193 vs 194）一致 ⇒ **t31 staging 落的是 A，不是 handoff/B**。请 t31/t33 落位时以本条 + §13.8 的判别式做形态判定。
+
 
 
 ---
