@@ -368,7 +368,9 @@ bash /opt/dsh-workspaces/code/webrtc-demo/scripts/build_app.sh
 JUnit 汇总（`app/build/test-results/testDebugUnitTest/*.xml`，4 个文件）：**tests=38 / skipped=0 / failures=0 / errors=0** ✅（含 t25 的绑定类存在性回归测试；t23 落位后由红转绿）
 日志：`reports/logs/t26-testDebugUnitTest-20260914-105956.log`
 
-## 9.4 交付 APK 与实体证据（**本轮新交付**）
+## 9.4 中间产物 A：10:59 构建的 APK 与实体证据（**已被 §9.6 取代，非交付物**）
+
+> ⚠️ **口径**：本节记录的是 **10:55:28 开编、10:59 完成**的那次构建产物（jar 为更早的 `7dbe8400…`），因**测试文件在 T0 之后 14s 被写入**（见 §9.8(A)）按严格判据**作废** ⇒ **交付物以 §9.6 的 `721df1c8…` 为准**。本节保留作为过程记录与对照。
 
 ```
 path   : /opt/dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk
@@ -392,7 +394,7 @@ sha256 : 6653fddfb396c38cd69df6b263c2ef8200923f604851cb21d0503d5dce8b690c
 - (c) Manifest：权限 6 条（INTERNET/CAMERA/RECORD_AUDIO/ACCESS_NETWORK_STATE/MODIFY_AUDIO_SETTINGS + AndroidX 动态接收器权限）；组件 5 项
 - (d) `resources.arsc` 存在且 `aapt2 dump resources` 解析成功（`Package name=com.example.webrtcdemo id=7f`）
 
-> **交付口径更新**：本轮交付 APK = **`6653fddf…8b690c`**（完全执行构建、绑定类与 16 KB 对齐齐备）。前一版 **`b0cddd86…b12b`（t18/t26 之前的产物）在本轮 `clean` 中被覆盖，仅存哈希与当时验证记录**，不再是交付物。
+> **交付口径（最终，以 §9.6 为准）**：**交付 APK = `721df1c8…f055b724`**（11:26:08 静默窗口 + 完全执行构建、jar 前后一致、绑定类与 16 KB 对齐齐备）。本节这次 `6653fddf…8b690c` 与更早的 `b0cddd86…b12b` **均已被后续 `clean` 覆盖、仅存哈希与当时验证记录**，**都不是交付物**。
 
 ## 9.5 提交（本轮修复的全部已跟踪改动，显式路径）
 
