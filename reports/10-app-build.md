@@ -783,3 +783,38 @@ size   = 33 309 445 B      mtime = 2026-09-14 18:41:59.794      package = com.ex
 
 - `scripts/build_app.sh`：**P-13 双钉**（构建窗口前后 `sha256sum -c`）+ **`GEN_JNI` 形态断言**（方法数 == 194 且 `static native` == 0；判别表：B=`194/0`、A=`193/0`、落位前=`193/194`）+ "本脚本须在宿主机执行"前置断言（容器内 `python3/unzip/jar/javap/java` 实测全部缺失）。
 - K-18 维持"建议、未实施"（见 §9.11）；`app/src/main/**` 自 t25 起冻结不变。
+
+### 9.14.9 交付锚点裁定（captain）与收口声明
+
+**captain 裁定：(i) 认可现状收口，不做冗余复编。** 各项按裁定原文落实如下。
+
+**(1) 交付锚点（唯一）**
+
+> **t33 的交付 APK = `30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2`（33,309,445 B / mtime 2026-09-14 18:41:59）**，由 **captain 接管执行**构建（板面 `t33 → captain`；空提交 `2bb7750`「t33 交付记录（captain 接管）」）。
+> **本轮（收口轮）未做任何重编**：不再产出新哈希、不覆盖该件 —— 以保住 t34 正在复验的对象与 t35 正在刷新的下载快照。
+> §9.14.3 记录的那次 19:02–19:04（`ef29e00c…`）系 captain 直接指令下的第二次执行，**非交付锚点**，两份字节均已留档（`artifacts/app-debug-ef29e00c.apk` / `app-debug-30c41ac9.apk`），供审计而不作为交付。
+
+**(2) 恢复后基线重取（captain 裁定 18:33:42 为恢复点；本表取数时刻 2026-09-14 18:53:04）**
+
+| 对象 | sha256 / 读数 |
+|---|---|
+| `third_party/libwebrtc/java/libwebrtc-java.jar` | `0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757`（1,206,602 B / 509 条目 / mtime 18:33:42） |
+| `third_party/libwebrtc/java/libwebrtc-arm64.aar` | `8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099`（6,492,067 B；内 `classes.jar` == jar 逐字节） |
+| `third_party/libwebrtc/java/jni/arm64-v8a/libjingle_peerconnection_so.so` | `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e`（12,946,912 B；全程未变） |
+| `app/src/main/jniLibs/arm64-v8a/libc++_shared.so` | `c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36`（1,356,968 B） |
+| jar 内 `J/N.class` | `1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932`（6,924 B） |
+| jar 内 `org/jni_zero/GEN_JNI.class` | `a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08`（24,910 B） |
+| 形态计数 | `GEN_JNI` = **194 方法 / `static native` = 0 / 193 次 `invokestatic J/N.<hash>`**；`J.N` = **194 方法 = 193 static native + 1 非 native AV1 桩** |
+
+**(3) 对交付锚点的独立产物级复验（我，只读）**
+
+| 判据 | 实测（`30c41ac9…`） |
+|---|---|
+| dex 三闸（逐 dex 字节级） | `classes.dex jn=2`；`classes13.dex jn=1, genjni=2`；`classes14.dex genjni=1, pcf_jni=2` ⇒ **`dexfmt: dex=14 jn=3 genjni=3 pcf_jni=2`**（红例：`721df1c8…` = `jn=0`，故"基于 A 件"被排除：A 亦无 `J.N`） |
+| 四 `.so` `p_align` | 全 **`0x4000`**（`libandroidx.graphics.path` `41e9a793…` / `libc++_shared` `c9dbf4ec…` / `libjingle` `757cef81…` / `libwebrtcdemo_native` `95c44e5a…`） |
+| `libc++_shared.so` 与 `jniLibs` 落位件 | **逐字节相同 = True** |
+| 单测（真实执行，磁盘 XML） | `AppConfigUrlTest 8 + NativeInterfaceContractTest 4 + SignalingErrorPolicyTest 17 + SignalingIdentityTest 11 + JniBindingClasspathTest 6` = **46 / 0 失败 / 0 错误 / 0 跳过** |
+
+**(4) 边界澄清（captain 裁定）**：`18:32:33` 那次 `scripts/build_app.sh` 写入**不记为违规** —— 系我按 native-dev 请求新增 **P-12** 护栏的编辑（只动构建脚本、不涉 jar/AAR/`.so`/APK/`app/src/main`），且经 captain 逐行审阅并批准入库（该脚本已在 `1f5023e` 入库）。冻结令的意图边界 = **交付产物与主源码**；本案唯一被记为违规的写盘是 **webrtc-builder 18:32:24 的非授权 A 落位**（已回滚并留痕 `reports/15 §19`）。
+
+**(5) 随裁定失效/降级的事项**：§9.14.8 的"待授权增量"（P-13 双钉 + `GEN_JNI==194` 断言）**维持未实施**；§9.14.6(4) 的"锚点待指定"**已关闭**（= `30c41ac9…`）。
