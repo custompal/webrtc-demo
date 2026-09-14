@@ -1668,7 +1668,12 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 ```
 （注：`jniLibs/libjingle_peerconnection_so.so` mtime 19:02 = t33 构建窗口内的"内容不变重写"，**内容仍是 `757cef81…`** ⇒ 门禁只认 sha，不认 mtime，见 §13.25(P-14)）。
 
-**§3.4 单测 `--no-build-cache --rerun-tasks` = 46/0/0 —— ⏳ 容器内不可重跑（F-3，环境限制）；以"产物 XML + 宿主原始日志"成立**
+**§3.4 单测 `--no-build-cache --rerun-tasks` = 46/0/0 —— ✅ 已由 captain 在宿主（JDK 17）现场重跑并通过（F-3 **已闭合**）**
+- **宿主重跑证据（captain 执行，`[20:49:57–20:52:32]`）**：`JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64`；命令 `./gradlew --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest`；`TEST_EXIT=0`、`BUILD SUCCESSFUL in 2m 35s`、`24 actionable tasks: 24 executed`；逐类 **8/4/17/11/6 = 46 / 0 / 0**。
+- **交付件未受影响（该命令的前后守卫）**：BEFORE(20:49:57) / AFTER(20:52:32) 两侧 `app-debug.apk = 30c41ac9…`、`libwebrtc-java.jar = 0c776934…` **均未变** ✅。
+- 日志（**被跟踪路径**，符合 P-16/P-17）：`reports/10-t34-captain-testDebugUnitTest-20260914-2050.log` = **`cdb0c5b342873a93363b13ab2096ab6808004704170f7fbb3256a1ed225a08b9`** / 49 行；测试 XML 于 **20:52:31** 重建（5 份合计 46/0/0）。
+- **证据指针更新**：先前的"19:07:05 XML"**已被 20:52:31 那次重跑取代**（计数相同）；引用时以 **20:52:31** 这批为准。
+- 容器内两次尝试（`* What went wrong: 25.0.4.1`）**仅作过程史保留**，不再是判据缺口。
 - **我实跑了**（`[20:23:08 → 20:24:03]`，`GRADLE_USER_HOME` 置工作区、`ANDROID_HOME` 置容器 SDK）：
   ```
   ./gradlew --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest
@@ -1704,7 +1709,7 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - 通过：§3.1 三值 + §13.3 四条（权威脚本 PASS）、§3.2 dex 判据、§3.3 四 `.so` 护栏、§3.5 N-1..N-5、§4 收口五项、git 干净。
 - **F-1（low，记载）**：captain §3.2 的逐 dex 分布应为 `classes.dex` 2 / `classes13` 1 / `classes14` 0（合计 3）；判据本身成立。*requiredFix：后续文本按此更正。*
 - **F-2（low，环境）**：`check_jn_binding.py` 默认 `--javap` 为宿主路径 ⇒ 容器/其它环境须显式传参（建议把默认值改为基于 `PATH`/环境变量解析，由持写权者实施）。*requiredFix：脚本默认值可移植化。*
-- **F-3（low，环境限制）**：`§3.4` 单测**未在容器内重跑**（无 JDK 17 / AGP 拒绝 JDK 25 / `local.properties` 指宿主 SDK）；以产物 XML（46/0/0，6 用例逐名）+ 两条宿主原始日志为证。*requiredFix：如需"容器内现场重跑"，须提供 JDK 17 或授权宿主执行（不改变已成立的证据层结论）。*
+- **F-3（low，**已闭合**）**：`§3.4` 单测**已由 captain 在宿主 JDK 17 现场重跑通过**（20:49:57–20:52:32；日志 `reports/10-t34-captain-testDebugUnitTest-20260914-2050.log` = `cdb0c5b3…` / 49 行；`TEST_EXIT=0`、`24 executed`、逐类 8/4/17/11/6 = **46/0/0**、XML 20:52:31 重建），且 **BEFORE/AFTER 的 APK `30c41ac9…` 与 jar `0c776934…` 逐位不变**。容器内两次尝试（AGP 拒 JDK 25：`* What went wrong: 25.0.4.1`）保留为过程史。⇒ **t34 五条判据全部有现场执行证据**。
 - **F-4（low，记载）**：native-dev 消息称 `Lorg/jni_zero/GEN_JNI;` = "`classes.dex`=2、`classes14`=1" —— **dex 归属写错**：实测（三法：`grep -a -o` 逐 dex / 去分号串 / `dexdump` 类型表）为 **`classes13.dex`=2、`classes14.dex`=1、`classes.dex`=0**（`dexdump classes.dex` 命中 `Lorg/jni_zero/GEN_JNI;` = **0** ⇒ `classes.dex` **根本不引用** `GEN_JNI`）。其**自己的 t34 附录 §2 写的是"classes13 2 / classes14 1"（正确）**⇒ 本条消息属转写漂移；`LJ/N;`（2/1/0，三处独立测量一致）与 `PCFJni;`（classes14=2）、`LibaomAv1EncoderJni;`（classes14=2）均与我一致。**判据/verdict 不受影响**（`GEN_JNI` 出现于 APK 内且合计 3 成立）。
 - **F-5（low，证据链）**：`output-metadata.json` 的 mtime（**19:04:43.947**）与路径上 APK（19:05:19 拷回、内容 = 18:41:59 构建）**不同源** ⇒ 不得用 sidecar 给 APK 定年（详见 §13.26(1)）。
 - **F-6（low，作用域）**：native-dev 的"`grep -c 'org_'`：落位件 = 194 / A = 193（`191+3` / `190+3`）"**只对 `GEN_JNI` 成立**；对 `J/N` 实测为 **1 / 0**（B 仅 AV1 可读名 `org_webrtc_LibaomAv1Encoder_create`，其余 native 名均为哈希 `M$…`）⇒ 该类断言**必须写明目标类**（详见 §13.22(f) 追加表）。**同时该表给出一个新的精确定量**：A↔B 在 `GEN_JNI` 侧**仅差 1 条**（AV1），其余前缀计数逐项相同 —— 与"差异只在 AV1 absent-proxy 桩"的结论自洽。
@@ -1750,7 +1755,7 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - **相关提交存在性**：`5b0781d`（18:49:29，t33 门禁证据入库）✅、`6e260e9`（18:50:05，我的 `JNI_OnLoad` 区间更正）✅ —— 均为当前 HEAD 祖先。
 - **K-17 归因更新（不点名、只归因"机制"）**：**两名成员自述在 root 侧跑过 git** —— env-installer（`t18/t26/c6fcfcd/3acc1d2` 等提交）与 **webrtc-builder（约 18:31–18:55 的 `git status/diff/log/show`）**；其自述的**首条 git 命令 ≈18:31 晚于 18:25/18:27 两次抢占** ⇒ 那两次不能归到它头上；其**自述 18:54 那次 = root `git diff --stat`**，正对应本报告 §13.21(d) 记录的 **18:54:11** 事件 ⇒ 时间线归因：**18:25/18:27 非其；18:31:18 · 18:46:11 · 18:54:11 落在其窗口内**。**结论不变**：根因 = **root 侧 git 会重写 `.git/index`（root:root 0644）**，属机制问题而非个人过失；**护栏 = 仓库内禁止 root 侧 git（必要时仅 `git --no-optional-locks`，该选项不写 index）**，叠加 captain 的 `chown -R 1000:1000` 与"uid-1000-only"规则。
 - **K-17 现场复核（`[读盘 20:31:37]`，webrtc-builder 所报 18:54 快照的后续）**：`.git/index` = **`node:node 644`**（mtime `20:31:15` = 我最近一次提交）、**`find .git ! -user node` = 0**、无 `index.lock`、无 git 进程；我 **20:24–20:31 的 8 次提交（`806988b`→`c5c1418`）均以 uid 1000 成功** ⇒ **写侧已恢复且可用**，其 18:54 快照**已被其后修复取代**（无需再 chown）。
-- **`app/build` 属主复核（`[读盘 20:40:57]`，对 webrtc-builder 19:06:40 快照）**：现盘 `app/build` = **`node:node 755`**（mtime 19:07:02）、**非 node 项 = 0** ⇒ 其报的"`app/build` = `root:root`、root-owned 条目 **1047**"**已被 19:07:02 的 uid-1000 构建取代**，**无需 `chown -R app/build`**。
+- **`app/build` 属主复核（两级更新，`[读盘 21:08:30]`）**：① `[20:40:57]` 曾实测 `app/build` = **`node:node 755`（mtime 19:07:02）**、非 node 项 = 0 ⇒ webrtc-builder 报的"`root:root` / root-owned 1047"**当时已被 19:07:02 的 uid-1000 构建取代**；② **但 20:50–20:52 captain 的宿主（root）单测重跑**再次产生 **657 个 `root:root` 项**（集中在 `intermediates` 400 / `tmp` 232 / `reports` 11 / `test-results` 9 / `generated` 4 / `outputs` 1；mtime 20:50:39–20:52:31）——**交付路径 `outputs/**` 仅 1 项且交付 APK/jar 前后逐位不变**（见 §13.26(4)）。⇒ **口径**：这是**瞬时 episode、非遗留阻碍**（captain 的宿主重跑所致；`app/build` 属构建目录、`app/build/**` 亦在 gitignore），**操作性根治 = 构建/测试一律以 uid 1000 运行**（与 `.git/index` 被 root 重建同源）；如需清理由持写权者 `chown -R 1000:1000 app/build`。
   **K-17 读侧最终口径（我实测）**：**仓库内** `mode 600 ∧ uid≠1000` = **0**；**残余仅 12 个 `root:root 644`**（全在 `app/.cxx/**` 的构建产物 `.o`，**uid 1000 可读**，且所属目录均 `node:node` ⇒ **不阻塞 uid 1000 的 clean/覆盖**）。
   **✅ 仓外 3 件原不可读者已于 20:53–20:54 全部解除并逐件复核（K-17 读侧就此闭合）**：
   | 件 | 现权限 | sha256 | 我复核内容 |
