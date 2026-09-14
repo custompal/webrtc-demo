@@ -1050,6 +1050,9 @@ $NDK/llvm-objdump -d --start-address=0x29f718 --stop-address=0x29f87c <so> | awk
 - **无 `unzip`**（§13.7(d) 已记）：改用 `jar tf` / `jar xf`。
 - ⚠️ **"静默空输入"陷阱（webrtc-builder 首报、我复核同意）**：容器内**既无 `unzip` 也无 `python3`**，用它们查 zip/class 会**静默得到 0**；而**空输入的 sha256 恒为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`** ⇒ 若某次校验输出该值，几乎一定是"没读到数据"而非"文件为空"。**容器内可复跑**的正解 = `jar`/`javap` + 常量池扫描（本报告全部判据如此）。
 - **`javap -classpath <jar> J.N` 可用（原"单字母包名会失败"的 caveat 已被 native-dev 本人撤回）**：我实测 `javap -p -classpath <jar> J.N`（native=193）与 `… J/N`、`… org.jni_zero.GEN_JNI`（native=0）**均正常**；"先抽条目再 `javap -p <dir>/J/N.class`"**同样可用、非必需**，仅作更稳的规范做法（t34 采用后者以留原样文本）。该 caveat **从未进入任何文件**（我复核其 `logs/{t34-gate,README-logs,commands-portable}.md` 中 `classpath` 命中 = **0/0/0**）⇒ 复现命令段**不含**"必须抽条目"的约束。
+- **JDK 版本口径（container）**：容器内在盘的 JDK 为 `webrtc-build/src/third_party/jdk/current/bin`（**`javap -version` = 25.0.4.1**，容器里没有 JDK 17）—— **读**方法列表/描述符与版本无关，但**要"重编复现"必须显式 `--release 17`**（本报告 §13.16 的现场重编即如此）。
+- **`t30/logs/commands-portable.md`（`588a8800…`）的环境表措辞偏强**：其"容器无 JDK ⇒ 门禁不能在容器跑"与实测不符 —— **默认 PATH 无，但 JDK/NDK 在盘、加 PATH 即可**（`jar`/`javap`/`java`/`llvm-nm`/`llvm-readelf` 立即可用 ⇒ 判据①②③④ 与 ELF 检查**容器内可复跑**）；真缺的只有 `unzip`/`python3`/`strings`（Python 版判据与 `unzip -oq` 走宿主/SSH）。native-dev 已认账；因写盘令**冻结不改**（避免作废该 sha）⇒ t34 记本条更正，解冻后由其改并按 P-13 同步新 sha。
+- **"157" 属可复现的假数（方法论留痕）**：同一份 `GEN_JNI.class` 四种读法 —— 推荐式（行过滤 ` static ` + 宽字符类 + `sort -u`）= **194**；宽类无过滤 + `sort -u` = **195**（多默认构造器）；**窄式 `[a-z_0-9$]+\([^)]*\)` 无过滤 + `sort -u` = 157**（= 我此前的读数）；窄式仅 `\(` + `sort -u` = 110；`grep -c '(' ` = 195、`grep -cE '^  public static '` = 194。机制 = 窄字符类遇大写/`.` 退化为"尾部小写片段"再被 `sort -u` 去重 ⇒ **一律用推荐式**。
 - **读方法名前缀别用 `grep -c 'org_'`**（会把**签名里的 `org.`** 也计入）：正确做法是先筛 `^  public static` 行再按前缀分组。我实测落位件 = **`org_webrtc_` 191 + `org_jni_1zero_` 3 = 194**（`grep -c 'org_'` 同为 194 属巧合），A 变体 = **190 + 3 = 193**；`org_webrtc_audio_` = 5（含于 191）。
 
 ### 13.13 "修复前失败"基线的独立复验、判定合取要求与两个假红/假绿陷阱
