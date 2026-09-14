@@ -873,6 +873,8 @@ size   = 33 309 445 B      mtime = 2026-09-14 18:41:59.794      package = com.ex
 - JNI 关键条目**逐字节相同**：`classes.dex`（含 `J.N`）、`classes13.dex`（含 `GEN_JNI`）、四个 `.so`、`AndroidManifest.xml`、`resources.arsc`。
 ⇒ 准确表述：**"语义可复现（类集合与逐 dex 分区一致）／整包 sha 不跨构建稳定"**；`ef29e00c…` 仅作"非逐字节可复现"的证据，**不作为交付候选**（隔离留档 `tmp/t38-unsanctioned-rebuild/` + `artifacts/`）。
 
+**(6b) 根因已定量到"键级"（captain 追加，采纳 android-dev + webrtc-builder 两路独立下钻）**：上述 7 个 dex 的差异**每 dex 恰 1 条字符串**（两件的字符串总数逐 dex 完全相同），该串为 **D8 元数据令牌** `~~~{"L<class>;":"<hex hash>", …}`；token 内**键级**比较显示不稳定项**全部是 `*$$ExternalSyntheticLambda*`**（Kotlin lambda 经 D8 脱糖产生的 synthetic 类），各 dex 不稳定键数 = **26 / 13 / 2 / 10 / 4 / 1 / 91**（`classes3/5/6/9/11/12/14`，合计 **147**，**非 lambda 键 = 0/147**；落在这 7 个 dex 的 **830 个类**上，约占 17.7%）。由此连带 `string_data`(7/7)、`string_ids`/`class_defs`/`map_list`/注解集合区与 `header` 的 checksum/signature（后几者为**结果**）；而 **`code_items`、`class_data_items`、`debug_info`、`method_ids`、`type_ids`、`proto_ids`、`field_ids`、`type_lists` 逐字节相同** ⇒ **运行语义零影响**。⇒ 即：**"不可复现"来自 D8 对 Kotlin lambda synthetic 的内部 hash 令牌不稳定，而非代码或类结构差异**，**且与构建缓存无关**（两次同为 `--no-daemon --no-build-cache clean assembleDebug`；其余 **25 365** 个类所在 dex 两构建逐字节相同，含 `classes.dex` 与 `classes13.dex`）。
+
 **(7) 交付锚点自身的构建日志已入库（captain 追加，回应"锚点无 build 日志"的核查）**：t33 交付构建的原始输出此前只存在于仓外 `tmp/t33/`，现已按 `reports/` 直下（**被跟踪**）路径入库三份：
 ```
 reports/10-t33-captain-checkonly-20260914-183850.log         # bash scripts/build_app.sh --check-only  EXIT=0
