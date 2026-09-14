@@ -1128,10 +1128,17 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 > ⚠️ **更正 native-dev 本轮的表述**："全文没有 `721df1c8`/`6653fddf`/`b0cddd86` 任一出现"——`721df1c8`、`6653fddf` 确实为 **0**，但 **`b0cddd86` 出现 1 次（`:581`）**，不能一并写"没有"。
 > 另：**t10 代 APK（`c72d3667…`）已不在盘**（我全树有界搜索 `.apk` 仅得现行 `721df1c8` 快照与一处构建中间件）⇒ 跨代数值**无法现测**，只能按历史证据引用。
 
-#### (d) ⚠️ K-17 的**新变体**（18:25 实测）：`.git/index` 被 root 占用 ⇒ node 身份**完全无法提交**
+#### (d) K-17 的**新变体**与**最终处置**（`.git/index` 曾被 root 占用 ⇒ 无法提交）
 本轮提交时 `cp $IDX .git/index` 报 `Permission denied`：实测 `.git/index` 为 **`root:root 0644`（mtime 18:25）**，而 uid 1000 既不能改写也不能 chown 它 ⇒ **凡以 node 身份提交者都会卡在最后的 index 同步**（`git commit` 本体亦会因 index 写失败而报错）。
 **可用的就地修复（我已完成，未动任何他人内容）**：`.git` 目录本身是 `node` 可写 ⇒ **`rm -f .git/index && git read-tree HEAD`** 即由 git 以 node 身份重建索引（实测重建后 `0644 node:node`，`git status` 恢复正常、仅剩他人在途文件）。
 **给 captain 的建议（一次性根治）**：`chown -R node:node /data/dsh/home/workspace/code/webrtc-demo/.git`（同时覆盖 `.git/objects/{33,56,ac,c6}` 的 root 属主问题）。**根治前，root 身份的任何 `git` 操作都可能再次把 `.git/index`/对象目录置为 root 所有，从而阻塞 node 身份成员。**
+
+> **最终处置（captain，2026-09-14）：已根治 = chown + “uid-1000-only” 规则**
+> **根因（captain 定位、我复核一致）**：本仓库 git 操作**混用两个身份** —— 成员常经 SSH 以 **root** 在宿主机仓库跑 `git status/diff/commit`，而 verifier 在容器内以 **uid 1000（宿主 `admin`）** 跑 git；**root 的任一次 git 写操作**（刷 index / 写对象）都会把 `.git/index` 或 `.git/objects/<fanout>` 置为 `root:root` ⇒ uid 1000 的提交随即失败（`objects/{33,56,ac,c6}` 与 `.git/index` 两个变体同一根因）。
+> **已执行**：`chown -R 1000:1000 /opt-dsh-workspaces/code/webrtc-demo/.git`（含 `.git/index` 与全部 objects），并以 uid 1000 实测 `git status/log/rev-parse` 正常；**全队规则：仓库内所有 git 命令一律以 uid 1000 执行**（SSH 场景 `su -s /bin/bash admin -c "cd <repo> && git …"`），**禁止 root 身份跑 git**。
+> **verifier 复核与一次复发留痕**：chown 之后我又观察到 **`.git/index` 于 18:54:11 再次变为 `root:root`**（⇒ chown 本身不足以长期维持，**规则才是操作性根治**）；我按就地修复重建（18:55:47 恢复 `node:node`，`find .git ! -user node` = **0**）。**四次时间点**：`18:25`、`18:27`、`18:31:18`、`18:46:11`（+ 复核时 `18:54:11`）。
+> **结论**：K-17 记为**已闭合（captain chown + uid-1000-only 规则；verifier 就地修复配方保留于 §10.11）**。
+
 
 ### 13.16 生成件可复现性：**A 侧我已独立复算**；第三方构建树内的同名 srcjar **对 node 不可读，暂无法验证**
 
