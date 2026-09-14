@@ -1462,7 +1462,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 **事实（我 19:1x 只读实测）**：
 | 工件 | sha256 | 大小 (B) | mtime | 说明 |
 |---|---|---|---|---|
-| t33 构建日志记录（`reports/10-t33-nocache-assembleDebug-20260914-190227.log`） | **`ef29e00c5217b5cd0c32f97d196800c8e7068f40ed5b9926a3f87b11636cc27d`** | 33 309 445 | 19:04:43.919 | `BUILD SUCCESSFUL in 2m16s`、`42 executed / 1 up-to-date`、**FROM-CACHE=0**、`:app:clean`=1、**双钉复测 jar/AAR 均 OK** |
+| **19:02 未获授权重复构建的日志**（`reports/10-t33-nocache-assembleDebug-20260914-190227.log`）—— ⚠️ **不是 t33 的构建日志**（文件名含 `t33` 系命名遗留；**t33 的构建记录在 `reports/10 §9.13`**，其产出为 `30c41ac9…`） | **`ef29e00c5217b5cd0c32f97d196800c8e7068f40ed5b9926a3f87b11636cc27d`** | 33 309 445 | 19:04:43.919 | `BUILD SUCCESSFUL in 2m16s`、`42 executed / 1 up-to-date`、**FROM-CACHE=0**、`:app:clean`=1、**双钉复测 jar/AAR 均 OK** |
 | 同一时刻的仓外快照 `artifacts/app-debug-ef29e00c.apk` | `ef29e00c…`（同上） | 33 309 445 | 19:04:43.919 | 与日志一致 ✅ |
 | **交付路径现值** `app/build/outputs/apk/debug/app-debug.apk` | **`30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2`** | 33 309 445 | **19:05:19.310** | **晚于 t33 收工 36 s**；与仓外快照 `artifacts/app-debug-30c41ac9.apk`（**mtime 18:41:59**）**同哈希** ⇒ 形态上像"**把 18:41 的旧产物拷回交付路径**" |
 
