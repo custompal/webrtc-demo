@@ -154,3 +154,31 @@ python3  webrtc-build/t34/t34_variant_diff.py <交付apk> <变体apk> <wa> <wb> 
   `classes13.dex` 的现有一致性是**两次构建的数据点（经验性稳定）**，非证明。
 - **mtime 不能作证据**：`app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so` 曾被"内容不变地重写"至少两次
   （18:47:54、19:02:06，`mtime==ctime`，inode 与 third_party 副本不同）⇒ 门禁只认 sha。
+
+## 10. v2 门禁复跑（落位后单一起源版，captain 裁定锚点 = `30c41ac9…`）
+
+门禁文件：`webrtc-build/t30/logs/t34-gate-post-landing.md` = `c87bb1cd1d22a9ea5c0951d5c3a84e4efcf3f2b72cc841462b75457d2d755958`
+（v1 `t34-gate.md` = `6d1112dd…` 仅作历史）。脚本：`webrtc-build/t34/t34_v2_gate.sh`；
+原始输出：`webrtc-build/t34/v2-gate.log`（29 行 / sha256 `50d7d298a74cc5325c15712b932b79ec75e682695e12a76cca373f6d17440e99`）。
+
+```
+[v2-0] 钉死值
+  jar  0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757  → OK
+  AAR  8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099  → OK
+  jar 条目数 = 509（期望 509）→ OK
+[v2-1] 两个 class 指纹（v2 差异点）
+  J/N.class      1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932   6 924 B
+  GEN_JNI.class  a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08  24 910 B  → OK（v2：只认此值，其它值 STOP）
+  J/ 前缀断言（jar 条目 ^J/ 计数，v2 期望 = 1）= 1  → OK（0 视为回归失败）
+[v2-2] 判据 ①②③④（v1 口径不变）
+  ① J.N static native = 193    ② GEN_JNI static native = 0
+  ③ GEN_JNI public static 方法数 = 194（193 ⇒ 读到 A 件，立即报警）    ④ .so Java_J_N_* 导出 = 193
+[v2-3] APK 护栏（被验 APK = 30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2）
+  APK libjingle_peerconnection_so.so = 757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e  → OK
+  APK libc++_shared.so              = c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36  → OK
+  目录件 .so                        = 757cef81…（与 APK 内逐字节相同）
+  AAR 内 classes.jar == 交付 jar（逐字节）= True
+[v2-4] 双钉（以 v2 钉死值为期望对现值校验）
+  sha256sum -c → 两项 OK（EXIT=0）
+```
+**v2 门禁结论：全项通过（无 STOP、无回归失败）** ⇒ 与本文 §1–§5 的产物级复验一致，**verdict 维持 `pass`**。
