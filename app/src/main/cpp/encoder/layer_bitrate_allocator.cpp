@@ -35,9 +35,11 @@
 // doc/06 §2.6、doc/11 §5.2）。本项目额外把计算过程打进 CSV/日志，
 // 让“GCC 目标 → 分层配置”的中间量可观察（doc/14 §9.4）。
 // ============================================================================
+// 【t48】这里原本 `#include <algorithm>` 只为 std::max<int64_t>；改成局部
+// 帮助函数后本文件**不依赖任何标准库头**，于是可以用 NDK clang++ 以
+// freestanding 宿主 target 离线编译并真实运行自测
+// （见 layer_bitrate_fold_host_test.cpp：容器内无宿主 libc/libc++ 头）。
 #include "encoder/layer_bitrate_allocator.h"
-
-#include <algorithm>
 
 namespace webrtcdemo {
 
@@ -47,6 +49,11 @@ const int32_t
 const int32_t LayerBitrateAllocator::kMinLayerKbps = 4;
 
 namespace {
+
+// 取较大值（替代 std::max<int64_t>；语义完全相同）。
+int64_t MaxInt64(int64_t a, int64_t b) {
+  return (a > b) ? a : b;
+}
 
 // 兜底总码率（bps）：矩阵与 total_bps 都为 0 时使用 300 kbps。
 constexpr int32_t kFallbackTotalBps = 300 * 1000;
@@ -155,7 +162,7 @@ VpxLayerRates LayerBitrateAllocator::Compute(const LayerBitrate& in,
     // 上游分层之和大于总量（理论不该发生）：按比例回缩最后一层，避免倒挂。
     int64_t excess = increment_total - total;
     increment_bps[temporal - 1] =
-        std::max<int64_t>(0, increment_bps[temporal - 1] - excess);
+        MaxInt64(0, increment_bps[temporal - 1] - excess);
   }
 
   // ---- ④ 总目标码率（kbps）--------------------------------------------------
@@ -207,6 +214,39 @@ VpxLayerRates LayerBitrateAllocator::Compute(const LayerBitrate& in,
   }
 
   return out;
+}
+
+bool FoldSdkLayerMatrix(const int32_t* flat, int sdk_spatial, int sdk_temporal,
+                        int32_t total_bps, int framerate_fps,
+                        LayerBitrate* out) {
+  if (flat == nullptr || out == nullptr) {
+    return false;
+  }
+  // 维度校验：SDK 的合法上限见 layer_bitrate_allocator.h（5×4，真机实测）。
+  if (sdk_spatial < 1 || sdk_spatial > kSdkMaxSpatialLayers ||
+      sdk_temporal < 1 || sdk_temporal > kSdkMaxTemporalStreams) {
+    return false;
+  }
+  const int spatial =
+      (sdk_spatial < kMaxSpatialLayers) ? sdk_spatial : kMaxSpatialLayers;
+  const int temporal =
+      (sdk_temporal < kMaxTemporalLayers) ? sdk_temporal : kMaxTemporalLayers;
+  *out = LayerBitrate();
+  for (int s = 0; s < spatial; ++s) {
+    for (int t = 0; t < temporal; ++t) {
+      // 被钳掉的空间层（s + kMaxSpatialLayers, …）累加到同一时序层，保证不丢总量。
+      int32_t folded = 0;
+      for (int src_s = s; src_s < sdk_spatial; src_s += kMaxSpatialLayers) {
+        folded += NonNegative(flat[src_s * sdk_temporal + t]);
+      }
+      out->layer_bps[s][t] = folded;
+    }
+  }
+  out->num_spatial = spatial;
+  out->num_temporal = temporal;
+  out->total_bps = total_bps;
+  out->framerate_fps = framerate_fps;
+  return true;
 }
 
 }  // namespace webrtcdemo

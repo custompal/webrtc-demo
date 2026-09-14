@@ -517,8 +517,21 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
 
   vpx_image_t image;
   memset(&image, 0, sizeof(image));
+  // 【t48 真机故障修复之一】第 6 参必须传**我们自己的** Y 平面指针。
+  //   为什么：libvpx 的 vpx_img_wrap 在 img_data == NULL 时走“自己分配”分支
+  //   （vpx/src/vpx_image.c:108-158：w/h 取整 + vpx_memalign(缓冲) +
+  //    img_data_owner = 1）。本函数的 image 是**栈对象**且从不调用
+  //   vpx_img_free，于是那块内部缓冲**每帧泄漏一次**：
+  //     640x480 I420 = 480 * 640 * 12/8 = 460800 B/帧 ≈ 13.8 MB/s @30fps。
+  //   传非 NULL 指针后 libvpx 走“外部缓冲”分支（:108-112 取 w=d_w/h=d_h；
+  //   :148 不再分配；img_data_owner 保持 0），既不分配也不持有所有权；
+  //   三个平面与 stride 依旧由下面的覆盖赋值决定（零拷贝语义不变）。
+  //   参考：libwebrtc 自己的 LibvpxVp9Encoder 也只在 rewrap 时分配一次并把
+  //   平面指到 I420Buffer，最后用 img_free/img_destroy 归还
+  //   （libvpx_vp9_encoder.cc:2114-2127/2182-2187/329）。
   if (vpx_img_wrap(&image, VPX_IMG_FMT_I420, static_cast<unsigned int>(width_),
-                   static_cast<unsigned int>(height_), 1, nullptr) == nullptr) {
+                   static_cast<unsigned int>(height_), 1,
+                   const_cast<uint8_t*>(plane_y)) == nullptr) {
     NLOG_ERROR(kTagEncoder, "encode_img_wrap_failed");
     return kVp9Error;
   }
@@ -546,8 +559,32 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
   }
 
   const int64_t start_us = NowMicros();
+  // 【t48 取证标记】真机上首帧 nativeEncode 之后**再无任何日志**（既没有
+  // encoded_frame，也没有 encode_failed，且 CSV 没有对应行）⇒ 故障点在
+  // vpx_codec_encode() 内部或紧随其后。下面两条「进入/返回」标记把这段
+  // 收敛到一行：若下次真机日志停在 encode_vpx_begin，就是 libvpx 内部
+  // 崩溃/卡死；若停在 encode_vpx_done，则问题在取包/回调层。
+  if (frame_count_ == 0) {
+    NLOG_INFO(kTagEncoder,
+              "encode_vpx_begin frame=1 pts_us=%lld dur_us=%lu flags=%u "
+              "w=%d h=%d sy=%d su=%d sv=%d img_owner=%d",
+              static_cast<long long>(pts_us), duration_us,
+              static_cast<unsigned int>(flags), width_, height_, plane_stride_y,
+              plane_stride_u, plane_stride_v,
+              static_cast<int>(image.img_data_owner));
+  } else {
+    NLOG_DEBUG(kTagEncoder,
+               "encode_vpx_begin frame=%lld pts_us=%lld dur_us=%lu flags=%u",
+               static_cast<long long>(frame_count_ + 1),
+               static_cast<long long>(pts_us), duration_us,
+               static_cast<unsigned int>(flags));
+  }
   const vpx_codec_err_t encode_result = vpx_codec_encode(
       &codec_, &image, pts_us, duration_us, flags, VPX_DL_REALTIME);
+  NLOG_DEBUG(kTagEncoder, "encode_vpx_done frame=%lld err=%d us=%lld",
+             static_cast<long long>(frame_count_ + 1),
+             static_cast<int>(encode_result),
+             static_cast<long long>(NowMicros() - start_us));
   if (encode_result != VPX_CODEC_OK) {
     NLOG_ERROR(kTagEncoder, "encode_failed err=%s detail=%s",
                vpx_codec_error(&codec_), vpx_codec_error_detail(&codec_));
@@ -591,6 +628,17 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
     qp = -1;
   }
   meta_.qp = qp;
+
+  // 【t48 取证标记】vpx 返回 OK 但没产出包（例如分层/RC 把该帧丢掉）时明确记一笔：
+  // 旧代码在这种情形下只会走 WriteBitrateCsvLocked(0,…)，CSV 里看不出区别。
+  if (encoded_.empty()) {
+    NLOG_WARN(kTagEncoder,
+              "encode_no_packet frame=%lld pts_us=%lld rot_w=%d rot_h=%d "
+              "flags=%u",
+              static_cast<long long>(frame_count_ + 1),
+              static_cast<long long>(pts_us), width_, height_,
+              static_cast<unsigned int>(flags));
+  }
 
   const int64_t elapsed_us = NowMicros() - start_us;
   ++frame_count_;

@@ -242,8 +242,12 @@ class Vp9VideoEncoder : VideoEncoder {
         // 不变量（与 t7 的 nativeSetRates 校验对齐，reports/07-native-dev.md v1.2 §2.6）：
         // 数组长度与 S/T 取自**同一个矩阵**，故 len == S*T **由构造保证**，
         // t7 的 nativeSetRates_rejected reason=length_mismatch 不可能被本层触发。
-        // 注意运行期 S/T = 3/3（SDK 按 kMaxSpatialLayers×kMaxTemporalStreams 填），
-        // 与 nativeInit 时的 1/3 不同；t7 侧按输入维度解析、按 configured 1/3 出分层，无需适配。
+        // 【t48 真机修正】运行期 S/T = **5×4**（不是 3×3）：libwebrtc 按
+        // api/video_codecs/video_codec.h 的 kMaxSpatialLayers=5 /
+        // kMaxTemporalStreams=4 分配矩阵，真机日志为 s=5 t=4；而本项目的
+        // 内部（配置）分层是 1×3（L1T3）。native 侧用 FoldSdkLayerMatrix()
+        // 折叠并只用 total 做 40/30/30 拆分，因此本层**原样透传**即可
+        // （见 reports/18-encoder-stall.md §2）。
         val flat = IntArray(spatial * temporal)
         for (s in 0 until spatial) {
             for (t in 0 until temporal) {
