@@ -172,6 +172,20 @@ class Vp9Encoder {
   // 缓冲按"旋转后尺寸"单调增长并复用（避免逐帧分配），`Release()` 时释放。
   std::vector<uint8_t> rotate_buf_;
 
+  // 【t50b】libvpx **自持**输入图像（`vpx_img_wrap(nullptr, …)`：结构与缓冲都由 libvpx 分配，
+  // `img_data_owner = 1`）。每帧把（可能已旋转的）源平面**逐行拷贝**进来后再送
+  // `vpx_codec_encode()`。
+  //
+  // 为什么改成拷贝：真机连续两次在 `vpx_codec_encode()` 内部崩溃（`reports/20`、`reports/22`），
+  // 而此前是把**外部缓冲 + 任意 stride**（例如 SDK 给的 `sy=640 su=640 sv=640`）直接 wrap
+  // 后交给 libvpx；libwebrtc 自己的 `LibvpxVp9Encoder` 也是先拷贝进自持图像再编码
+  // （不依赖调用方缓冲的布局与生命周期）。代价 = 每帧一次 I420 拷贝，换取确定性。
+  vpx_image_t* raw_img_ = nullptr;
+  int raw_w_ = 0;
+  int raw_h_ = 0;
+  // 按需（重）分配自持图像；尺寸不变时复用。调用者持锁。
+  bool EnsureRawImageLocked();
+
   int64_t frame_count_ = 0;
   int64_t slow_frame_count_ = 0;
 };
