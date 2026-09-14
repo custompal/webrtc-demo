@@ -1499,7 +1499,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 | 定义级 | `J.N`（classes.dex）**195 方法 / 193 native**；`GEN_JNI`（classes13.dex）**195 / 0**，且声明 AV1 非 native 桩（**B 独有**） |
 | 四 `.so` | `p_align` 全 **0x4000**；`libjingle 757cef81…`、`libc++_shared c9dbf4ec…`、`libwebrtcdemo_native 95c44e5a…`、`libandroidx.graphics.path 41e9a793…` |
 | `libc++_shared` ↔ `jniLibs` | **逐字节相同** |
-| 单测 | **46 / 0 / 0**（5 份 XML @19:07:05；`8+4+17+11+6`；`JniBindingClasspathTest` = 6） |
+| 单测 | **46 / 0 / 0**（5 份 XML @19:07:05；`8+4+17+11+6`；`JniBindingClasspathTest` = 6）—— **⚠️ 时点更正（引用请用新批）**：该批 XML 已由 **20:52:31** 重建批取代（计数相同），日志 `reports/10-t34-captain-testDebugUnitTest-20260914-2050.log` = `cdb0c5b3…` / 49 行；**19:07:05 批属历史**，其后又被 t42 于 **22:00:41** 重建（同为 46/0/0，见 §13.26(11)） |
 | 载荷钉（跨两次独立构建稳定） | `classes.dex a1b2ebdc…` + `classes13.dex` + 四 `.so` 共 6 件 |
 | 语义等价旁证（**四条**独立证据） | ① 类集合 26 195 / 26 195（双向差集 0）；② 逐 dex 类集合 **14/14** 一致；③ 7 个差异 dex 的 **`code_items` 机器码逐字节相同**（区级 `map_list` 与方法级 `code_off` 两路独立，**非我自推**）；④ **结构指纹（我自跑）**：以 `dexdump` 逐 dex 提取 `CLASS/NAME/TYPE/ACCESS` 序列后比对 —— **14/14 dex 完全相同、0 不同**（各行数亦逐一相同：`classes.dex 307 662`、`classes13.dex 219 899`、`classes14.dex 14 806`、`classes2 2 283`、`classes3 1 884`、`classes9 2 056`、`classes5 956`、`classes6 624`、`classes11 1 011`、`classes10 490`、`classes8 235`、`classes12 193`、`classes7 82`、`classes4 73`） |
 
@@ -1690,7 +1690,7 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
   （前置：`./gradlew --version` 可跑通 = Gradle 8.7 / JVM 25；`local.properties` 的 `sdk.dir` 仍指宿主 `/opt/dsh-workspaces/android-sdk`。）
 - **无污染核对（重跑前后一致）**：APK `30c41ac9…`、jar `0c776934…`、`jniLibs` `.so` `757cef81…` **均未变**；5 份 XML 指纹与重跑前基线**逐份相同**（`f59d405a…`/`b410d54a…`/`837c4c42…`/`43ba061e…`/`63f37999…`）；`git status --porcelain` **空**。
 - **成立的证据（两层）**：
-  1. 产物自带 XML（19:07:05）：5 套 = `8 + 4 + 17 + 11 + 6` = **46 / 0 / 0**；`JniBindingClasspathTest` **6 用例逐名可核**（`genJniDeclaresSameMethodCountAsHashNativeClass`、`genJniIsPureForwardingLayer`、`requiredBindingsLedgerIsComplete`、`referencedJniBindingClassesAreResolvable`、`hashNativeClassDeclaresSoBoundaryNatives`、`coreWebrtcApiClassesAreResolvable`），`<failure>`=0、`<error>`=0；
+  1. 产物自带 XML（19:07:05）：5 套 = `8 + 4 + 17 + 11 + 6` = **46 / 0 / 0**（**该批已被 20:52:31 重建批取代，见 §13.26(4)；19:07:05 属历史**）；`JniBindingClasspathTest` **6 用例逐名可核**（`genJniDeclaresSameMethodCountAsHashNativeClass`、`genJniIsPureForwardingLayer`、`requiredBindingsLedgerIsComplete`、`referencedJniBindingClassesAreResolvable`、`hashNativeClassDeclaresSoBoundaryNatives`、`coreWebrtcApiClassesAreResolvable`），`<failure>`=0、`<error>`=0；
   2. **宿主原始日志两条**：`reports/10-t33-testDebugUnitTest-20260914-190455.log`（`ae0139b2…`，`FROM-CACHE 次数=0`，逐类 8/4/17/11/6、TOTAL 46/0/0）与 `reports/10-t33-captain-testDebugUnitTest-20260914-184232.log`（`5ea263a5…`，`24 actionable tasks: 24 executed`，合计 46/0/0）。
 - ⇒ 判据**在证据层成立**；"容器内现场重跑"**未能完成**（无 JDK 17；且 `local.properties` 指宿主 SDK —— 二者都需宿主或环境变更，我不自行改 `local.properties`）。**如实记为"未在容器内重跑"，不写成通过**。
 
