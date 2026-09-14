@@ -1144,6 +1144,9 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 > **已执行**：`chown -R 1000:1000 /opt-dsh-workspaces/code/webrtc-demo/.git`（含 `.git/index` 与全部 objects），并以 uid 1000 实测 `git status/log/rev-parse` 正常；**全队规则：仓库内所有 git 命令一律以 uid 1000 执行**（SSH 场景 `su -s /bin/bash admin -c "cd <repo> && git …"`），**禁止 root 身份跑 git**。
 > **verifier 复核与一次复发留痕**：chown 之后我又观察到 **`.git/index` 于 18:54:11 再次变为 `root:root`**（⇒ chown 本身不足以长期维持，**规则才是操作性根治**）；我按就地修复重建（18:55:47 恢复 `node:node`，`find .git ! -user node` = **0**）。**四次时间点**：`18:25`、`18:27`、`18:31:18`、`18:46:11`（+ 复核时 `18:54:11`）。
 > **结论**：K-17 记为**已闭合（captain chown + uid-1000-only 规则；verifier 就地修复配方保留于 §10.11）**。
+> **复发源披露与前向纪律（env-installer 主动认账，2026-09-14）**：其此前以 **root 经 ssh** 执行的提交（t18/t26/`c6fcfcd`/`3acc1d2` 等）即 root:root 索引/对象目录的来源之一；其已承诺**此后所有 git 一律以 uid 1000 执行**（宿主机 `su -s /bin/bash admin -c 'git …'`），并在每次 git 操作后做 root 侧兜底 `chown -R 1000:1000 .git` + 断言 **`find .git ! -uid 1000 | wc -l == 0`**。
+> **探针陷阱（值得留档）**：`git update-index --refresh` 的 **exit≠0 表示"有文件 needs update"**，**不是**权限失败（env-installer 首轮即据此误判"仍不可写"）；判可写性应使用 **`test -w .git/index` / `touch .git/index` / `git add` 演练** 三条真探针。
+> **dangling 对象现状**：可写性演练累计留下 **6 个 dangling blob**（`49407c77`、`56dbbdc6`、`9ae37822`、`c00db6f3`、`9daeafb9`、`2757c6f6`）——均无引用、不影响 ref/tree、`git gc` 可回收；非交付物，**不构成缺陷**。
 > **读侧核验（我实测）**：`webrtc-build/src/out/gen` 内 `-user root` = **0**、`! -readable` = **0**（仅 505 个 `node:node` 的 600 权限文件）；`out`（14 062 文件）与 `app/build`（860 文件）亦 `! -readable` = 0 ⇒ **读侧当前无阻碍**；如宿主视角确有 root 0600 文件，再按需 `chown -R node:node webrtc-build/src/out`。
 
 
@@ -1344,6 +1347,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 - **[P-11] dex 级绑定形态**（`scripts/build_app.sh:421` 起）：**jar 侧 + dex 侧双闸**查 `J.N` 与转发 `GEN_JNI`，任一为 0 即 FAIL —— 正是 K-15 的**交付层**判据（旧 APK dex 实测 `jn=0` ⇒ 必红）。
 - **[P-12] native 交付件对象漂移护栏**（`scripts/build_app.sh:382` 起）：APK 内 `libjingle_peerconnection_so.so` 必须 == `757cef81…`、`libc++_shared.so` == `c9dbf4ec…` —— 与我 §13.15(a)/§13.20 的护栏同向，可互为交叉验证。
 - 两条均含**正负例验证**，且会原样出现在 t33 的构建日志里 ⇒ **t34 把它们作为输入证据引用，并在 APK 实体上独立复跑一次**。
+- 实现细节提醒：**P-11 的脚本体用 `unzip -q -o`（`scripts/build_app.sh:402`）⇒ 其执行环境须有 `unzip`（宿主有、容器无）**；我在容器侧的等价复算一律用 **`jar xf`**（结果等价，t34 两口径都给）。
 - ⚠️ **t33 构建过程会重写 `app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so`**（我实测 mtime 19:02:06）⇒ t34 必须在**构建结束后**核该 `.so` 仍为 `757cef81…`（P-12 覆盖同一断言；构建期间的 mtime 变化**不是**漂移证据）。
 
 #### (e) 跨报告口径标注（captain 2026-09-14 指令，逐条落实；**不修改被标注的报告文件**）
