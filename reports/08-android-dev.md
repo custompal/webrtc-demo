@@ -1041,7 +1041,7 @@ CallScreen.kt:98   pool.createRenderer(context, mirror = false) { viewModel.onRe
 | 同上 | `:219-225` | 新增 `BINDING_CLASSES`（**运行期自检清单，5 项**：**`org.jni_zero.GEN_JNI`**、`PeerConnectionFactoryJni`、`PeerConnectionJni`、`VideoTrackJni`、`JniCommonJni`）—— 含 `GEN_JNI` 是为了在**真机现场**就挡住"只补 `*Jni`/漏 `GEN_JNI`"的半修复（运行期自检比单测更贴近崩溃现场） |
 | `ui/call/CallViewModel.kt` | `:149-160` | 失败文案改为 **`WebRTC 引擎初始化失败（<异常类名>: <message>）`**；无详情时保留原兜底文案 |
 | `diag/DiagnosticsScreen.kt` | `:302-310` | 诊断页"WebRTC 引擎"行在未就绪时追加 **`（失败原因: <详情>）`**（可复制，便于远程排障） |
-| `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt` | 新文件（2 用例） | ① `referencedJniBindingClassesAreResolvable`：断言 **43 个**绑定类可在 classpath 解析（**`org.jni_zero.GEN_JNI` + t22 实测的 42 个 `*Jni` 全量台账**；一次性列出全部缺失）；② `coreWebrtcApiClassesAreResolvable`：**正向对照**，证明 classpath 接线正常、失败确由"jar 缺绑定类"引起 |
+| `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt` | 新文件（t25 时 2 用例；**t32 起 3 用例**） | ① `referencedJniBindingClassesAreResolvable`：断言绑定类可在 classpath 解析（**t25 时 43 项 = `org.jni_zero.GEN_JNI` + t22 实测 42 个 `*Jni`；t32 补齐 5 条子包漏检后为 48 项 = 47 `*Jni` + `GEN_JNI`**，见 §8.15.6）；一次性列出全部缺失；② `coreWebrtcApiClassesAreResolvable`：**正向对照**，证明 classpath 接线正常、失败确由"jar 缺绑定类"引起；③ **`requiredBindingsLedgerIsComplete`（t32 新增）**：钉死台账规模（48 项 / 47 `*Jni`）与无重复项 —— 防"清单缩水使断言静默变弱" |
 
 **新增事件/字段一览（未改名、未删除任何既有事件）**：新增事件 `jni_binding_missing`（字段 `cls`）；既有 `engine_init_failed` 新增字段 `ex` / `msg` / `cause`；`engine_init_skipped` 不变（仅补 `lastFailure`）。
 
@@ -1096,7 +1096,16 @@ RESULT=全部可解析(测试应通过)
 
 #### 8.15.3 参考：缺失绑定类的**完整台账**与跨产物修复要点（native-dev 一手实测 + 本层复算）
 
-**本层复算（只读，扫 `libwebrtc-java.jar` 常量池）**：jar 内**被引用但缺失的 `*Jni` = 42 个**（另 `org/jni_zero/GEN_JNI` 亦缺失；该包内只有 `JniZero`/`CommonApis`/注解等）：
+**本层复算（只读，扫 `libwebrtc-java.jar` 常量池）**：jar 内**被引用但缺失的 `*Jni` = 42 个**（t25 当时的**顶层口径**）。
+
+> ⚠️ **t32 更正（2026-09-14，其余数字以本节更正与 §8.15.6 为准）**：**42 是漏检值**。当时扫描的正则只锚定
+> `org/webrtc/<Class>Jni` **顶层**形态，漏掉子包 **`org/webrtc/audio/*Jni` ×3**（`JavaAudioDeviceModuleJni`、
+> `WebRtcAudioRecordJni`、`WebRtcAudioTrackJni`）与 **`org/jni_zero/*Jni` ×2**（`JniZeroJni`、`CommonApisJni`）。
+> ⇒ **真实被引用数 = 47**（顶层 42 + audio 3 + jni_zero 2）；**生成/编译数 = 48**（多出的 `Dav1dDecoderJni`
+> 不被任何类引用）。另 `org/jni_zero/GEN_JNI` 亦缺失；该包内当时只有 `JniZero`/`CommonApis`/注解等。
+> 三个数字全部经 native-dev 与 t30 独立复核（`48 = 43 + 3 + 2`，顶层 43 − `Dav1dDecoderJni` = 42）。
+
+下列为 t22 的 **42 条顶层清单**（**子包 5 条**见 §8.15.6）：
 ```
 org.webrtc.AudioTrackJni / BuiltinAudioDecoderFactoryFactoryJni / BuiltinAudioEncoderFactoryFactoryJni /
 CallSessionFileRotatingLogSinkJni / DataChannelJni / DtmfSenderJni / EglBase10ImplJni / EnvironmentJni /
@@ -1109,8 +1118,9 @@ SoftwareVideoDecoderFactoryJni / SoftwareVideoEncoderFactoryJni / TimestampAlign
 VideoDecoderFallbackJni / VideoDecoderWrapperJni / VideoEncoderFallbackJni / VideoEncoderWrapperJni /
 VideoTrackJni / YuvHelperJni
 ```
-> 该清单与 t23 的范围（"42/42 全缺"）**完全一致**；本层测试只硬钉其中 **5 个关键入口**（含 `GEN_JNI`），
-> **完整 42 个作为台账**供 t26 做构建级核对，避免测试清单随构建演进产生误报。
+> 该清单与 t23 的范围（"42/42 全缺"）**一致但非全量**（见上更正 ⇒ 真实 47）；t25 时本层测试只硬钉其中
+> **5 个关键入口**（含 `GEN_JNI`），**t32 起改为硬钉全部 48 项**（47 `*Jni` + `GEN_JNI`），避免测试清单
+> 随构建演进产生误报、也避免"只钉 5 项"掩盖子包漏检。
 
 **native-dev 于宿主机反编译得到的关键事实（2026-09-14，供 t23/t26 参考）**
 1. **生成类"编译好了但没进包"**：`gen/**/input_srcjars` 有 48 个 `*Jni.java`；14 个模块的 `*.javac.jar` 共编译出 45 个 `*Jni.class`（含 `PeerConnectionFactoryJni.class`）；但**三份进包 jar 全是 0**（`libwebrtc.jar`、AAR `classes.jar`、部署 jar），且 `libwebrtc.jar` mtime(19:55) 晚于 `.so`(16:55) ⇒ **系统性打包缺口、非陈旧缓存**。
@@ -1118,12 +1128,19 @@ VideoTrackJni / YuvHelperJni
 3. **`*Jni` 是中间层**：`class PeerConnectionFactoryJni implements PeerConnectionFactory.Natives { … return GEN_JNI.org_webrtc_…(…); }` ⇒ **真正声明 `public static native` 的是 `GEN_JNI`**（故本层自检与测试都把它列为首项）。
 4. **同代际**：`src` HEAD `5c25072b`；部署 jar == AAR `classes.jar`（同 sha256）；⇒ 修复 = **只并入类、不必重编 `.so`**。
 5. ⚠️ **量化缺口**：14 份**分包** `GEN_JNI` 的 native 合计 **187**，而 `.so` 边界 **193**（差 6）⇒ 必须用**合并后的单一 `GEN_JNI`**；"合并产物是否存在"native-dev 未在构建树见到，**留 t5/构建方确认**。
+   > **t30/t32 更正（上述 187 / "差 6" 已作废）**：现行口径 = **调用点 194 / 合并 `GEN_JNI` 声明 194 / `.so` 导出 193**。
+   > 差额**恰 1 条** = `org_webrtc_LibaomAv1Encoder_create`（AV1 未编入本 `.so`，**必须保留为抛异常桩声明**，
+   > 否则交付 jar 内 `LibaomAv1EncoderJni` 的引用会悬空）；`187` 是分包合计的**漏值**，不是真实边界数。
+   > 合并后的单一 `GEN_JNI` 已由 t30 产出并在构建树实测（`193 转发 + 1 AV1 桩 = 194`）。
 6. **建议 t26 增做一项跨产物核对**（单测挡不住"存在但不完整"）：`llvm-nm -D` 取 `.so` 的 193 个 `Java_J_N_*`，与合并 `GEN_JNI` 的 native 数量/名字逐一对齐。
    > ⚠️ **注意两者不可直接字符串比对**（native-dev 提醒）：A 是**符号名** `Java_J_N_<hash>`，B 是**Java 方法名** `org_webrtc_<Class>_<method>`，需经 jni_zero 的 mangling 映射。**可判定的是：数量一致（193 = 合并 `GEN_JNI` 的 native 数）**，以及"我方所需符号 ⊆ 合并 `GEN_JNI` 可提供的集合"这条语义检查；若要**逐名映射**，native-dev 可从 `gen/jni_headers/sdk/android/generated_*/…_jni.h` 导出对应表（按需索取）。
 
 7. **计数对账（48 / 45 / 42；native-dev 2026-09-14 追加）**：生成 `*Jni.java` = **48**；14 个模块 `*.javac.jar` 编译出 `*Jni.class` 累计 **45**（**去重后仍 45，无重名**）；其中**被本 jar 引用**的 = **42**（与 native-dev 独立扫描结果 **`SET_EQUAL`**，逐名一致）。
-   ⇒ **42 是"运行时必须齐的最小集"**；而**打包更稳妥的做法是并入全部 45 个编译产物**（多 3 个无害），这样不依赖"引用扫描"的正确性。
-   ⇒ 本层的回归测试（43 项 = `GEN_JNI` + 42 个被引用类）**钉的是最小集**：t23 只要并入含这 42 个 + 合并 `GEN_JNI` 的产物即可转绿；**若只并入 42 而漏掉那 3 个未被引用者，运行时同样安全**（它们不被任何类引用）。
+   > **t32 收口（现行值）**：**生成 48 = 编译 48 = 现行 jar 内 48**（t23 落位后实测，`*Jni.class` 去重 48）；
+   > **被引用 47**（顶层 42 + `org.webrtc/audio` 3 + `org/jni_zero` 2）；**未被引用 1** = `Dav1dDecoderJni`。
+   > 上面的 **45** 是**执行中途**的编译计数（后续模块补齐至 48），**不再作为现行口径**。
+   ⇒ **47 是"运行时必须齐的最小集"**；而**打包更稳妥的做法是并入全部 48 个编译产物**（多 1 个无害），这样不依赖"引用扫描"的正确性。
+   ⇒ 本层的回归测试（t25 时 43 项 = `GEN_JNI` + 42 个被引用类；**t32 起 48 项 = `GEN_JNI` + 47 个 `*Jni`**）**钉的是全量**。
 
 #### 8.15.4 冻结面确认（未触碰 JNI 契约与既有事件名）
 
@@ -1157,7 +1174,259 @@ JniBindingClasspathTest     tests="2"  failures="0" errors="0"   ← 修复前�
 | 修复前 | 453 类 / `*Jni`=0 / 无 `GEN_JNI` | **1 失败**（列出 5 个缺失类） | BUILD FAILED / 38 用例 1 失败 |
 | 修复后 | 508 类 / `*Jni`=48 / 有 `GEN_JNI` | **2 通过** | **BUILD SUCCESSFUL / 38 用例 0 失败** |
 
-> 残余（非本层可测）：本次只验证了"**类存在即可解析**"；"`GEN_JNI` 存在但不完整（native-dev 实测分包合计 187 ↔ `.so` 边界 193）"**单测挡不住**，仍需 t26 的跨产物核对（见 §8.15.3 第 6 条）。
+> **残余（t32 重写，取代本节早前那句"187 ↔ 193、单测挡不住"的表述）**：本测试只验证 **"绑定类存在即可解析"**，
+> **不证明"可绑定"**。现行 jar 的真实状态（t30/t32 实测，jar `dc5f8919…`）：
+> `J/` 包类数 = **0**、`org.jni_zero.GEN_JNI` 为 **Placeholder**（194 个 `static native`、`static 且非 native` = 0），
+> 而 `.so` 只导出 **193 个 `Java_J_N_M<hash>`**、无可读名/`kMethods`/`RegisterNatives`。
+> ⇒ 于是**出现一个新的假绿**：**即使本测试 48/48 全绿**，设备上首个 native 调用仍会抛出
+> **`UnsatisfiedLinkError`**（或先 `NoClassDefFoundError: J.N`）——它发生在
+> `PeerConnectionFactory.initialize(...)` → `initializeAndroidGlobals()`，**落在 `WebRtcEngine` 的 `try` 内**，
+> 因此表现为 `engine_init_failed ex=java.lang.UnsatisfiedLinkError msg=No implementation found for ...`，
+> **而不是** `jni_binding_missing`（绑定类确实存在）。
+> **闭合方式**：等 t30 产物（`J.N` + 转发 `GEN_JNI`）合并进交付 jar 后，由 §8.15.6 的 **P2 合取断言**补上
+> （① `J.N` 可解析 ② `GEN_JNI` 的 `static native` = 0 ③ `GEN_JNI` 方法数 = 194 且 == `J.N` 方法数
+> ④ `J.N` native 数 = 193）；④ 与符号级 ↔ `.so` 等价归 native-dev / t27。
+
+#### 8.15.6 t32 P1：绑定类台账 **42→47**（48 项）+ 台账规模自检 + 「类存在 ≠ 可绑定」显式化
+
+**背景**：t30 判定本 build 走 jni_zero **short/proxy 静态符号绑定**（`.so` 只导出 `Java_J_N_M<hash>`），
+故「补 `*Jni`」只是**类完整性**；**可绑定性**还需运行期 `J.N`（哈希 native）+ 转发 `GEN_JNI`。
+captain 裁定落地方案 = **B（194 = 193 转发 + 1 条 AV1 抛异常桩，`webrtc-build/t30/handoff/classes/` 两件）**，
+并指定本项分两批：**P1 = 台账严格化（本窗口，不跑 gradle）**、**P2 = 合取断言（jar 落位后）**。
+
+**① 本批改动（仅测试文件，`app/src/test/**`）**
+
+| 文件 | 改动 |
+|---|---|
+| `webrtc/JniBindingClasspathTest.kt` | `REQUIRED_BINDINGS` **42→47 个 `*Jni`**（连同 `GEN_JNI` 共 **48 项**）：新增 `org.jni_zero.CommonApisJni`、`org.jni_zero.JniZeroJni`、`org.webrtc.audio.JavaAudioDeviceModuleJni`、`org.webrtc.audio.WebRtcAudioRecordJni`、`org.webrtc.audio.WebRtcAudioTrackJni`；**新增用例 `requiredBindingsLedgerIsComplete`**（钉 48 项 / 47 `*Jni` / 无重复）；KDoc 更正：过期数字 **187 → 现行口径「调用点 194 / 合并声明 194 / `.so` 导出 193」**，并注明 42 条漏检的子包根因 |
+
+> **为什么这 5 条是"纯严格化"**：这 5 个类在 `.so` 侧**全都有 backing**（`Java_J_N_M3mJB0tB`、`MIXdWn9A`、
+> `MioeoqOK`、`MVoHeMKY`、`MsGvGVCS`、`MMv8RAm7`、`ME2Hhs12`、`MRCqqvhw`，共 8 条 native，**全部在 193 集合内**），
+> 唯一豁免 `org_webrtc_LibaomAv1Encoder_create` **不在这 5 个类里** ⇒ 不引入新的"已知豁免"债。
+> 其中 `JavaAudioDeviceModuleJni` 正是**默认 ADM 自建路径**上的类，漏检它会掩盖"补顶层、漏 audio/jni_zero 胶水"的半修复。
+
+**② 静态自检（本批，容器内 grep/sed 计数；**按 captain 指令未跑 gradle**）**
+
+```
+$ sed -n '/val REQUIRED_BINDINGS = listOf(/,/^        )/p' JniBindingClasspathTest.kt | grep -oE '"[^"]+"' | tr -d '"'
+total=48        starJni=47      gen_jni=1       distinct=48     dupes=0
+按包：org.jni_zero 3 / org.webrtc 42 / org.webrtc.audio 3
+新增 5 条各命中 1 次；括号平衡 open=14 close=14；用例 3 个
+```
+⇒ 台账与 captain 的规格逐项吻合（**48 = 47 `*Jni` + `GEN_JNI`**）。
+
+> **断言写法说明**：新用例一律用 `assertTrue(String, Boolean)`，**不用** `assertEquals(String, Int, Int)` ——
+> JUnit4 的 `(long,long)` 重载在 Kotlin 下靠装箱解析，而本窗口**无法跑 gradle 验证**，故取零歧义写法，
+> 并把"现行实际值"写进失败信息（失败时一眼可见）。收尾自检：`assertTrue = 5`、`assertEquals = 0`、
+> 括号 `open=14 close=14`、用例 3 个、import 仅 `assertTrue`/`Test`。
+
+**③ ⚠️ 「48/48 全绿 ≠ 引擎可用」——本节最重要的结论（防第二次假绿）**
+
+现行交付 jar `dc5f8919…`（1 187 970 B / 508 条目）实测：**`J/` 包类数 = 0**；
+`org.jni_zero.GEN_JNI` 仍是 **Placeholder**：方法 195 行（含默认构造器 ⇒ 方法 **194**）、`static` 194、
+**`static native` = 194**、`static 且非 native` = **0**；而 `.so` 侧 193 个导出全是 `Java_J_N_M<hash>`，
+可读名/`kMethods`/`RegisterNatives` 串 = 0。
+⇒ **本测试全绿时，真机首个 native 调用仍预期 `UnsatisfiedLinkError`**（另 `J.N` 不存在 ⇒ `NoClassDefFoundError: J.N`），
+且它发生在 `PeerConnectionFactory.initialize(...)` → `initializeAndroidGlobals()`（**在 `WebRtcEngine` 的 `try` 内**），
+所以现象是 `engine_init_failed ex=java.lang.UnsatisfiedLinkError`，**不是** `jni_binding_missing`（类确实在）。
+⇒ **t27 必须把两条结论分开判**：**类完整性 = 已修**（48/48 + `GEN_JNI` 在位）；**可绑定性 = 未落地**（t30 产物在手、未合入）。
+时序（t30 现场 `stat`，`evidence/prefix-baseline.md` sha256 `1472f482…`）：交付 jar **11:05:10** → t26 APK **11:28:34**
+→ t30 handoff **11:34:46** ⇒ **t26 的 APK 构建自未落位的 jar**，只修掉 `NoClassDefFoundError`。
+
+**④ P2 待办（jar 落位后执行，本窗口不做）**
+
+captain 已按 **B 裁定**钉死合取四条，**不采用 `∈{193,194}`**（钉 194 才能让"回退到 A"这类回归变红）：
+1. `J.N`（jar 内 `J/` 条目 ≥ 1）可解析；
+2. `GEN_JNI` 声明 **`static native` = 0**；
+3. `GEN_JNI` 声明方法数 **== 194** 且 **== `J.N` 声明方法数**（表达耦合）；
+4. `J.N` 声明 native 数 **== 193**。
+（④ 及符号级 ↔ `.so` 等价归 **native-dev / t27**，本层不越界。）
+「修复前必红」对照一律用**落地前 jar 副本**（`/opt/dsh-workspaces/webrtc-build/t30/evidence/classes-from-libwebrtc-arm64.aar.jar` = `dc5f8919…`），
+**严禁**临时替换交付 jar 做对照。
+
+**⑤ 本批未做的核验（如实标注）**：**未跑 gradle**（captain 指定：jar 正在落位，避免踩窗口）、**无真机**。
+故本批**没有**运行期证据；`JniBindingClasspathTest` 上一次真实运行仍是 t25 期的 **38 用例 0 失败**（§8.15.5），
+其后期 jar 版本曾达 **42 用例 0 失败**。本批新增 1 个用例后**预期 43 用例**，须由 P2 窗口复跑留证。
+
+**⑥ 风险提示（不影响本批，供 t31/t33/t34 阅读时注意命名撞车）**：任务标题里 **t31「落地路线 A」** 的 "路线 A"
+指**修复路线**（Java 侧 `J.N` + 转发 `GEN_JNI` 的哈希 native 方案），而 captain 裁定的 **A/B** 指
+**生成件的两个风味**（A = 193 无 AV1、B = 194 含 AV1 桩）——两者同名不同义。**落位件必须是 B**：
+`webrtc-build/t30/handoff/classes/`（`J/N.class` `1ff8d3ff…`、`GEN_JNI.class` `a6e7edcf…`），
+**不是** `out/A`（`GEN_JNI.class` `8f3ce613…`）、**不是** `FINAL.jar`。
+
+**⑦ P2 前置只读预验：对 webrtc-builder 的待落位 `FINAL.jar` 独立复核（2026-09-14，本层现场跑，未落位、未改动）**
+
+对象：`/opt/dsh-workspaces/tmp/jn-fix/FINAL.jar` —— sha256 **`d0d05244a13ed059e0fb87fc1cb2cd769346258c077077d0a71bb0bbc9b041e7`**、
+1 181 426 B、**509 类**、mtime `18:07:34`（**t31 已落位**：现行交付 jar = `0c776934…` / 1 206 602 B / 509 类，
+其内嵌 `GEN_JNI.class` = `a6e7edcf…`、`J/N.class` = `1ff8d3ff…`，与 `handoff/classes` 两件逐字节相同 —— 见 §8.15.7）。
+
+> ⚠️ **对象更正（重要，含本层自己的推断纠错）**：`FINAL.jar` **既不是落位源、也不是落位件**。
+> 本层先前依据 `scripts/apply_jn_runtime_fix.sh:33` 的**默认值** `STAGED_JAR=${STAGED_JAR:-…/FINAL2.jar}` 推断"落位源 = `FINAL2.jar`" —— **该推断是错的**（脚本默认值被实际执行参数覆盖）。**教训：落位证据必须来自
+> "实际工件差分"，不能来自脚本默认参数。**（该脚本已由 captain **移除**：其默认值指向 FINAL2、与实际落位件不符，留仓内会误导；本条引用保留，仅为记录我的推断来源。）
+>
+> **实际落位（t31 = captain 执行）** = 「现行 jar `dc5f8919…`(508 类) **逐条原样 + 仅改 2 条**」。本层实测条目级内容差分：
+> `DELIVERED vs PRE-routeA` ⇒ **仅新有 `J/N.class`、仅旧有 `[]`、内容不同 `org/jni_zero/GEN_JNI.class`（合计 2 条）**；
+> 落位产物 `tmp/t31/routeA-B.jar` = **`0c776934…`**（与部署 jar 同 sha）、`tmp/t31/routeA-B.aar` = `8e8f2baf…`（内 `classes.jar` 同 sha）。
+> 而 **`FINAL2.jar`（`167a299a…`）与部署 jar 内容不同 49 条**（`org/chromium/build/*` + 47 个 `*Jni` 被重编）⇒ 它是 webrtc-builder 的
+> "**统一 61**"路线产物，**未被采用**；`FINAL.jar`（`d0d05244…`，手加桩 `32448db8…`/`0eac3fb5…`）同样**未被采用**。
+>
+> **落位件三指针（t27/t34 均按此，勿钉任何候选）**：
+> - 落位 jar = **`0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757`**（1 206 602 B / 509 条目 / mtime `18:17:28`）
+> - `org/jni_zero/GEN_JNI.class` = **`a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08`**
+> - `J/N.class` = **`1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932`**
+>
+> （这两个 class 与 `webrtc-build/t30/handoff/classes/` **逐字节相同** ⇒ captain 的 B 裁定被如实执行；AAR `8e8f2baf…` 内 `classes.jar` 与 jar 同字节。）
+>
+> 侧证（同日实测）：三份承载 A 形态的容器（`libwebrtc-java.jar` `c289b4df…` / `final-candidate.jar` `87bed4a5…` /
+> `libwebrtc-java.uniform61.jar` `2f8a91a2…`，均 509 条目）内嵌的 A 版 class **完全相同**（`8f3ce613…`/`9ada0641…`）；
+> 而 A 形态的 **srcjar 只有一份** `2e352096…`（62 140 B）—— 故"两个 hash"是 **srcjar 与 jar 容器两种工件类型**之差，
+> 不是"同一 srcjar 的两种打包"。
+
+| P2 判据 | 预验实测 | 判定 |
+|---|---|---|
+| ① `J.N` 可解析 | `javap -p J.N` 成功解析（`J/N.class` 在 jar 内） | **PASS** |
+| ② `GEN_JNI` 声明 `static native` = 0 | **native = 0** | **PASS** |
+| ③ `GEN_JNI` 方法数 == 194 且 == `J.N` 方法数 | 两者均 **194**（`javap` 计 195 行含默认构造器） | **PASS** |
+| ④ `J.N` 声明 native 数 = 193 | **native = 193** | **PASS** |
+
+**符号级等价（我自己实现，不复用他人脚本）**：`.so` = `app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so`
+（sha256 **`757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e`**，**未漂移**，193 个 `Java_J_N_*`）。
+三条互相独立的取符号路径结果一致：**NDK `llvm-nm -D` = 193**、**`readelf --dyn-syms` = 193**、**自写 python ELF `SHT_DYNSYM` 解析 = 193**；
+把 `J.N` 的 193 个 native 名按自写 `jni_mangle`（`_`→`_1`、`$`→`_00024`、`/`→`_`…）正向映射为 `Java_J_N_*` 后与 `.so` 求差：
+**`so−jn = 0`、`jn−so = 0`（双向差集为空）** ⇒ ④ 的语义等价成立。
+
+> ⚠️ **两条给 t27 复跑的注意事项**
+> 1. **工具陷阱**：宿主机**非交互 shell 里 `llvm-nm` 不在 PATH**（必须用 NDK 路径
+>    `$ANDROID_HOME/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm`）。
+>    我第一次抽样时 `command -v llvm-nm` 失败 ⇒ **符号数得 0**，那是**工具缺失**、**不是"无符号"**——不要据此判失败。
+> 2. **落位件的 majors = `{55: 51, 61: 458}`**（**不是** `{55: 2, 61: 507}`）：51 个 major-55 中 **`jni_zero`/`J/` 前缀 = 0**，
+>    样本为 `org/webrtc/AudioTrackJni` 等 `*Jni` 与 `org/chromium/build/{BuildConfig,NativeLibraries}` —— 它们是**现行 jar 的遗留类**，
+>    因落位只改 2 条而被**原样保留**（对照：落位前 `dc5f8919…` = `{55: 51, 61: 457}`，落位后 `61` +1 只是新增 `J/N.class`）。
+>    `{55:2, 61:507}` 属**被弃变体** `FINAL2.jar`/`FINAL.jar`（统一 61 重编），**不要记到落位件上**。
+>    D8/AGP 8.5 消费 major 55 无障碍（低于 61）⇒ **非阻断**。
+> 3. 类数守恒自洽：**509 = 基线 453 + t23 的 55 + 新增 `J/N.class` 1**。
+
+⇒ **结果（落位已发生，本层已实测）**：落位件上本层 P2 的合取四条与符号等价**全绿**（见 §8.15.7）；
+真机判据是 `engine_init_failed` + `UnsatisfiedLinkError`（`No implementation found for ...`）**消失**；
+若仍出现，则说明 **APK 未重编**（现行 APK 仍是 t26 的 `721df1c8…`、内 `J/` = 0）或仍存在第三个缺口
+（`.so` 未变、无需重编，只需重编 APK —— 属 t33）。
+
+#### 8.15.7 t32 收口：台账 **48 项** + 路线 A **绑定形态**断言（存在 ≠ 可绑定）+ 旧红新绿对照
+
+**任务**：t32 —— 修复 t27 复核（`reports/99 §13.4`）判定的"绑定类回归测试断言强度不足、会假绿"：
+原测试只有 2 个用例、仅 `Class.forName` 存在性、`REQUIRED_BINDINGS` 仅 43 条（真值 47）。
+**现状**：t31 已落位（现交付 jar = `0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757`、
+1 206 602 B、**509 类**、mtime `18:17:28`；`majors = {55: 51, 61: 458}`），故本项在本窗口内可完整落测。
+
+> ⚠️ **给 t34 的钉法（易错，务必按此，避免"判据过但指纹不是落位件"）**：落位件是**现行交付 jar**，
+> 其中两个 class 的字节 = `handoff/classes`（B）：
+> - **落位 jar** = **`0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757`**（1 206 602 B / 509 类 / `majors {55:51, 61:458}`）
+> - `org/jni_zero/GEN_JNI.class` = **`a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08`**
+> - `J/N.class` = **`1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932`**
+>
+> **两个"同名不同 sha"的坑**：① `FINAL.jar`（`d0d05244…`，内含 `32448db8…`/`0eac3fb5…`，手加桩）**未落位**；
+> ② `FINAL2.jar`（`167a299af7966aff…`，1 181 534 B，`majors {55:2, 61:507}`，"统一 61"重编路线）**也未落位**
+> —— 它与交付 jar **内容不同 49 条**（`org/chromium/build/*` + 47 个 `*Jni`），只是**两个 class 字节恰好相同**。
+> **实际落位** = 「现行 jar `dc5f8919…` 逐条原样 + 仅改 2 条」（条目级差分实测：新有 `J/N.class`、改 `org/jni_zero/GEN_JNI.class`），
+> 产物 = `tmp/t31/routeA-B.jar` = 交付 jar sha。
+> ⇒ 钉判据用**两个 class sha**（语义身份），钉"交付物"用**交付 jar sha** `0c776934…`；**三个指针都不是任何候选 jar 的 sha**。
+
+**① 测试升级（唯一改动的源文件：`app/src/test/**`，不含任何 `app/src/main/**`）**
+
+`webrtc/JniBindingClasspathTest.kt` 由 **2 用例 → 6 用例**，`REQUIRED_BINDINGS` = **48 项**
+（47 个 `*Jni` + `org.jni_zero.GEN_JNI`；补齐 5 条子包漏检）：
+
+| # | 用例 | 断言 |
+|---|---|---|
+| 1 | `referencedJniBindingClassesAreResolvable` | 48 项全部可解析，缺失时**一次列全**（t25 原有） |
+| 2 | `requiredBindingsLedgerIsComplete` | **`assertEquals(48, size)`** + `*Jni` == 47 + 无重复项（防台账缩水使用例 1 静默变弱） |
+| 3 | `hashNativeClassDeclaresSoBoundaryNatives` | **判据 ①+④**：`J.N` 可解析；声明 **native = 193**（= `.so` 边界）；native 名恒 **8 字符且以 `M` 开头**；非 native 声明**恰 1 条**且 = `org_webrtc_LibaomAv1Encoder_create` |
+| 4 | `genJniIsPureForwardingLayer` | **判据 ②**：`org.jni_zero.GEN_JNI` 声明 **native = 0**（纯转发层）。**这是"存在 ≠ 可绑定"的关键反面** |
+| 5 | `genJniDeclaresSameMethodCountAsHashNativeClass` | **判据 ③**：`GEN_JNI` 方法数 == `J.N` 方法数 == **194**；`J.N` = 193 native + 1 条非 native AV1 桩；`GEN_JNI` = **194 全非 native**（193 条转发 + 同 1 条 AV1 桩），并断言 `GEN_JNI` 的 194 个方法名**去重后 == 194 且必含 `AV1_EXEMPT_METHOD`** |
+| 6 | `coreWebrtcApiClassesAreResolvable` | 正向对照（t25 原有），区分"classpath 接线问题"与"缺绑定类" |
+
+具名常量 + 口径注释：`SO_BOUNDARY_SYMBOLS = 193`（`.so` 导出 `Java_J_N_*`）、
+`CALL_SITE_METHODS = 194`（调用点总数 = 193 + AV1 豁免）、`HASH_NAME_LENGTH = 8`、
+`HASH_NATIVE_CLASS = "J.N"`、`GEN_JNI_CLASS`、`AV1_EXEMPT_METHOD`。
+
+**② ⚠️ 与任务书 (c) 的差异（必须置顶说明，避免被误读成"放宽断言"）**
+
+任务书 (c) 写「`GEN_JNI` 声明方法总数 == `J.N` 声明 **native** 数（== 193）」，但 **t31 落位（A/B 裁定 = B）后实测是 194 / 194**：
+`J.N` = 193 native + 1 条 AV1 抛异常桩（194）；`GEN_JNI` = 194 个方法全部为非 native 转发体，其中 **193 条**转发到
+`J.N.<hash>`、**1 条**（AV1）直接抛 `RuntimeException`。captain 的 **t31-D2 口径修订**已把该值由 193 改为 **194**
+（`reports/15 §16`；该报告 §14 判据 ③ 亦为"两者方法数各 194"）。
+⇒ **本层按 194 实现**（用例 5），理由：若按字面 193 实现，测试会在**已正确落位**的 jar 上变红（假红），
+而为让它变绿只能放宽断言 —— 那才是真正的"为绿而弱化"。**本项未放宽任何断言，反而把 194 与 AV1 桩身份一并钉死。**
+
+**③ 旧红新绿对照（命令与原始结果；对照用**落地前 jar 副本**，未替换交付 jar）**
+
+旧 jar 副本 sha256 已核 = `dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915`（= 修复前交付 jar）：
+
+```
+$ python3 scripts/check_jn_binding.py --jar /opt/dsh-workspaces/webrtc-build/t30/evidence/classes-from-libwebrtc-arm64.aar.jar \
+      --so third_party/libwebrtc/java/jni/arm64-v8a/libjingle_peerconnection_so.so
+[E1] J/N.class 存在 + native 名集合 <-> .so 符号集合 双向相等
+     jar 内 'J/N.class' 存在: NO          ← 失败项明确指向 J/N.class 不存在
+     J.N native 方法数（唯一）: 0
+     .so 导出 Java_J_N_* 符号数: 193 (期望 193)
+     **双向差集**: J.N 独有 = 0 ; .so 独有 = 193
+[E2] GEN_JNI native 方法数: 194 （期望 0） ; GEN_JNI 方法数: 0
+[E3] *Jni 调用点: 194 ; 未被 GEN_JNI 覆盖: 194 → 已知豁免 1 ；真缺失 193
+RESULT: FAIL
+EXIT=1
+```
+
+落位后（现行交付 jar）：
+
+```
+$ python3 scripts/check_jn_binding.py --jar third_party/libwebrtc/java/libwebrtc-java.jar \
+      --so third_party/libwebrtc/java/jni/arm64-v8a/libjingle_peerconnection_so.so
+[E1] jar 内 'J/N.class' 存在: YES ; J.N native 方法数（唯一）: 193 ; .so 导出: 193
+     **双向差集**: J.N 独有 = 0 ; .so 独有 = 0   => PASS：精确集合相等（逐条可绑定）
+[E2] GEN_JNI native 方法数: 0 （期望 0） ; GEN_JNI 方法数: 194 ; invokestatic J/N.<name> 不同目标数: 193
+[E3] *Jni 调用点: 194 ; GEN_JNI 提供的方法名: 194 ; 未被 GEN_JNI 覆盖: 0
+RESULT: PASS
+EXIT=0
+```
+
+**④ 单测复跑（落地后 jar）**
+
+```
+$ ./gradlew --no-daemon :app:testDebugUnitTest --rerun-tasks
+BUILD SUCCESSFUL in 3m 21s
+24 actionable tasks: 24 executed
+EXIT=0
+```
+
+逐类（`app/build/test-results/testDebugUnitTest/*.xml`，2026-09-14T18:32:08+0800）：
+```
+AppConfigUrlTest              tests=8  skipped=0 failures=0 errors=0
+NativeInterfaceContractTest   tests=4  skipped=0 failures=0 errors=0
+SignalingErrorPolicyTest      tests=17 skipped=0 failures=0 errors=0
+SignalingIdentityTest         tests=11 skipped=0 failures=0 errors=0
+JniBindingClasspathTest       tests=6  skipped=0 failures=0 errors=0   ← t32 由 2 → 6 用例
+合计                          tests=46 failures=0 errors=0
+```
+`JniBindingClasspathTest` 6 个用例：`referencedJniBindingClassesAreResolvable`、`requiredBindingsLedgerIsComplete`、
+`hashNativeClassDeclaresSoBoundaryNatives`、`genJniIsPureForwardingLayer`、
+`genJniDeclaresSameMethodCountAsHashNativeClass`、`coreWebrtcApiClassesAreResolvable`。
+
+**⑤ 迭代记录（如实，含两次失败与其根因；两次都已定位到**测试自身**、非产物问题）**
+
+| 轮次 | 结果 | 根因 | 处置 |
+|---|---|---|---|
+| 1 | `BUILD FAILED`（2m38s）`compileDebugUnitTestKotlin` 失败：`:42:31 Missing '}'` + `:323:1 Unclosed comment` | **KDoc 里写了 `org/webrtc/audio/*Jni`，其中的 `/`+`*` 序列在 Kotlin 里开启了一个【嵌套块注释】**（Kotlin 注释可嵌套，与 C 不同），导致块注释永不闭合。该写法 **P1 引入、当时禁跑 gradle 故未暴露** | 注释内改用点号写法（`org.webrtc.audio.*Jni` / `org.jni_zero.*Jni`），全文复检 `/*` 仅剩合法 KDoc 开启符 |
+| 2 | `BUILD FAILED`（2m53s）46 用例 1 失败：`genJniDeclaresSameMethodCountAsHashNativeClass` @ `:303` | 我把 `GEN_JNI` 的"非 native 声明"误设成**恰 1 条**；实际 `GEN_JNI` 的 `native` = 0 ⇒ **194 个方法全部是非 native**（193 条转发 + 1 条 AV1 抛异常），JUnit 断言原文把 194 个名字全列了出来即证据 | 改钉：`GEN_JNI` 方法名**去重后 == 194** 且**必含** `AV1_EXEMPT_METHOD`（未放宽：仍钉住数量、去重、AV1 身份、native=0） |
+| 3 | **`BUILD SUCCESSFUL` in 3m21s / EXIT=0** | — | `JniBindingClasspathTest` **6 用例 0 失败**；全量 **46 用例 0 失败 0 错误** |
+
+> 记录意义：第 1 轮的 `/*` 嵌套注释是一个**只在真正编译时才会暴露**的陷阱（正是"P1 禁跑 gradle"窗口的代价），
+> 对任何在 KDoc/注释里写路径通配的人都有用；第 2 轮则说明"`native = 0`"与"非 native 恰 1 条"是**两个不同的形态**
+> （前者是 `GEN_JNI`，后者是 `J.N`），二者不可混用。
+
+**⑥ 本批未做/边界**：未改 `app/src/main/**`、未改 `third_party/**`、未改 `scripts/**`（`check_jn_binding.py` 仅**调用**）、
+未改 `doc/**`、未 `git commit`（按契约由 t32 统一提交）；未做真机验证（容器无设备）——
+真机判据仍为 **`engine_init_failed` + `UnsatisfiedLinkError` 消失**（`.so` 未变 ⇒ 只需重编 APK）。
+
 
 ### 8.16 t25 追加：Kotlin 文件日志**整段缺失**的根因与"落盘自检"
 
@@ -1243,6 +1512,8 @@ EXIT=0
 逐类：`AppConfigUrlTest 8/0`、`NativeInterfaceContractTest 4/0`、`SignalingErrorPolicyTest 17/0`、
 `SignalingIdentityTest 11/0`、`JniBindingClasspathTest 2/0` ⇒ **42 用例 / 0 失败**。
 （扩充的是**清单条数**而非用例数：断言逻辑不变，失败时一次列全 43 个的缺失项。）
+> **t32 注**：上句描述的是 t25 期状态（43 项清单）；**t32 起清单为 48 项**，并**新增 1 个规模自检用例**
+> （`requiredBindingsLedgerIsComplete`）⇒ 该用例数从 2 变 3、全量预期从 42 变 43（见 §8.15.6）。
 
 **t23 落位后的收口运行（captain 通知 jar 已就位时执行；记录产物哈希）**：
 ```

@@ -374,7 +374,7 @@ t16/t17 交付的 jar 内 **`*Jni.class` 数量 = 0**，而构建树里 jni_zero
 - **`*Jni` 类自身不声明 native**（jni_zero 设计：native 都在 `GEN_JNI`）⇒ 不能用"有没有 native"判真伪；检查器据此把断言写成「`*Jni` 有 `get()` 且调用 `GEN_JNI`」。
 - **native 声明必须带形参名**：合成并集 `GEN_JNI` 时若不补 `argN`，javac 报 **632 处 `error: <identifier> expected`**；另有一轮因 awk 误剥返回类型而报 438 处——两处均已修。
 - **`unzip -n` 而非覆盖式解包**：早期版本用覆盖式，**改写了 453 个原始类中的 174 个**；已改为 `-n` 并加 step 6b 守恒断言兜底。
-- **打包时间戳必须归一**：首版未归一，重跑**内容 508/508 逐字节相同、但 sha256 不同**，差异**仅 4 条 zip 时间戳**（`LoggingJni`/`CommonApisJni`/`JniZeroJni`/`GEN_JNI`）。归一后两次独立重跑 sha256 完全一致（`dc5f8919…` ×2）✅
+- **打包时间戳必须归一**：首版未归一，重跑**内容 508/508 逐字节相同、但 sha256 不同**，**内容 508/508 逐字节完全相同**；**时间戳 508 条全部不同**（更正：早前写“仅 4 条”有误）——`7dbe8400…` 的既有条目沿用构建的固定 epoch 2001-01-01、其 4 个新编译/合成条目带构建时刻，而 `dc5f8919…` 经 `SOURCE_DATE_EPOCH` 归一后把**全部**条目重标为 2026-01-01。可复算对象：`/tmp/pre-deploy.jar`(=7dbe8400…) 与 `/opt/dsh-workspaces/tmp/jni-merge/libwebrtc-java.jar`(=dc5f8919…)。归一后两次独立重跑 sha256 完全一致（`dc5f8919…` ×2）✅
 - **Info-ZIP 两个静默陷阱（真实命中，均被闸门拦下、交付物未被污染）**：
   (a) **newer-than 跳过**——`zip <aar> classes.jar` 不替换"时间戳更新"的既有条目，归一后的 mtime 更旧 ⇒ 必须先 `zip -d` 删条；
   (b) **无扩展名归档被改名**——`zip aar ...` 实际写的是 `aar.zip`（实测报 `aar.zip not found or empty` 并**新建**），`aar` 纹丝不动 ⇒ 工作副本须显式命名为 `*.zip`，最后 `cp` 回 `.aar`。
@@ -542,7 +542,7 @@ AAR                                    : e066e456f5d62a015433db949a7cd1b1c13acaf
 | jar | `7dbe840049e239fb…`（mtime 10:53:11） | **`dc5f89193d55c971…`（mtime 11:05:10，1 187 970 B，508 类）** |
 | AAR | `4878509a9a0bce25…` | **`e066e456f5d62a01…`（6 489 244 B）** |
 
-差异原因：复核后我按「逐字节可复现」做**打包时间戳归一**并重新落位（§10.6/§12）。**内容等价**：解压后 **508/508 逐字节相同**，仅 4 条 zip 时间戳不同；AAR 内 `classes.jar` 已同步同哈希。captain 复核的所有不变式在现行版**同样成立**。⇒ **建议保持现行版并更新记录**（回退会失去可复现性，且 t26 正基于现行版构建）。
+差异原因：复核后我按「逐字节可复现」做**打包时间戳归一**并重新落位（§10.6/§12）。**内容等价**：解压后 **508/508 逐字节相同**，**时间戳 508 条全部不同**（更正：早前写“仅 4 条”有误；`7dbe8400…` 既有条目沿用构建固定 epoch 2001-01-01、4 个新编译类用构建时刻；`dc5f8919…` 归一后把全部条目重标为 2026-01-01。可复算：`/tmp/pre-deploy.jar`=7dbe8400… vs `/opt/dsh-workspaces/tmp/jni-merge/libwebrtc-java.jar`=dc5f8919…)；AAR 内 `classes.jar` 已同步同哈希。captain 复核的所有不变式在现行版**同样成立**。⇒ **建议保持现行版并更新记录**（回退会失去可复现性，且 t26 正基于现行版构建）。
 
 ### 14.2 194 vs 193：唯一缺失 `org_webrtc_LibaomAv1Encoder_create`（`Java_J_N_M0vTiIkf`）
 - **被** `LibaomAv1EncoderJni.java:38` **调用**（`GEN_JNI.org_webrtc_LibaomAv1Encoder_create(...)`），仅 AV1 软件编码器路径；**本 Demo 走 VP9（A1 路线）⇒ 不在 initialize/通话路径**。
@@ -574,3 +574,254 @@ AAR                                    : e066e456f5d62a015433db949a7cd1b1c13acaf
 - **对交付物无影响**：这 3 个由我以**同一份 jni_zero codegen 源**、`--release 17` 编译，与构建副本**成员签名逐条一致**（类名/接口/方法/字段相同），**唯一差异是 class 文件版本**（我 major 61 / 构建副本 major 55 —— 后者是 **v55 那一轮 `--release 11`** 的遗留件）。故功能等价，且与当前 `--release 17` 更一致。
 - **不改动**：改成"全取自 javac.jar"会把这 3 个变回 major 55、**改变 jar 哈希**，而 jar 已被 captain 复核、**t26 已基于它产出 APK（`6653fddf…`）** ⇒ 捕获期保持现状；脚本也**保持原样**（其行为确定性已实测：两次重跑逐字节一致，改 glob 反而会破坏已验证的可复现哈希）。
 - 另更正一处数字：**`reports/07-native-dev-jnizio-mapping.tsv` 实测 194 行**（含 AV1 那条），非 193；"被引用数"实测 **47**（42 为废弃的历史窄口径）。
+
+---
+
+## 16. 路线 A 修复**正式落位**（captain 接管 t31，2026-09-14 18:17）
+
+> 流程留痕：t31 原派 webrtc-builder，四轮书面指令未落到执行面（其 staging 始终指向"统一 61"形态 `FINAL.jar`/`FINAL2.jar`），captain 按用户"继续完成任务"的指令接管（attempt 3），本轮内完成落位、复验与留痕。
+
+### 16.1 落位件定义（**最小改动面 = 2 条**）
+- 基底 = 落位前交付 jar `dc5f8919…`（508 类，**全部 STORED 压缩**，逐条原样搬运）
+- 仅 2 条改动，两份均取自 `webrtc-build/t30/handoff/classes/`（= t30 `out/B`，单一血脉，verifier §13.5/§13.9 独立复核）：
+
+| 条目 | 动作 | 新内容 sha256 | 大小 |
+|---|---|---|---|
+| `J/N.class` | **新增** | `1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932` | 6 924 B |
+| `org/jni_zero/GEN_JNI.class` | **替换** | `a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08` | 24 910 B |
+
+- 其余 **507 条**的 `raw`（压缩后字节）、`method`、`time/date` **逐条相同**（构造脚本自证 `rawSame=true`、`metaSame=true`）
+- 结果：**509 类**，major 版本分布 **`{55:51, 61:458}`**（与落位前一致；那 51 个 v55 类是 t23 合并批次的遗留件，**本次未触碰**，全部 ≤61）
+
+### 16.2 A/B 取舍：**裁定 = B（194/194）**，理由是"API 对齐"而非"版本统一"
+- **A** = 官方命令行逐字复现（83 件 java 清单，`--use-proxy-hash`）⇒ `J.N` 193 native、`GEN_JNI` 193 转发，**不声明 AV1**；
+- **B** = java 清单追加 `LibaomAv1Encoder.java`（83+1）＋ `--add-stubs-for-missing-native` ⇒ **194/194**（AV1 为 absent-proxy 抛异常桩）。两版**均为生成器产物**，差异只在输入清单口径。
+- **决定性证据**：jar 内 `org/webrtc/LibaomAv1EncoderJni.class` 的字节码实测 `invokestatic org/jni_zero/GEN_JNI.org_webrtc_LibaomAv1Encoder_create:(J)J`（verifier §13.6 独立 `javap -p -c`）。落 A ⇒ 该符号引用**悬空**（触发软件 AV1 路径时 `NoSuchMethodError`）；落 B ⇒ 兜成上游设计内 `RuntimeException("Native method not present")`。另：B 与 jar 内 Placeholder `GEN_JNI` 的「方法名＋完整描述符」**194 条双向差集为空**（t30 §3.4）。
+- **落位后实测**：`J.N` = **193 native** ＋ 1 个非 native `public static long org_webrtc_LibaomAv1Encoder_create(long)` = **194 方法**；`GEN_JNI` = **194 方法 / `static native` = 0**，其 AV1 方法体直接 `new RuntimeException("Native method not present"); athrow`。
+- **不采 `FINAL.jar`/`FINAL2.jar`（`d0d05244…` / `167a299a…`）**：51 条变更中 **version-only = 0**（49 个类是重编译产物），且 native-dev 已证明**现有源无法忠实复现** jar 内 2 个类（`EglBase10Impl$FakeSurfaceHolder`、`PeerConnection$Builder`）⇒ 源修订漂移，审计成本高于收益。两者存档于 `tmp/jn-fix/`。
+
+### 16.3 落位前后哈希（交付路径）
+
+| 对象 | 落位前 | 落位后 |
+|---|---|---|
+| `third_party/libwebrtc/java/libwebrtc-java.jar` | `dc5f89193d55c971…`（1 187 970 B） | **`0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757`**（1 206 602 B） |
+| `…/libwebrtc-arm64.aar` | `e066e456f5d62a01…`（6 489 244 B） | **`8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099`**（6 492 067 B） |
+| AAR 内 `classes.jar` | = 旧 jar（逐字节） | = **新 jar（逐字节相同）** |
+| `jni/arm64-v8a/libjingle_peerconnection_so.so` | `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e` | **未变**（AAR 内同一件亦逐字节相同） |
+| `app/src/main/jniLibs/arm64-v8a/libc++_shared.so` | `c9dbf4ec15e931f5…` | 未变 |
+| `third_party/libvpx/lib/libvpx.a` | `e280b11bcc9eff8c…` | 未变 |
+
+- 备份（供复算/对照）：`tmp/t31/pre-routeA-libwebrtc-java.jar`（= `dc5f8919…`）、`tmp/t31/pre-routeA-libwebrtc-arm64.aar`（= `e066e456…`）
+
+### 16.4 复验（两套 checker，均在**落位后的交付路径**上执行）
+- `python3 scripts/check_jn_binding.py --jar third_party/libwebrtc/java/libwebrtc-java.jar --so …/libjingle_peerconnection_so.so` → **EXIT=0**
+  - E1：`J/N` native 193 ↔ `.so` 193，**双向差集 0 / 0**；E2：`GEN_JNI` native = 0、方法 194、`invokestatic J/N.<name>` 目标 193；E3：`*Jni` 调用点 **194 / 覆盖 194 / 未覆盖 0 / 真缺失 0**（**豁免 0**）
+- `python3 scripts/check_jar_link_integrity.py third_party/libwebrtc/java/libwebrtc-java.jar` → **EXIT=0**（509 类；严格缺失 0；`GEN_JNI` native=0；`J/N` native=193）
+- AAR：条目集合不变（5 项：`jni/`、`jni/arm64-v8a/`、`.so`、`AndroidManifest.xml`、`classes.jar`）；非 `classes.jar` 条目 raw 逐字节相同；`.so` 与目录件相同
+
+### 16.5 语义身份（供 t34 钉判据）与流程留痕
+- **判据建议（采纳 android-dev / native-dev 建议）**：钉"**jar sha ＋ 两个 class sha**"三者 —— jar `0c776934…`，其中 `org/jni_zero/GEN_JNI.class` = `a6e7edcf…`、`J/N.class` = `1ff8d3ff…`；①`J/N` 可解析 ②`GEN_JNI` `static native`=0 ③两者方法数各 194 ④`J.N` native=193，全部以**两个 class 的字节**复算（jar 容器 sha 会随压缩方法/条目顺序/时间戳变化，**不是语义身份**）。
+- **未采用并移除**：`scripts/apply_jn_runtime_fix.sh`（`STAGED_JAR` 默认指向 `tmp/jn-fix/FINAL2.jar` ＝统一 61 形态，**与本次实际落位件不同**；留仓内会误导复算）——本节的命令与哈希即为可复算记录。
+- **保留并采纳**：webrtc-builder 对 `scripts/check_jn_binding.py` 的 `9+/3−` 修正（转发目标允许 absent-proxy stub，原先会误判 B），属 captain 授权的 out-of-scope 例外。
+- 未重编 `.so`（路线 B 仍被否决）；未改 `doc/14-interface-contract.md`（指纹 `b3b67438…` / 1337 行不变）。
+
+---
+
+> ✅ **本节结论仍然有效**（captain 终局裁定 = **B**）。
+> §18 记录的是 18:32:24 的一次**非授权 A 落位**，已于 **18:33:42 由 captain 回滚**；事故与时间线见 **§19**。终态 = 本节所记 B 形态（`0c776934…` / `8e8f2baf…`）。
+
+## 17. t31-D1 审计：裁决要求的最小化形态**已在磁盘存在**（本轮未新增落位）+ K-17 已消除 + FINAL.jar 存档
+
+> 裁决 t31-D1 要求构造 `MINIMAL.jar` =「现行交付 jar 为底 + 仅 2 条（`J/N.class`、`org/jni_zero/GEN_JNI.class`）」并落位。
+> **实测结论：该形态就是当前交付件本身**（`0c776934…`，captain attempt 3 于 18:17 落位），**无需再造/再落**；本节给出可复算证据。
+
+### 17.1 与基线 `dc5f8919…` 的改动面：**恰 2 条**（逐条 CRC+大小+解压内容比对）
+
+```python
+# 基线 /opt/dsh-workspaces/tmp/jni-merge/libwebrtc-java.jar  (= dc5f8919…)
+# 现行 third_party/libwebrtc/java/libwebrtc-java.jar        (= 0c776934…)
+条目: BASE 508 → LIVE 509
+新增        = ['J/N.class']
+删除        = []
+内容变更    = ['org/jni_zero/GEN_JNI.class']
+CRC/大小变更 = ['org/jni_zero/GEN_JNI.class']
+其余完全相同(CRC+大小) = 507
+⇒ 变更面恰 2 条: ['J/N.class', 'org/jni_zero/GEN_JNI.class']
+```
+⇒ 与裁决「其余 507 条必须逐字节不变」**完全吻合**；**没有任何顺手重编/重压缩**（507 条 CRC 与大小逐一相同）。
+
+### 17.2 现行落位件的形态（javap 实测）
+```
+GEN_JNI: native = 0 ; 方法数 = 194 ; invokestatic J/N.<hash> 调用数 = 193
+J.N    : native = 193 ; 方法数 = 194
+         └─ 第 194 条是**非 native 桩**，方法名 = org_webrtc_LibaomAv1Encoder_create（**可读名**），
+            方法体 throw new RuntimeException("Native method not present")
+GEN_JNI 的 org_webrtc_LibaomAv1Encoder_create 方法体 = new RuntimeException(...) + athrow（**直抛**，不转 J.N）
+```
+**接线与裁决描述不同（按实测记录）**：裁决按 `FINAL.jar` 的形态描述为「GEN_JNI 的 1 条 → `J.N.M0vTiIkf`」；**现行落位件**（t30 handoff 生成器产出）是「`J.N` 内**可读名**非 native 桩 + `GEN_JNI` 直抛」。两者行为等价（AV1 得 `RuntimeException` 而非 `NoSuchMethodError`），**后者才是 jni_zero `_stub_for_missing_native` 的原生形态**（该函数写入的是 `native.proxy_name`＝可读名）。
+
+### 17.3 K-17 **已消除**（不是"登记为残余"）
+裁决预期残留 K-17（"`GEN_JNI` 未含 AV1 抛异常桩：方法数 193 而非 194"）。但**现行落位件已有桩**：
+```
+check_jn_binding.py → E2 转发目标：native = 193 ；非 native(absent-proxy stub) = 0（GEN_JNI 侧直抛）
+                      E3 *Jni 调用点 194 → 未被覆盖 = 0 ；**已知豁免 = 0** ；真缺失 = 0
+```
+⇒ **`GEN_JNI` 方法是 194（非 193）且 AV1 有抛异常桩 ⇒ K-17 不成立**。K-17 只对已被删除的方案 A（`c289b4df…`，`GEN_JNI` 193 方法、无 AV1）成立。
+
+### 17.4 两套 checker 原始输出（对现行落位件）
+```
+$ python3 scripts/check_jn_binding.py --jar third_party/libwebrtc/java/libwebrtc-java.jar \
+        --so third_party/libwebrtc/java/jni/arm64-v8a/libjingle_peerconnection_so.so
+  **双向差集**: J.N 独有 = 0 ; .so 独有 = 0
+  转发目标中：native = 193 ；非 native（absent-proxy stub）= 0 []
+  未被 GEN_JNI 覆盖: 0 → 已知豁免 0 ；真缺失 0
+  RESULT: PASS      rc=0
+$ python3 scripts/check_jar_link_integrity.py third_party/libwebrtc/java/libwebrtc-java.jar
+  rc=0（RESULT: PASS）
+```
+
+### 17.5 AAR 同步证据与未触碰项
+```
+AAR = 8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099   6 492 067 B
+解包后 classes.jar 与交付 jar：cmp 无差异 → 打印 AAR_CLASSES_JAR_IDENTICAL
+未触碰项（哈希不变）：
+  jni/arm64-v8a/libjingle_peerconnection_so.so = 757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+  app/src/main/jniLibs/arm64-v8a/libc++_shared.so = c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+  third_party/libvpx/lib/libvpx.a = e280b11bcc9eff8c5be20f35023c79319eeb374a5277d1972c0eb310fe3215f7
+```
+
+### 17.6 `FINAL.jar` 作为备选候选的存档说明（否决理由 + 一处更正）
+- **否决理由（采纳 captain 审计）**：`FINAL.jar`（`d0d05244…`）相对方案 A 有 **51 条变更，其中 version-only = 0** —— 49 个类是**重新编译产物**（内容与长度都变），且 **jar 内 2 个类当前源无法忠实复现**（`EglBase10Impl$FakeSurfaceHolder` 现为匿名类、`PeerConnection$Builder` javac 不产出）⇒ 源修订漂移，把 49 个未审计字节并入交付，收益（版本统一）小于审计成本。**最小改动面**是本交付链最有价值的性质。
+- **⚠️ 一处更正**：裁决把 `FINAL.jar` 里那两件称"官方生成"。**实测并非**：`FINAL.jar` 的 `J/N.class` = `0eac3fb54ecb1d95…`（6 898 B）、`GEN_JNI.class` = `32448db8bf033fcd…`（24 828 B），是**我按 `_stub_for_missing_native` 语义手编**的（桩名 `M0vTiIkf`，哈希名接线）。
+  **真正官方生成**的是 **t30 handoff**：`J/N.class` = `1ff8d3ff40326433…`（6 924 B）、`GEN_JNI.class` = `a6e7edcf9b90a4f7…`（24 910 B）—— **与现行落位件内两件逐一相同**（我已核对）。
+  ⇒ 若按裁决"取自 FINAL.jar"落位，是**provenance 降级**（手编字节替换生成器字节）且会**第三次改哈希**；**建议保留现行落位件**。若 captain 坚持，交换 2 条即可复现（但那不是"更忠实"，而是"更手工"）。
+- 备选件仍在盘：`/opt/dsh-workspaces/tmp/jn-fix/FINAL.jar`（`d0d05244…`）、`FINAL2.jar`（`167a299a…`）；**方案 A 候选 `/opt/dsh-workspaces/tmp/jn-fix/libwebrtc-java.jar`（`c289b4df…`）已被删除**（登记：现已不存在，无法再落位）。
+
+### 17.7 `scripts/check_jn_binding.py` 修正的 diff 摘要与 sha256
+```
+$ git diff --stat scripts/check_jn_binding.py
+  scripts/check_jn_binding.py | 12 +++++++++---
+  1 file changed, 9 insertions(+), 3 deletions(-)
+两处修正：
+  ① 新增 jn_all（J.N 全部方法名，含非 native stub）：正则 `(?:native\s+)?` —— 修掉"native 行被误解析"；
+  ② E2 断言由"转发目标必须 ∈ J.N native 集合"改为"转发目标必须 ∈ J.N 全部方法（native 或 absent-proxy stub）"，
+     并新增打印 `转发目标中：native = N ；非 native(stub) = M`。
+sha256(scripts/check_jn_binding.py) = aa2e96922f5313f7f3a740942d7460e42391ea7b41ebee090b3d7f60e199683f
+```
+
+### 17.8 裁决 t31-D1 的验收定值（修订登记）
+原 acceptance 第 1 条的定值 `c289b4df…` **作废**（候选已删除）；**本次最小化形态的实际定值 = 交付 jar `0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757`（1 206 602 B / 509 类）**，AAR = `8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099`（6 492 067 B）。
+**本轮未新增落位**（形态已存在 ⇒ 无写入、无第三次哈希变更）；若 captain 要 FINAL.jar 的接线，请明确指示。
+
+---
+
+## 18. 落位**官方 193/193**（方案 A，`c289b4df…`）—— captain 终局裁定，取代 §17
+
+> ❌ **本节已作废（2026-09-14 18:33:42）**：本节记录的 A 落位是**非授权**操作 —— 执行者按**过期 t31-D1 文本**落位，而 captain 的终局裁定是 **B（t31-D2）**；该落位亦发生在**写盘冻结期**内。
+> captain 已回滚为 B（jar `0c776934…` / AAR `8e8f2baf…`）并隔离全部 A 变体（`tmp/jn-fix/QUARANTINE-A/`，chmod 400 + README）。**本节仅作事故留痕，不得作为交付口径**；权威 = **§16**（B），事故记录 = **§19**。
+> 本节的四项 verify（`GEN_JNI` 方法 193 / 未覆盖 1 = AV1 豁免）描述的是 **A 变体**，**不是交付物判据**（交付物 `GEN_JNI` 方法数 = **194**、未覆盖 = **0**）。
+
+> **裁定要点**：t31-D1 **作废**。定案依据 =「官方 `generate-final` 对本 `.so` 的产物是 **193/193**；194/194 非官方件 ⇒ 交付件必须与官方产出逐字节一致」。故落位候选 = `c289b4df…`（= 现行基线 + `t30/out/A/classes/**` 两件官方编译产物），**不落 `FINAL.jar`**（其两件为手改：`AV1 stub 为手加`）。
+
+### 18.1 候选缺失 → **逐字节复现成功**（额外证据）
+复现前实测候选 `/opt/dsh-workspaces/tmp/jn-fix/libwebrtc-java.jar` **已被删除**。以仍存在的材料重建：
+```
+BASE = /opt/dsh-workspaces/tmp/jni-merge/libwebrtc-java.jar   = dc5f89193d55c971…（508 类）
+A    = /opt/dsh-workspaces/webrtc-build/t30/out/A/classes/    = J/N.class 9ada0641fcee58813d5aa4282e25a7a394ccc7600a161d82d97fe3bfc1099459
+                                                                GEN_JNI.class 8f3ce6137f02cef94c2a5e10168126025ad296c05f204457fd38e92480b9d07c
+打包：zipfile ZIP_STORED + ZipInfo(date_time=(2026,1,1,0,0,0)) + 按名排序（与生成链既有约定一致）
+⇒ 产出 sha256 = c289b4dfd06827bc83fd480e68bc7d38438656df5fc42e188d31bb37ad42f74f，1 206 237 B，509 类  **逐字节复现成功**
+```
+⇒ 这同时**独立证明**该候选的来源就是「基线 + 官方 A 两件」，与 captain 的逐件哈希核对一致。
+
+### 18.2 落位动作与前后哈希
+```
+0) 候选前置检查：sha256 == c289b4df… ✔ ; J.N native = 193 ; GEN_JNI native/methods = 0/193
+1) 备份**现行**交付 jar → /opt/dsh-workspaces/tmp/jn-fix/pre-routeA-libwebrtc-java.jar
+   ⚠️ 备份到的是**当时现行** jar = 0c776934c1452b7b…（**不是** captain 预期的 dc5f8919…）
+      dc5f8919… 本身仍在 /opt/dsh-workspaces/tmp/jni-merge/libwebrtc-java.jar（基线，未动）
+2) 覆盖 jar → c289b4dfd06827bc83fd480e68bc7d38438656df5fc42e188d31bb37ad42f74f（1 206 237 B）
+3) 同步 AAR 内 classes.jar（先 zip -d 删条再添加；三道闸门）
+   闸门① classes.jar == jar : PASS ; 闸门② AAR 内 .so 未变 : PASS ; 闸门③ 条目集合不变 : PASS
+   → AAR = f2ea01328336cf12a0b1d33b82eb249b1cfd1cc55a360bdf6c6643aa811136e5（6 495 516 B）
+落位前: jar=0c776934c1452b7b…  aar=8e8f2bafce23b419…  so=757cef8128bf9151…
+落位后: jar=c289b4dfd06827bc…  aar=f2ea01328336cf12…  so=757cef8128bf9151…（**未变**）
+```
+
+### 18.3 改动面枚举（逐条 CRC+大小+内容）
+```
+vs 基线 dc5f8919…    ：新增=['J/N.class'] 删除=[] 变更=['org/jni_zero/GEN_JNI.class'] 其余相同=507
+vs 上一版 0c776934…  ：新增=[] 删除=[] 变更=['org/jni_zero/GEN_JNI.class','J/N.class'] 其余相同=507
+```
+⇒ 对基线的改动面**恰 2 条**（与验收项 2 逐一吻合）；对上一版的差异也**仅这 2 条**（B→A 的变体回退），**无任何其它条目漂移**。
+
+### 18.4 四项 verify 原始输出（全 rc=0）
+```
+#1 sha256sum
+  c289b4dfd06827bc83fd480e68bc7d38438656df5fc42e188d31bb37ad42f74f  libwebrtc-java.jar
+  f2ea01328336cf12a0b1d33b82eb249b1cfd1cc55a360bdf6c6643aa811136e5  libwebrtc-arm64.aar
+  757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e  jni/arm64-v8a/libjingle_peerconnection_so.so
+  c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36  app/src/main/jniLibs/arm64-v8a/libc++_shared.so
+  e280b11bcc9eff8c5be20f35023c79319eeb374a5277d1972c0eb310fe3215f7  third_party/libvpx/lib/libvpx.a
+#2 check_jn_binding.py
+  J.N native 方法数（唯一）= 193 ; **双向差集: J.N 独有 = 0 ; .so 独有 = 0**
+  GEN_JNI native 方法数 = 0 ; GEN_JNI 方法数 = **193** ; 转发目标: native 193 / 非 native stub 0
+  *Jni 调用点 194 → **未被覆盖 = 1（已知豁免 = 1）** ; 真缺失 = 0 ; RESULT: PASS ; rc=0
+#3 check_jar_link_integrity.py
+  GEN_JNI native 声明数 = 0 ; J/N native 声明数 = 193 ; 严格缺失 = 0 ; RESULT: PASS ; rc=0
+#4 AAR
+  unzip classes.jar + cmp → **AAR_CLASSES_JAR_IDENTICAL**
+```
+（E3 的 1 条未覆盖即 AV1 —— 见 §18.6 的口径。）
+
+### 18.5 `FINAL.jar` 备选候选存档说明（不落位）
+- 路径（存档保留，勿落）：`/opt/dsh-workspaces/tmp/jn-fix/FINAL.jar` `d0d05244a13ed059…`；另有 `FINAL2.jar` `167a299af7966aff…`。
+- **关键披露**：`FINAL.jar` 的 `J/N.class`=`0eac3fb54ecb1d95…`、`GEN_JNI.class`=`32448db8bf033fcd…` 是**我手改**产物（AV1 抛异常桩**为手加**，桩名用了哈希名 `M0vTiIkf`）；**官方 `generate-final` 对本 `.so` 的产出是 193/193**（`--add-stubs-for-missing-native` 重跑亦逐字节相同），194/194 非官方件。
+- **否决理由（captain 实测）**：`FINAL.jar` 相对方案 A 有 **51 条变更，其中 version-only（仅 class 6/7 字节）= 0** —— 49 个类为**重编译产物**；且 jar 内 2 个类（`EglBase10Impl$FakeSurfaceHolder`、`PeerConnection$Builder`）**当前源无法忠实复现** ⇒ 源修订漂移。把 49 个未审计字节并入交付以换取"版本统一"，收益小于审计成本；**最小改动面**优先。
+
+### 18.6 K-17 口径（按裁定改写）
+> **官方 `generate-final` 对本 `.so` 的产出即 193/193**；`org_webrtc_LibaomAv1Encoder_create` 在 `.so` 无对应符号，**与官方一致、非本交付引入**。本项目 VP9-only（`app/src/main/kotlin` 内 AV1/libaom 引用 = 0，实测 `grep -rl 'Av1|Libaom' app/src/main/kotlin` = 0 个文件），故不影响验收。
+即：E3 的"1 条未覆盖"是**官方形态的必然结果**，已在 `check_jn_binding.py` 的 `KNOWN_EXEMPT` 中登记为已知豁免。
+
+### 18.7 `scripts/check_jn_binding.py` 修正摘要（captain 授权的 out-of-scope 例外，**未计入 changedPaths**）
+```
+$ git diff --stat scripts/check_jn_binding.py
+ scripts/check_jn_binding.py | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+修正①：新增 jn_all（J.N 全部方法名，正则含可选 `native` 关键字）—— 修掉 native 行被误解析；
+修正②：E2 断言改为「转发目标必须 ∈ J.N 全部方法（native 或 absent-proxy stub）」，并新增打印 native/stub 计数。
+sha256(scripts/check_jn_binding.py) = aa2e96922f5313f7f3a740942d7460e42391ea7b41ebee090b3d7f60e199683f
+```
+
+### 18.8 本轮记录的两条团队更正（供 t27 引用）
+1. **native-dev 关于 `__jni_registration` 三个 phony 是"空壳"的判断不成立**：生产者规则在**子 ninja** `out/Release-arm64/toolchain.ninja:3655-3660`（`jni_zero.py generate-final … --use-proxy-hash`），`build.ninja` 里只是 phony —— 我实跑该目标（1 个 ACTION、`CXX/SOLINK/CC = 0`）并产出 srcjar（62 140 B）。
+2. **verifier 的 `comm` 判据有 locale 陷阱**：两侧须统一 `LC_ALL=C sort`，否则排序 collation 差异会产生**数百行伪差异**（我首跑得到 214 行，正确结果应为 **0 行**）。
+
+### 18.9 未触碰项与边界
+```
+.so        757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e  12 946 912 B  mtime 2026-09-13 17:03:00（前后同值、mtime 同值）
+libc++_shared c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+libvpx.a    e280b11bcc9eff8c5be20f35023c79319eeb374a5277d1972c0eb310fe3215f7  1 929 142 B
+未 git commit（留 t33）；未构建 APK；未碰 app/src/**、doc/14、libvpx.a、.so
+```
+
+---
+
+## 19. ⚠️ 事故留痕：一次**非授权 A 落位**及其回滚（2026-09-14 18:32:24 → 18:33:42）
+
+**时间线（captain 与 native-dev 两条独立测量，同一路径）**
+
+| 时刻（mtime） | 交付 jar | 内嵌 `J/N.class` / `GEN_JNI.class` | 形态 | AAR |
+|---|---|---|---|---|
+| 18:17:28 | `0c776934c1452b7b…`（1 206 602 B） | `1ff8d3ff…` / `a6e7edcf…` | **B（终态）** | `8e8f2baf…` |
+| **18:32:24** | **`c289b4dfd06827bc…`**（1 206 237 B） | `9ada0641…` / `8f3ce613…` | **A（非授权）** | `f2ea0132…` |
+| **18:33:42** | **`0c776934…`（回滚）** | `1ff8d3ff…` / `a6e7edcf…` | **B（终态）** | **`8e8f2baf…`** |
+
+- **来源**：18:32:24 的件等于既有 A staging `tmp/jn-fix/libwebrtc-java.jar`（11:39 生成）的拷贝，**不是新构建产物**。操作者按**过期 t31-D1 文本**执行（"落 `c289b4df…`"），而 captain 的终局裁定（**t31-D2**）是 **B**；该操作亦发生在**写盘冻结期**内。
+- **风险窗口 ≈78 秒**；实测**当时无真实 gradle 在跑** ⇒ **没有产出 A 版 APK**（APK 全程停在 `721df1c8…`，mtime 11:28:34）。
+- **处置**：captain 于 **18:33:42** 从 `tmp/t31/routeA-B.jar` / `.aar` **回滚为 B**（回滚后实测：jar `0c776934…`、AAR `8e8f2baf…`、AAR 内 `classes.jar` 与 jar 逐字节相同、`J/N.class` = `1ff8d3ff…`、`GEN_JNI.class` = `a6e7edcf…`、509 条目）。A 事故件留证为 `tmp/jn-fix/ACCIDENT-landed-A-c289b4df.jar` 与 `ACCIDENT-landed-A-f2ea0132.aar`，全部 A 变体移入 `tmp/jn-fix/QUARANTINE-A/`（chmod 400 + README"禁止落位"）。
+- **对已冻结证据的影响**：**无** —— `§16`（B 落位）、t30（193 符号证明）、t36（193 描述符对照）的对象在窗口前后一致；`.so` 全程 `757cef81…` 未漂移。
+- **流程留痕**
+  - **P-12**：冻结期内的落位/写盘必须有**唯一授权人**；接收方若发现派单文本与**最终裁定**冲突，必须**先回报、不得按旧文本执行**。
+  - **D-13**（captain 侧）：**过期任务文本被调度反复回放**是本次混淆的直接成因；后续同类场景须以"**裁定编号 + 时间戳**"为唯一依据，并在派单中显式声明"本裁定作废哪些旧口径"。
+  - **已实施的加固**：全部 A 变体隔离（chmod 400）；`t33` 采用**双钉哈希** —— 构建前/后各记一次 jar 与 AAR 的 `sha256` 并断言一致，另加 `.so` 护栏 `757cef81…` 与 APK 内四 `.so` `p_align=0x4000` 断言。

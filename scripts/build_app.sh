@@ -128,6 +128,57 @@ if [ -f "$JAR" ]; then
     || fail "jar 内未发现 org/webrtc/ 类（Java SDK 不完整）"
 fi
 
+# --- [P-10] 对象真实性断言：判据必须落在 live 精确路径上（禁止通配/归档件）-------------
+# 事故（2026-09-14，本队第 4 次"判定前未核实真实对象"形态问题）：预检对 jar 用
+#   `libwebrtc-java.jar*` 通配取值，命中历史归档 `libwebrtc-java.jar.v61-java17`
+#   （mtime 2026-09-13 20:00:41、*Jni=0）⇒ 误判"t23 未落位"，而 live jar 当时已是
+#   mtime 11:05:10 / dc5f8919… / 508 类 / *Jni=48。教训：用受限模式做存在性/完备性判断前，
+#   必须先证明"取到的对象就是判据对象"。本断言把"对象是谁"变成硬判据。
+for spec in "JAR:$JAR" "AAR:$AAR" "SO_TP:$SO_TP" "VPX_A:$VPX_A"; do
+  nm=${spec%%:*}; p=${spec#*:}
+  case "$p" in
+    *'*'*|*'?'*|*'['*|*.orig|*.orig-build|*.orig-jdk25|*.v55-java11|*.v61-java17|*.pre-t23|*.prev-v61)
+      fail "$nm 指向通配或归档副本（禁止用作判据对象）: $p" ;;
+    *)
+      [ -f "$p" ] && ok "$nm 使用精确 live 路径（无通配/无归档后缀）: $p" || true ;;
+  esac
+done
+# 基线指纹（判据对象 = 上述精确路径；供"修复前/后"对比与报告留痕）
+if [ -f "$JAR" ]; then
+  printf '  [基线指纹] jar sha256=%s  size=%s  mtime=%s\n' \
+    "$(sha256sum "$JAR" | awk '{print $1}')" "$(stat -c %s "$JAR")" \
+    "$(stat -c %y "$JAR" | cut -c1-19)"
+fi
+if [ -f "$AAR" ]; then
+  printf '  [基线指纹] aar sha256=%s  size=%s  mtime=%s\n' \
+    "$(sha256sum "$AAR" | awk '{print $1}')" "$(stat -c %s "$AAR")" \
+    "$(stat -c %y "$AAR" | cut -c1-19)"
+fi
+# --- jni_zero 绑定形态判据（路线 A；captain 2026-09-14 口径）-----------------------------
+# .so 导出的是 Java_J_N_<hash>（jni_zero short/proxy 静态符号绑定，非 kMethods 注册表形态），
+# 因此 Java 侧必须含 J.N（哈希 native 持有类）+ 转发层 GEN_JNI；缺任一件 ⇒ 真机首次
+# native 调用 UnsatisfiedLinkError / NoClassDefFoundError，APK 即白编。
+if [ -f "$JAR" ]; then
+  jl=$(unzip -Z1 "$JAR" 2>/dev/null || true)   # 先读入变量，避免 pipefail 下 grep -q 触发 SIGPIPE 假失败
+  n_jn_cls=$(grep -cx 'J/N.class' <<<"$jl" || true)
+  [ "${n_jn_cls:-0}" -gt 0 ] && ok "jar 含 J/N.class（jni_zero short/proxy native 持有类）" \
+    || fail "jar 缺 J/N.class ⇒ .so 的 Java_J_N_* 无法绑定（真机首次 native 调用会 UnsatisfiedLinkError）"
+  n_gen_cls=$(grep -cx 'org/jni_zero/GEN_JNI.class' <<<"$jl" || true)
+  [ "${n_gen_cls:-0}" -gt 0 ] && ok "jar 含 org/jni_zero/GEN_JNI.class" \
+    || fail "jar 缺 org/jni_zero/GEN_JNI.class"
+  n_jni_cls=$(grep -c 'Jni\.class$' <<<"$jl" || true)
+  ok "jar 内 *Jni.class = ${n_jni_cls:-0}"
+  if command -v javap >/dev/null 2>&1; then
+    n_gen_native=$(javap -p -classpath "$JAR" org.jni_zero.GEN_JNI 2>/dev/null | grep -c ' native ' || true)
+    [ "${n_gen_native:-0}" = "0" ] && ok "GEN_JNI 为纯转发层（static native = 0）" \
+      || fail "GEN_JNI 含 ${n_gen_native:-?} 个 native 声明 ⇒ 编译期 stub 形态，与 .so 的 Java_J_N_* 不匹配"
+    n_jn_native=$(javap -p -classpath "$JAR" 'J.N' 2>/dev/null | grep -c ' native ' || true)
+    ok "J.N 哈希 native 声明数 = ${n_jn_native:-0}"
+  else
+    warn "无 javap，跳过 GEN_JNI/J.N 形态核验"
+  fi
+fi
+
 hdr "3. t7/t8 源码就位检查"
 [ -f "$APP/src/main/cpp/CMakeLists.txt" ] && ok "app/src/main/cpp/CMakeLists.txt" || fail "缺 CMakeLists.txt"
 [ -d "$APP/src/main/kotlin" ] && ok "app/src/main/kotlin/（$(find "$APP/src/main/kotlin" -name '*.kt' | wc -l) 个 .kt）" || warn "缺 kotlin 源码"
@@ -328,6 +379,21 @@ if [ -n "$APK" ]; then
   for so in libjingle_peerconnection_so.so libwebrtcdemo_native.so; do
     grep -qF "lib/arm64-v8a/$so" <<<"$apk_list" && ok "APK 含 $so" || fail "APK 缺 $so"
   done
+  # --- [P-12] native 交付件对象漂移护栏（native-dev 2026-09-14 请求）------------------------
+  # t30 的"193 个 Java_J_N_* 与 Java 侧可绑定"证明是针对 .so = 757cef81… 做的；路线 A 的修复
+  #   是**纯 Java 侧**（补 J.N + 换转发 GEN_JNI，不重编 .so）⇒ 新 APK 内该 .so 必须**逐字节不变**，
+  #   否则证明对象已漂移、t30 的结论必须重跑（防"假通过"）。libc++_shared 亦应恒不变（16 KB 落位件）。
+  SO_EXPECT_JINGLE="757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e"
+  SO_EXPECT_CXX="c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36"
+  for pair in "libjingle_peerconnection_so.so:$SO_EXPECT_JINGLE" "libc++_shared.so:$SO_EXPECT_CXX"; do
+    so_name=${pair%%:*}; so_exp=${pair#*:}
+    so_got=$(unzip -p "$APK" "lib/arm64-v8a/$so_name" 2>/dev/null | sha256sum | awk '{print $1}' || true)
+    if [ "$so_got" = "$so_exp" ]; then
+      ok "APK 内 $so_name sha256 与预期逐字节一致（${so_exp:0:16}…）"
+    else
+      fail "APK 内 $so_name 对象漂移：期望 ${so_exp:0:16}… 实得 ${so_got:0:16}…（若为 libjingle ⇒ t30 可绑定证明对象已漂移，须重跑证明）"
+    fi
+  done
   echo "  --- org.webrtc 类是否入 dex ---"
   # ⚠️ 修正（t10 实测）：不能把 APK 直接交给 dexdump（它要 .dex，不是 zip）。必须
   #    先抽出全部 classes*.dex；且 org.webrtc 类未必在 classes.dex（实测落在 classes13.dex）。
@@ -352,6 +418,40 @@ if [ -n "$APK" ]; then
       c=$( "$ANDROID_HOME/build-tools/34.0.0/dexdump" "$f" 2>/dev/null | grep -oE 'Lorg/webrtc/' | wc -l || true )
       if [ "${c:-0}" -gt 0 ]; then echo "      $(basename "$f"): org.webrtc 条目 $c"; fi
     done
+    # --- [P-11] 路线 A 绑定形态判据（dex 级；captain 2026-09-14 口径）-------------------
+    # 独立于 jar 判据的第二道闸：即使 jar 形态正确，也要证明"打包进 APK 的 dex"真的带上了
+    # J.N 与转发层 GEN_JNI（R8/D8 收缩或依赖缺失都可能把它们丢掉）。用字节级扫描，规避
+    # dexdump 的输出格式差异；计数落到 dex 文件本身，而非只看 classes.dex。
+    if command -v python3 >/dev/null 2>&1; then
+      dexpat=$(python3 - "$dxd" <<'PYEOF' 2>/dev/null || true
+import glob, os, sys
+d = sys.argv[1]
+need = [("LJ/N;", "jn"), ("Lorg/jni_zero/GEN_JNI;", "genjni"),
+        ("Lorg/webrtc/PeerConnectionFactoryJni;", "pcf_jni")]
+tot = {k: 0 for _, k in need}
+n = 0
+for p in sorted(glob.glob(os.path.join(d, "classes*.dex"))):
+    n += 1
+    b = open(p, "rb").read()
+    for s, k in need:
+        tot[k] += b.count(s.encode())
+print("dexfmt: dex=%d jn=%d genjni=%d pcf_jni=%d"
+      % (n, tot["jn"], tot["genjni"], tot["pcf_jni"]))
+PYEOF
+)
+      echo "    $dexpat"
+      case "$dexpat" in
+        *"jn=0"*)     fail "dex 缺 J/N（路线 A 绑定形态不成立：.so 的 Java_J_N_* 无 Java 侧持有类）" ;;
+      esac
+      case "$dexpat" in
+        *"genjni=0"*) fail "dex 缺 org.jni_zero.GEN_JNI（转发层未打包）" ;;
+      esac
+      case "$dexpat" in
+        *"pcf_jni=0"*) fail "dex 缺 org.webrtc.PeerConnectionFactoryJni（t23 绑定类未打包）" ;;
+      esac
+    else
+      warn "无 python3，跳过 dex 级 J/N 与 GEN_JNI 判据"
+    fi
     rm -rf "$dxd"
   else
     warn "dex 检查：可用 dexdump 手工复核"

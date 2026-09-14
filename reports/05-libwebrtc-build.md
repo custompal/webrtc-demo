@@ -503,7 +503,7 @@ t5/t16/t17 交付的 jar 内 **`*Jni.class` 数量 = 0**，而构建树里 jni_z
 2. **每个 `generated_*_jni_java` 的 `.compliment.jar` 里都只有「部分」`GEN_JNI`**，构建树中**不存在**任何并集 `GEN_JNI` ⇒ 必须由脚本合成并集，否则运行期 `UnsatisfiedLinkError`（方法缺失）。
 3. **Java 语法要求 native 方法声明必须带形参名** ⇒ 生成并集 `GEN_JNI` 时必须补 `argN`，否则 javac 报 632 处 `<identifier> expected`。
 4. **`unzip -n` 而非覆盖**：早期版本用覆盖式解包，**改写了 453 个原始类中的 174 个**；已修为 `-n` 并加 6b 步守恒断言。
-5. **打包时间戳必须归一**：首版未归一，重跑产出**内容完全相同但 sha256 不同**的 jar —— 差异**仅 4 条 zip 时间戳**（`LoggingJni`/`CommonApisJni`/`JniZeroJni`/`GEN_JNI` 这四个"本轮新编译/合成"的类）。实测：两次独立重跑逐字节相同（`dc5f8919…` ×2）✅
+5. **打包时间戳必须归一**：首版未归一，重跑产出**内容完全相同但 sha256 不同**的 jar —— **内容 508/508 逐字节完全相同**；**时间戳 508 条全部不同**（更正：早前写“仅 4 条”有误）——`7dbe8400…` 的既有条目沿用构建的固定 epoch 2001-01-01、其 4 个新编译/合成条目带构建时刻，而 `dc5f8919…` 经 `SOURCE_DATE_EPOCH` 归一后把**全部**条目重标为 2026-01-01。可复算对象：`/tmp/pre-deploy.jar`(=7dbe8400…) 与 `/opt/dsh-workspaces/tmp/jni-merge/libwebrtc-java.jar`(=dc5f8919…)。实测：两次独立重跑逐字节相同（`dc5f8919…` ×2）✅
 6. **`zip` 的两个静默陷阱（本次真实命中 2 次，均被一致性闸门拦下）**：
    - **newer-than 跳过**：`zip <aar> classes.jar` 对"已存在且时间戳更新"的条目**不替换**；归一后的 mtime（2026-01-01）早于 AAR 内既有条目 ⇒ 必须先 `zip -d` 删条再添加。
    - **无扩展名归档被改名**：Info-ZIP 会把 `<name>` 写成 `<name>.zip`（实测报 `aar.zip not found or empty`，随后**新建** `aar.zip`，而 `aar` 纹丝不动）⇒ 工作副本必须显式命名为 `*.zip`，最后再 `cp` 回 `.aar`。
@@ -595,7 +595,7 @@ run2 sha256 = dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915
 原有类：逐字节相同=453  内容不同=0  缺失=0
 ```
 
-> 归一前（未设时间戳）实测：**内容 508/508 逐字节相同，但 sha256 不同**，差异**仅 4 条 zip 时间戳**（4 个本轮新编译/合成的类）；归一后 sha256 也稳定。
+> 归一前（未设时间戳）实测：**内容 508/508 逐字节相同，但 sha256 不同**，**内容 508/508 逐字节完全相同**；**时间戳 508 条全部不同**（更正：早前写“仅 4 条”有误）——`7dbe8400…` 的既有条目沿用构建的固定 epoch 2001-01-01、其 4 个新编译/合成条目带构建时刻，而 `dc5f8919…` 经 `SOURCE_DATE_EPOCH` 归一后把**全部**条目重标为 2026-01-01。可复算对象：`/tmp/pre-deploy.jar`(=7dbe8400…) 与 `/opt/dsh-workspaces/tmp/jni-merge/libwebrtc-java.jar`(=dc5f8919…)。
 > 该脚本的输入是**基线 jar**（不取交付 jar），故可反复执行且守恒校验不会退化成"自比自"。
 
 **补丁与脚本指纹**（可复现性锚点）：
@@ -669,7 +669,7 @@ static const JNINativeMethod kMethods[] = {
 
 ### 11.4 结论与「是否重出 .so」
 
-- **Java 层与 `.so` 不是一对可绑定的组合。** 194 个 `GEN_JNI` native 既**无法静态解析**（`.so` 内无 `Java_org_jni_1zero_GEN_JNI_*`，也无任何可读名），也**没有动态注册路径**（`.so` 内无注册表；`JNI_OnLoad` 不注册）⇒ **首次调用 native 即 `UnsatisfiedLinkError`**。
+- **Java 层与 `.so` 不是一对可绑定的组合。** 194 个 `GEN_JNI` native 既**无法静态解析**（`.so` 内无 `Java_org_jni_1zero_GEN_1JNI_*`，也无任何可读名），也**没有动态注册路径**（`.so` 内无注册表；`JNI_OnLoad` 不注册）⇒ **首次调用 native 即 `UnsatisfiedLinkError`**。
 - 这是与 t23（jar 缺类）**相互独立的第二个阻塞点**；**t25 的 JVM 单测无法发现它**（JVM 单测不加载 arm64 `.so`，只做类存在性检查）。
 - **根因链**：上游由 `*__jni_registration` 代码生成把注册表并入 AAR/APK 产物；我们的路径（因 siso 缺 `backend_config` 而绕开 `build_aar.py`、手工装配 AAR）只用 `ninja sdk/android:libjingle_peerconnection_so`，**该目标不包含注册代码生成**。
   - `build.ninja` 中确实存在 phony 目标 `sdk/android:libjingle_peerconnection_so__jni_registration`（及 `__java_sources` / `__native_sources`），**但从未被构建**（`kMethods` 全树 = 0 即证）。
@@ -781,7 +781,7 @@ captain 复核记录为 `7dbe8400…` / mtime **10:53:11** / AAR `4878509a…`�
 | jar mtime | 2026-09-14 10:53:11 | **2026-09-14 11:05:10** |
 | AAR sha256 | `4878509a9a0bce254d71f728fb1ff6635b7fea8e310342216b454672f8dfe028` | **`e066e456f5d62a015433db949a7cd1b1c13acaf432c93aa06f3544cea71b9e53`** |
 
-**两者内容等价（已实测）**：解压后 **508/508 条目逐字节相同**，差异**仅 4 条 zip 时间戳**（`LoggingJni`/`CommonApisJni`/`JniZeroJni`/`GEN_JNI`，即本轮新编译/合成的 4 个类）；AAR 内 `classes.jar` 已同步为与现行 jar 同哈希。
+**两者内容等价（已实测）**：解压后 **508/508 条目逐字节相同**，**内容 508/508 逐字节完全相同**；**时间戳 508 条全部不同**（更正：早前写“仅 4 条”有误）——`7dbe8400…` 的既有条目沿用构建的固定 epoch 2001-01-01、其 4 个新编译/合成条目带构建时刻，而 `dc5f8919…` 经 `SOURCE_DATE_EPOCH` 归一后把**全部**条目重标为 2026-01-01。可复算对象：`/tmp/pre-deploy.jar`(=7dbe8400…) 与 `/opt/dsh-workspaces/tmp/jni-merge/libwebrtc-java.jar`(=dc5f8919…)。
 **captain 复核的全部关键不变式在现行版上同样成立**：508 类 / `*Jni` 48 / `GEN_JNI` 唯一 / `PeerConnectionFactoryJni` 含 `public static get()` 且 implements `$Natives` / 全部 ≤61 / 基线 453 类守恒 453-0-0。
 ⇒ **建议保持现行版**（回退会失去逐字节可复现性，且 t26 正基于现行版构建），**只更新记录中的 jar/AAR 哈希**；否则 t27 对账会不一致。
 
@@ -992,4 +992,4 @@ native-dev 指出我"这 3 个类全树未编译、须用 `compliment.jar` 单�
 2. **"修复后引用数 48/48" vs 我实测的 47**：差异源于**是否计入自引用**。每个 `*Jni.class` 的常量池都含**自身类名**，故"含自身"扫描下必然 48/48。实测 `org/webrtc/Dav1dDecoderJni` 在交付 jar 内**只被它自己**包含（外部引用 = **0**）⇒ **无外部调用方的恰好是它 1 个**。两种口径都对，但报告里须写明口径，否则对账会打架。
 
 ### 17.4 哈希口径（第三次提醒，跨成员）
-native-dev §3 复核的是 **`7dbe8400…`（mtime 10:53）**，即**中间版**；**现行 live = `dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915`（mtime 2026-09-14 11:05:10）**，AAR = `e066e456…`。两者**内容等价**（508/508 逐字节相同，仅 4 条 zip 时间戳不同）。**跨成员对账请统一用现行值。**
+native-dev §3 复核的是 **`7dbe8400…`（mtime 10:53）**，即**中间版**；**现行 live = `dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915`（mtime 2026-09-14 11:05:10）**，AAR = `e066e456…`。两者**内容等价**（508/508 逐字节相同，**时间戳 508 条全部不同**（更正：早前写“仅 4 条”有误；`7dbe8400…` 既有条目沿用构建固定 epoch 2001-01-01、4 个新编译类用构建时刻；`dc5f8919…` 归一后把全部条目重标为 2026-01-01。可复算：`/tmp/pre-deploy.jar`=7dbe8400… vs `/opt/dsh-workspaces/tmp/jni-merge/libwebrtc-java.jar`=dc5f8919…)）。**跨成员对账请统一用现行值。**

@@ -111,6 +111,8 @@ def main():
             if m:
                 jn_natives.append(m.group(1))
     jn_natives = sorted(set(jn_natives))
+    # J.N 的全部方法名（含非 native 的 absent-proxy stub，例如 AV1）
+    jn_all = set(re.findall(r"^\s+public\s+static\s+(?:native\s+)?[\w.<>\[\]$]+\s+([\w$]+)\s*\(", out, re.M))
     print("     J.N native 方法数（唯一）:", len(jn_natives))
     if not jn_natives:
         fails.append("javap 未解出 J.N 的 native 方法（类缺失或非 native）")
@@ -156,9 +158,13 @@ def main():
     print("     GEN_JNI 字节码中 invokestatic J/N.<name> 不同目标数:", len(fwd))
     if len(fwd) == 0:
         fails.append("GEN_JNI 方法体未转发到 J/N.<native>（字节码中未发现 J/N. 调用）")
-    not_native = sorted(fwd - set(jn_natives))
-    if not_native:
-        fails.append("GEN_JNI 转发的目标不在 J.N native 集合中: %s" % not_native[:3])
+    # 转发目标必须是 J.N 里真实存在的方法（native 或 absent-proxy stub）
+    not_declared = sorted(fwd - jn_all)
+    stub_targets = sorted(fwd - set(jn_natives))
+    print("     转发目标中：native = %d ；非 native（absent-proxy stub）= %d %s"
+          % (len(fwd) - len(stub_targets), len(stub_targets), stub_targets))
+    if not_declared:
+        fails.append("GEN_JNI 转发的目标在 J.N 中不存在: %s" % not_declared[:3])
 
     # ---------- E3 ----------
     print("\n[E3] jar 内 *Jni 包装类调用的 GEN_JNI.<可读名> 是否都有对应方法")
