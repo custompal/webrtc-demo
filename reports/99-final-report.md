@@ -43,12 +43,15 @@
 ### 0.2 HEAD ↔ 交付物哈希对应关系（写终报前重取 HEAD 后实测）
 
 > 方法：`go version -m <二进制>` 读取嵌入的 `vcs.revision`；APK/jar 用 sha256 + 构建记录（`reports/10`）对应。
+>
+> **⚠️ 本表为 t27 时点的历史快照**：其中"交付 APK（t27 终版）= `721df1c8…`"与"现行 jar = `d98939bb…`"**均已被后续轮次取代** —— **现行值以 §13.23/§13.26 为准：APK `30c41ac9…`（33 309 445 B）、jar `0c776934…`（1 206 602 B）、AAR `8e8f2baf…`**；`721df1c8…` 现标注为**历史轮次**（§12.5/§13.22）。
 
 | 交付物 | sha256（前 16） | 对应提交 / 来源 | 证据 |
 |---|---|---|---|
 | **交付 APK（t27 终版）** `app/build/outputs/apk/debug/app-debug.apk`（**33 293 061 B**，mtime **2026-09-14 11:28:34.950**） | **`721df1c82841ad992ffef016cdb4fc09335028869fa443e98f24fe797055b724`** | **不在任何提交内**（`app/build/**` gitignore）；由 **t26** 在"静默窗口 + 完全执行"下重编（`--no-daemon --no-build-cache clean assembleDebug`，日志 `reports/logs/t26d-nocache-assembleDebug-20260914-112608.log`；FROM-CACHE=0、`:app:clean` 出现、43 tasks = 42 executed/1 up-to-date），使用 t23 修复后的 jar `dc5f8919…` | 我的产物级复核（§3.8/§12） |
 | ~~过程值 APK（已被取代）~~ | `b0cddd86…`（t18，33 260 234 B）/ `58834b5a…`（11:04）/ `6653fddf…`（10:55） | 均为**过程值**：`b0cddd86…` 是 t18 的 no-cache clean 构建产物，**其后被 t23–t26 的 jar 修复链取代**；`58834b5a…`/`6653fddf…` 按 t26 判据作废（构建窗口内输入变更）。仅存哈希与当时核验记录 | §3.13/§12 |
 | ~~前一次 APK（已被覆盖）~~ | `c72d366706569b6d` | 20:21:25 产物，**其字节已被上述 clean 构建覆盖且无备份**；仅存哈希与我当时的核验记录（`.so` 两个哈希与终版相同，见 §3.8） | §3.8 历史记录 |
+| **⚠️ 这两代现均无实体可复算（2026-09-14 20:59 复核）** | `c72d3667…` / `b0cddd86…` | `c72d3667…` 早已被 clean 覆盖；**`b0cddd86…` 的唯一实体**（`/tmp/dl-internal.apk`，33 260 234 B）**已于 19:15–19:17 被清理**（native-dev 清理前实测其 sha = `b0cddd86…`）。我 **20:59:54 全盘 `.apk` 盘点 = 6 件**（`CheckInstallApk-debug.apk` 37 106 B、`artifacts/app-debug-30c41ac9.apk`、仓内交付 `app-debug.apk`、`artifacts/app-debug-721df1c8.apk`、`artifacts/app-debug-ef29e00c.apk`、`tmp/t38-unsanctioned-rebuild/app-debug-ef29e00c.apk`），**已无该哈希或 33 260 234 B 尺寸的实体** | 跨代数值只能**按历史证据引用**，不得声称"可复算"；`30c41ac9…` 不受影响（交付路径 + `artifacts/` 快照 + 服务冻结副本三处齐备） |
 | 现行 libwebrtc jar `third_party/libwebrtc/java/libwebrtc-java.jar`（1 048 264 B） | `d98939bbf0c0cd07` | **t16 重编产物**（`--release 17`），由 `1a3a8e6`/`10aa709` 起的报告记录其状态；jar 本身在 gitignore 的 `third_party/libwebrtc/` 内 | `javap` major 61；AAR 内 `classes.jar` 同哈希 |
 | AAR `libwebrtc-arm64.aar`（6 456 926 B） | `456e3f2ffbc40758` | 同上（t16，20:00 重打，内 `classes.jar` = `d98939bb…`） | `unzip` + sha256 |
 | **部署件** Go 二进制 `/opt/signaling/signaling`（5 496 984 B） | `c298235a0c4b1afe` | **`vcs.revision=1a9d3ff`**（`vcs.modified=true`）＝ t9 交付、t12 部署并运行中（PID 200623） | `go version -m` |
