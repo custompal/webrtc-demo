@@ -1585,6 +1585,7 @@ python3 scripts/check_jar_link_integrity.py <jar>
 | 合计 | **3** | **3** | **2** | **3** |
 
 - **F-1（低危 · 记载更正）**：captain 信里"**classes13 J.N=1 / classes14 J.N=2** ⇒ 合计 3"**不可复现** —— 我两法（`grep -a -o` 逐 dex + `dexdump` 类型引用）一致得到 **`classes.dex` 2 / `classes13` 1 / `classes14` 0**；合计同为 **3**，故**判据本身成立**。看起来是把 **`PCFJni` 列（`classes14` = 2）**串到了 `J.N` 列。**更正建议**：`LJ/N;` = `classes.dex` 2 + `classes13.dex` 1。
+  - **第三方独立复算（webrtc-builder，同一快照 `30c41ac9…`，只读内存解析）**：其全 14 dex 扫描结果同样为 **`classes.dex` 2 / `classes13.dex` 1 / 其余 0 = 3**，且 `org_webrtc_LibaomAv1Encoder_create` 可读名 **1/1/1**、桩消息 `Native method not present` **`classes.dex` 1 / `classes13.dex` 1** —— 与我的测量**逐项一致** ⇒ **captain 信的"1+2"为孤例，应以 2/1/0 为准**（三处独立测量：我、webrtc-builder、t34 附录 §2）。
 - **名字级补充（webrtc-builder 建议，我已在锚点实测通过，§13.25(h)）**：AV1 可读名 1/1/1 ⇒ B 形态（可读桩）而非 A 形态；`J/N` 侧为可读名 + 非 native 抛异常桩。
 
 **§3.3 四 `.so` 护栏 —— ✅ 全部通过**
