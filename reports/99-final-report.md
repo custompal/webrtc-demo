@@ -617,6 +617,7 @@ javap -p handoff/classes/org/jni_zero/GEN_JNI.class | grep -c ' native '     # 0
 | P-9 | **"`--rerun-tasks` 单用仍可能命中缓存"被当成"刚真实执行过"** | 实测 `testDebugUnitTest` 在只加 `--rerun-tasks` 的调用里报 **`FROM-CACHE`**（`3 executed, 3 from cache, 18 up-to-date`） | "真实执行"必须 **`--no-build-cache --rerun-tasks`** 且 **`N tasks: N executed`（FROM-CACHE=0）**（详见 §13.14(d)） |
 | **P-12** | **冻结期内的落位/写盘必须有唯一授权人；接收方若发现"指令"与"最终裁定"冲突，必须先回报再执行** | 18:32:24 **非授权落位 A**（执行的是 **t31-D1 过期文本**，而 captain 已用 **t31-D2** 裁定 = **B**，且当时在写盘冻结期）→ 18:33:42 captain **回滚为 B**；事故件隔离于 `tmp/jn-fix/QUARANTINE-A/`（chmod 400 + README）；当时无 gradle 在跑 ⇒ 无 A 版 APK（§13.21） | 单一授权人 + 冲突先回报；**注**：`scripts/build_app.sh` 里的 **[P-11]/[P-12] 是构建脚本门编号（§13.22(f)），与本 P 系列的流程教训编号不是同一命名空间** |
 | **P-13** | **"落位前"冻结材料被反复当作现状引用**（本会话出现多次口径拉扯） | 冻结件 `t30/logs/t34-gate.md`（`6d1112dd…`）写于**落位前**，其 `:21`("期望 ≥ 1（落位前 = 0）")与 `:58`("落位前两条断言必红")属**历史段**；落位后 native-dev 另开 `t34-gate-post-landing.md`（`c87bb1cd…`）钉现值（`0c776934…`、`J/` 期望 = 1、`GEN_JNI.class` 限定 `a6e7edcf…`） | **规则**：① 状态变更后**另开附加件**并在旧件标注"历史/superseded"；② 凡涉及"部署/落位状态"的陈述，**在同段前置一行读盘行**（格式约定）：`[读盘 HH:MM:SS] jar=<sha256 前 16>（可选 + J/N.class、GEN_JNI.class 前 16）` —— 即引用任何此类材料前**先跑 `sha256sum third_party/libwebrtc/java/libwebrtc-java.jar` 并同段贴出**；③ 引用者必须核对**文件生效时点**而非只看文件名（本报告 §13.22(g) 已按此以 v2 为准、v1 仅作历史）；④ **需要长期引用的证据用新文件名、禁止覆盖写**（同路径覆盖会使早期版本不可复核，如 `prefix-baseline.md` 三代同路径的后果）。⇒ **总原则：现场读盘 > 消息；新增文件名 > 覆盖同名**（native-dev 提议，我采纳） |
+| P-14 | **跨侧计量"尺子不同"造成的假红/假矛盾**（verifier 20:04–20:10 实测） | ① dex 侧 AV1 桩终止指令是 `throw`（`dexdump` 指令列末为 `throw v0`），class 文件侧才是 `athrow` ⇒ 在 dex 上 `grep -c athrow` = **0**（假红）；② dex 方法表含 `<init>` ⇒ `J/N`/`GEN_JNI` dex 方法数 = **195 = 194 `public static` + 1 构造器**，与 jar 侧 194 **不矛盾**；不区分 `Static fields`/`Direct methods` 段会把字段计成方法（`PCFJni` 得 **26** 假数，真值 25 方法 + 1 字段）；③ 容器 `/tmp` = **256 MB tmpfs** ⇒ 大 dex（44.7 MB）与 `dexdump -d`（7.43 M 行）必须在工作区做，空间不足时报 `Size is too small`/`ReadFileToString failed`，**形似"dex 损坏"实为磁盘满**；④ `cmp -s` 对**缺失文件**也返回非 0 ⇒ 逐件比对**先断言存在**（我据此一度误报"变体四 `.so` 不同"，重测四件全同） | **断言必须写清"哪一侧、哪把尺子"并附命令原文**；跨侧数字先做一次口径对齐再比较；大件 IO 落工作区；`cmp` 前先做存在性检查（详见 §13.25(c)(d)） |
 | **D-13**（captain 侧教训） | **过期任务文本被系统反复回放，导致成员按旧合同执行** | t31-D1（旧文本）与 t31-D2（裁定 B）并存，成员按 D1 落位 A（§13.21） | 裁定变更时**同步废弃旧任务文本**并显式标注 supersede，避免"回放旧合同" |
 
 ---
@@ -1470,9 +1471,61 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 - ✅ **单测**：5 份 XML @**19:07:05** = `8 + 4 + 17 + 11 + 6` = **46 / 0 / 0**（`JniBindingClasspathTest` 由 2 → **6** 用例，即 t32 加固已生效）。
 - ✅ **第三处同哈希已由宿主侧核对闭合**（captain 追加）：`/opt/apk-http/served/app-debug.apk` = **`30c41ac9…`**（33 309 445 B），与标准路径、`artifacts/` 留档 **`cmp` 逐字节相同**；且**公网直下（`GET /app-debug.apk`）与分片重组两条路径**均等于 `30c41ac9…`（android-dev 独立复核）⇒ 交付锚点共 **5 个可复算位点**同哈希。
 - ⏳ **留待 t34 复算（本节未复核）**：① `.dex` **方法级**计数（`J.N` 195/193、`GEN_JNI` 195/0）需 dex 解析器或 `dexdump` 级工具；② `ef29e00c…` 与锚点的"**`code_items` 逐字节相同**"结论（我已有的旁证是：7 个差异 dex **长度仅差 4 B / 8 B、其余同长**、类计数一致 ⇒ 与"元数据/指针级差异"相容，但**不等于**已证"机器码逐字节相同"）。⇒ 这两项我在 **t34** 用可复算方式补齐或如实标"未复核"。
+  - **✅ 两项的第①项已由我（verifier）独立复算（§13.25(b)，读盘 20:09–20:10）**：`dexdump` 分块计数 = `J/N` **195 方法 / 193 native**（195 = 194 `public static` + `<init>`）、`GEN_JNI` **195 / 0 native** 且 `invoke-static LJ/N;.` = **193**、AV1 桩以 `throw v0` 结束；**方法级计数不再是"未复核"**。第②项（`code_items` 机器码）我只核了其冻结件指纹，**结论本身仍未由我推导** —— 见 §13.25(e)。
   - **✅ 两项均已由 t34 补齐（captain 追加，`reports/99-t34-appendix.md` = 184 行 / `36bad740…`，verdict = pass）**：① 方法级计数实测 `J.N`（classes.dex）**195/193**、`GEN_JNI`（classes13.dex）**195/0 且声明 AV1 桩**、`PCFJni`（classes14.dex）25/0/1；② **`code_items` 机器码逐字节相同**（区级 `map_list` + 方法级 `code_off` 两路独立），且根因已定量到键级（147 条 D8 `~~~{class→hash}` 不稳定令牌，全部为 Kotlin lambda 的 `*$$ExternalSyntheticLambda*`）。旁证冻结件：`webrtc-build/t39-apk-crosscheck/t39-apk-diff.freeze-682e02cad862cd76.log`（242 行 / `682e02cad862cd760b9326af1e46f934dfa48f93e87d00c7c4de76efbaee1ba2`）。
 - ⚠️ **口径提醒**：`ef29e00c…` 已由 captain 裁定为**非交付**（依据过期指令、未获当次授权的重复构建），本报告 §13.23 记录的双哈希至此**已定论**（详见该节新增的裁定注记）。
 
+
+---
+
+### 13.25 verifier 对 `reports/99-t34-appendix.md` 的**独立第二方复验**（我自跑 20:04–20:10）+ 治理注记
+
+> **读盘行**（P-13 规则②）：`[读盘 20:09:47] jar=0c776934c1452b7b`（1 206 602 B / 509 条目 / `^J/` = 1）· `[读盘 20:09:34] apk=30c41ac9d3363cab`（33 309 445 B）· `[读盘 20:09:19] .so 四件` · 复验对象 `reports/99-t34-appendix.md` = **184 行 / `36bad740d32979bf858ff9aaf5d839c2…` / mtime 19:49:49**（未改其一个字节）。
+
+#### (a) 对象、作者与板面事实（先钉口径）
+- 附录：`reports/99-t34-appendix.md`（**作者 `native-dev`**，非我）；三次提交 `dc698ab` → `52e5155` → `5aaac6a`。
+- 板面：**`t34 [completed] review r2 verdict pass attempt 2 → native-dev`**（`agent_teams_status` 实测）。而我收到的任务文本把 **t34（r2 复核）**写作 **verifier** 承担 ⇒ 两者不一致（与 **D-13** 同类："过期任务文本被重放"，§13.12(d)）。附录 §5 已自述：执行时 `claim_task("t34")` 被平台拒绝（`assigned to "verifier"`），故其产物以"独立第二方复验"落盘、verdict 归属留 captain 裁定 —— **与板面现状一致（板面已把 assignee 改成 native-dev 并判 pass）**。
+- 因此本节**不是** verifier 名下 verdict；它是**第二方对附录事实面的复算**（下表）。我**无法**移动/认领已完成任务（平台 `task status cannot move from "completed" to "claimed"`），故**不自行追认** verdict。
+
+#### (b) 逐项独立复算（表内"我方值"均为我本轮自跑，命令见 (c)）
+| 附录主张 | 我方独立复算 | 判定 |
+|---|---|---|
+| 交付锚点 = `30c41ac9…` / 33 309 445 B，仓内路径与 `artifacts/app-debug-30c41ac9.apk` 逐字节相同 | sha256 同值同大小；`cmp` 逐字节相同 | ✅ 一致 |
+| 六载荷钉（§9）：`classes.dex a1b2ebdc…`、`classes13.dex a1f35bd5…`、四 `.so`（`757cef81…`/`c9dbf4ec…`/`95c44e5a…`/`41e9a793…`） | **六件逐件复算同值**（一律从 APK 内 `jar xf` 解出） | ✅ 一致 |
+| 四 `.so` 全 `LOAD` 段 `p_align=0x4000` | `llvm-readelf -lW`：3/4/3/3 个 LOAD 段全 `0x4000` | ✅ 一致 |
+| APK `libjingle` == `jniLibs` == `third_party/*/jni/arm64-v8a`；APK `libc++_shared` == `jniLibs` | 前三条 `cmp` 逐字节相同；`third_party` 下无 `libc++_shared.so` 路径（附录 §3 只声明 jniLibs，无夸大） | ✅ 一致 |
+| 定义级：`LJ/N;` 仅在 `classes.dex`、`GEN_JNI` 仅在 `classes13.dex`、`PCFJni` 仅在 `classes14.dex` | **全 14 dex** 逐个 `dexdump` 扫 `Class descriptor`：三者各自**唯一定义**于上述分片 | ✅ 一致（且比附录更强：我扫了全 14 分片） |
+| 定义级方法数：`J/N` 195/193、`GEN_JNI` 195/0、`PCFJni` 25 方法/0 native/1 字段 | `dexdump -d` 分块计数：`J/N` **195/193**；`GEN_JNI` **195/0** 且 `invoke-static LJ/N;.` = **193**；`PCFJni` **25 方法 + 1 静态字段/0 native** | ✅ 一致（口径见 (c)1/(c)2） |
+| 引用计数：`LJ/N;` 3（2+1）、`GEN_JNI;` 3（2+1）、`PCFJni` 裸串 4（3+1）、桩串 2、AV1 名 3 | `grep -a -o` 逐分片计数：**完全同值同分布** | ✅ 一致 |
+| 变体 `ef29e00c`：14 分片 **7 同 / 7 异**，异者 = `classes3/5/6/9/11/12/14`（含 `classes.dex`、`classes13.dex` 同） | 逐分片 sha256 比对：**7 同 / 7 异，异者集合逐名一致** | ✅ 一致 |
+| 变体：类描述符集合 26 195 / 26 195，双向差集 0 | 全 14 分片类描述符 `sort -u`：**26 195 / 26 195；仅 A 有 0 / 仅 B 有 0**；两份排序表 sha256 同为 `cb82a1cf1c2e8b28…` | ✅ 一致（比附录多给一条可复算指纹） |
+| v2 门禁 v2-0/v2-1：jar `0c776934…`（509 条目、`^J/` = 1）、`J/N.class` `1ff8d3ff…`、`GEN_JNI.class` `a6e7edcf…`、AAR `8e8f2baf…` 且内 `classes.jar` == jar | 逐项复算：**全部同值**；AAR 内 `classes.jar` 与交付 jar `cmp` 逐字节相同 | ✅ 一致 |
+| 判据 ① `J.N static native` = 193；④ `.so` `Java_J_N_*` 导出 = 193 | ① jar 侧 193；④ `llvm-nm -D` 与 `llvm-readelf --dyn-syms` **两法均 193**（`JNI_OnLoad` 在 `0x29f718`） | ✅ 一致 |
+| 单测 5 份 XML = 8+4+17+11+6 = 46/0/0 @19:07:05 | 产物自带 XML 实测：**46 / 0 / 0**，5 份 mtime 均 19:07 | ✅ 一致（**未重跑**，见 (g)） |
+| 未核项：宿主 `/opt/apk-http/served/app-debug.apk`、真机首调 | 与本报告口径相同 | ⏳ 我同样**不可复算**（宿主路径容器不可见 / 无设备） |
+
+#### (c) 本轮新增的三条计量陷阱（**P-14**，均为我踩到或实测到的假红/假绿来源）
+1. **dex 与 class 文件的终止指令助记符不同**：class 文件里 AV1 桩结束于 **`athrow`**（`javap -c`：`new`→`ldc`→`invokespecial`→`athrow`，计数 **1**），而 `dexdump` 输出的是 **`throw v0`**（`|[4d85da] …: throw v0`，计数 **1**）。⇒ 在 dex 上 `grep -c athrow` = **0**（**假红**）。**正确断言按侧分开写**：class 文件 `athrow`=1 ／ dex `throw`=1。
+2. **"194 vs 195"不是矛盾，是两把尺子**：dex 类方法表**含 `<init>`**，故 `J/N`、`GEN_JNI` 的 **dex 方法数 = 195 = 194（`public static`）+ 1 构造器**；jar 侧 `javap` 的 194 只数 `public static`。跨侧直接把"194"与"195"相减/相判会出**假矛盾**；同理 `PCFJni` dex = **25 方法 + 1 静态字段**——解析时若不区分 `Static fields` / `Direct methods` 段，字段会被计成方法而得到 **26 的假数**（我第一版即得 26，见 (d)）。
+3. **容器 `/tmp` = 256 MB tmpfs（我实测 `df` = 256 M / 100% 满过）**：`classes.dex` 44.7 MB、`dexdump -d` 输出 **7 431 081 行**（`classes13` **2 036 035 行**）⇒ 解包与 dump **必须落工作区**。在 `/tmp` 上空间不足时 `dexdump` 的报错形如 `dexdump E …: Unable to open '…' : Size is too small` / `ReadFileToString failed` ⇒ **形似"dex 损坏"，实为磁盘满**。**附带**：`cmp -s` 在**文件缺失**时同样返回非 0 ⇒ 逐件比对前**必须先断言两侧存在**。
+
+#### (d) 我自己的第一版误报（诚实登记，不掩盖）
+- 我首轮比对"变体 vs 交付"的四 `.so` 时，因**只在交付侧解出了 2 个 `.so`**，`cmp -s` 对缺失件返回非 0，我据此误得"`libwebrtcdemo_native.so`、`libandroidx.graphics.path.so` **不同**"。**加存在性断言重测后：四件全部逐字节相同**（附录 §9 正确，我错）。⇒ 已按 (c)3 写进 P-14。
+
+#### (e) 与 §13.23/§13.24 的关系（三态收口）
+- **K-15（APK 侧）**现有**两层独立支撑**：① captain 转录（§13.24）；② **本轮我自跑的载荷/dex/v2 全项**（(b)）。**结论不变：已闭合**（但见 (g) 的真机限定）。
+- **`ef29e00c…` 非交付**裁定不变；其"语义等价"的**类集合 26 195/26 195**与**六载荷逐件相同**两条已由我独立复算。
+- **仍未独立复算**：t39 的"7 个差异 dex 的 `code_items` **机器码逐字节相同**"（我只核了该冻结件**存在且指纹一致**：`webrtc-build/t39-apk-crosscheck/t39-apk-diff.freeze-682e02cad862cd76.log` = 242 行 / `682e02cad862cd76…` / 22 901 B；**未**重新推导其结论）。
+
+#### (f) 治理注记（供 captain 处置；我**不改板、不追认**）
+1. **"产出入方评审"的边界情形**：t30 的 `J/N`+`GEN_JNI` 字节由 **native-dev** 生成，t31/t33 的**落位与构建由 captain 完成**，而 **t34 的 verdict 由 native-dev 给出** ⇒ 严格说不是"评审自己的实现"（实现方是 captain），但**是"评审自己产出的被落位字节"**。若团队口径要求 review 必须由**未参与该产物生成**者署名，则需**新建 verifier 名下任务**（我不能自claim 已完成任务）。
+2. **团队 loop = `blocked`**（`t27 failed without a follow-up repair`）。**t27 的失败原因是平台 `Insufficient Balance (code QUOTA)`，不是验收失败**（`t27` 输出原文即该串）；其覆盖范围（真机缺陷修复的 jar 绑定类复验 + 新 APK 产物级复验）**已由本轮 §13.25(b) 的实测覆盖**，但**板面闭合需要一条新的 review 任务**由 captain 派发。
+
+#### (g) 仍未验证（**不得读作通过**）
+- **真机级**：安装、首次 native 调用、`JNI_OnLoad` 运行期注册、Camera2 采集、首帧渲染、日志导出 —— 无设备，**本轮不作通过结论**。
+- **宿主路径** `/opt/apk-http/served/app-debug.apk`：容器不可见（宿主侧 captain/coturn-installer/android-dev 三方报告同哈希；我**不能**复算）。
+- **单测未重跑**：我引用的是 t33 产物自带 XML（19:07:05）。重跑需 `:app:testDebugUnitTest` 并**写入仓库 `app/build/**`**，属"改动构建产物树"⇒ 超出我"只写 `reports/99`"的授权，故留待授权者。
+- **t39 机器码结论**：仅核了冻结件指纹（见 (e)）。
 
 ---
 
