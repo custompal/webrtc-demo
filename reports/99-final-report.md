@@ -1165,6 +1165,28 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 #### 追加：`comm` 的 locale 陷阱（webrtc-builder 首报）
 其首跑 `comm -3` 得 214 行"伪差异"，加 `LC_ALL=C sort` 后为 0。**我本容器未能复现**：环境默认即 C/POSIX（`LANG` 空、`LC_CTYPE=POSIX`，实测默认与 `LC_ALL=C` 均为 0 行）⇒ 该陷阱依赖 UTF-8 collation 环境。**处置**：凡集合差集命令一律写 **`LC_ALL=C sort` + `LC_ALL=C comm`**（我自己的判定式用 node `Set`，不受 locale 影响）。
 
+### 13.18 A/B 参数化的最终确认、`jni_mangle` 定案（源码级）与"两分结论"的更新
+
+#### (a) `GEN_JNI` 方法数**不是**跨 A/B 恒真（采纳 native-dev 的自我更正）
+| 形态 | `GEN_JNI` 方法数 | `static native` |
+|---|---|---|
+| 落位前 Placeholder | **194**（全部 `static native`） | 194 |
+| 落位 **A**（构建树现成件） | **193**（AV1 完全不在生成件里） | **0** |
+| 落位 **B**（t30 handoff / **本次实落**） | **194**（193 转发 + 1 条 AV1 非 native 桩） | **0** |
+⇒ 期望值表必须写成 **「方法数 = 194（B）/ 193（A）；`static native` 恒 = 0」**（本报告 §13.7(b)/§13.12 已是该参数化形式）。
+**跨 A/B 真正恒真的三条**：① `J.N` native = **193**；② 转发 `GEN_JNI` 的 `static native` = **0**；③ `.so` 导出 = **193 且不漂移**（`757cef81…`）。
+
+#### (b) `jni_mangle` 定案（我在源码级复核，采纳其更正）
+- `webrtc-build/src/third_party/jni_zero/codegen/java_types.py:195-196`：`def to_cpp(self): return common.jni_mangle(self.full_name_with_slashes)` ✅（行号精确）
+- `webrtc-build/src/third_party/jni_zero/common.py:209-212`：`def jni_mangle(name): return name.replace('_','_1').replace('/','_').replace('$','_00024')` ✅ ⇒ **顺序固定为「先 `_`→`_1`，再 `/`→`_`，最后 `$`→`_00024`」**
+- 我按源码顺序自算：`jni_mangle("org/jni_zero/GEN_JNI")` = **`org_jni_1zero_GEN_1JNI`**；`jni_mangle("J/N")` = **`J_N`**（与 `.so` 实际导出吻合）。**反序**会得 `org_1jni_1zero_1GEN_1JNI`（**错**）⇒ 顺序不可颠倒。
+- 假想"经典模式"符号的正确写法 = **`Java_org_jni_1zero_GEN_1JNI_org_1webrtc_1Environment_1create`**；我在 `.so` 上实测该前缀导出 = **0**（`Java_J_N_` = 193、`Java_org_webrtc_` = 0）⇒ **该形态在本 build 不存在**（结论与其一致；写法以其更正版为准）。
+
+#### (c) "两分结论"按落位现状更新（由我给出，非沿用旧口径）
+- **jar/AAR 层**：**类完整性 ✅ 且可绑定性 ✅**（`J/`=1、`J.N` native 193、`GEN_JNI` native 0、`jni_mangle` 双向差集 0/0、两 class = t30 handoff **B** 字节；§13.11）。
+- **交付 APK 层**：**未重编**（仍 `721df1c8…`，dex 内 `LJ/N;` = 0）⇒ **交付可用性未闭合**（待 t33）。
+⇒ 因此**不能再写"可绑定性 = 未落地"**（那是 18:17:28 之前的状态）；现在的正确两分是 **「jar/AAR：已修且可绑定（B 形态）」/「交付 APK：待重编，未闭合」**。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
