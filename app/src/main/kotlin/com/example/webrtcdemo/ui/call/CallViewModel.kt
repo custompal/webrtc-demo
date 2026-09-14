@@ -174,6 +174,10 @@ class CallViewModel(application: Application) :
         session = callSession
         val ok = callSession.start(IceServerCache.get(), AppConfig.forceRelay(app))
         if (!ok) {
+            // 【t44】start 失败后必须把 session 置空：否则 `session` 非空但 `peerConnection` 为空，
+            // 后续 offer/answer 会走进"看起来有会话、实际静默丢弃"的路径（正是真机缺陷①的形态）。
+            session = null
+            callSession.close()
             fail("创建 PeerConnection 失败")
             return
         }
@@ -302,10 +306,37 @@ class CallViewModel(application: Application) :
                 hangup()
             }
 
-            is SignalingMessage.Offer -> session?.onRemoteOffer(message.sdp)
-            is SignalingMessage.Answer -> session?.onRemoteAnswer(message.sdp)
-            is SignalingMessage.Ice ->
-                session?.onRemoteIceCandidate(message.candidate, message.sdpMid, message.sdpMLineIndex)
+            is SignalingMessage.Offer -> {
+                // 【t44 修复①】原先写作 `session?.onRemoteOffer(...)`：会话为空时**静默丢弃**
+                // 远端 offer —— 信令侧表现就是"只有 offer_forward、没有 answer_forward"，
+                // 且 App 内没有任何日志/UI 错误（真机缺陷①）。现在必须落盘 + 报错可诊断。
+                val current = session
+                if (current == null) {
+                    AppLog.e(TAG, "offer_without_session", mapOf("room" to _uiState.value.roomId))
+                    onError("会话未就绪，收到 Offer 无法回 answer（请导出日志）")
+                } else {
+                    current.onRemoteOffer(message.sdp)
+                }
+            }
+
+            is SignalingMessage.Answer -> {
+                val current = session
+                if (current == null) {
+                    AppLog.e(TAG, "answer_without_session")
+                    onError("会话未就绪，收到 Answer 无法应用")
+                } else {
+                    current.onRemoteAnswer(message.sdp)
+                }
+            }
+
+            is SignalingMessage.Ice -> {
+                val current = session
+                if (current == null) {
+                    AppLog.w(TAG, "ice_without_session", mapOf("mid" to (message.sdpMid ?: "-")))
+                } else {
+                    current.onRemoteIceCandidate(message.candidate, message.sdpMid, message.sdpMLineIndex)
+                }
+            }
 
             is SignalingMessage.NatTypeMessage -> NatTypeRepository.onRemoteResult(message.natType)
 

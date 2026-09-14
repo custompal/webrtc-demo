@@ -37,11 +37,20 @@ enum class LogLevel(
     /**
      * 判断 [level] 是否达到当前阈值。
      *
-     * 规则：数值 <= 阈值即输出；阈值为 [OFF] 时一律不输出。
+     * 规则（**阈值语义 = 输出"本级与更严重"的日志**）：`level.code >= code` 才输出；
+     * 阈值为 [OFF] 时一律不输出；[WARN]/[ERROR] 在非 OFF 阈值下必然输出。
+     *
+     * ⚠️ **t44 真机缺陷修复（P0：诊断被日志 Bug 挡住）**：原实现为 `level.code <= code`，
+     * 方向与阈值语义**相反** —— 阈值取 `DEBUG(1)` 时只放行 `VERBOSE(0)`/`DEBUG(1)`，
+     * 把 `INFO(2)`/`WARN(3)`/`ERROR(4)` **全部丢弃**。真机证据：`app.log` 在
+     * `log_level=DEBUG(1)` 下 257 行**全部是 DEBUG**，而 `rtc_config`/`pc_created`/
+     * `pc_ice_connection_state`/`pc_create_failed`/`video_track_missing` 命中均为 **0**；
+     * native 侧（C++ 同数值规则）INFO/WARN 正常 ⇒ 两侧过滤方向不一致。
+     * 修复后与 native 一致：阈值 N ⇒ 输出所有 `code >= N` 的等级（WARN/ERROR 恒输出）。
      *
      * @param level 待判断的日志等级。
      */
-    fun isEnabledFor(level: LogLevel): Boolean = this != OFF && level.code <= code
+    fun isEnabledFor(level: LogLevel): Boolean = this != OFF && level.code >= code
 
     companion object {
         /**

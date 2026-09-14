@@ -6,8 +6,10 @@ import com.example.webrtcdemo.model.IceEventType
 import com.example.webrtcdemo.model.StatsSnapshot
 import com.example.webrtcdemo.signaling.SignalingClient
 import org.webrtc.AudioTrack
+import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
+import org.webrtc.IceCandidateErrorEvent
 import org.webrtc.MediaConstraints
 import org.webrtc.MediaStream
 import org.webrtc.MediaStreamTrack
@@ -81,6 +83,12 @@ class CallSession(
         /** stats 采样间隔（§7.4 冻结 2 s）。 */
         const val STATS_INTERVAL_MS = 2_000L
 
+        /** 看门狗第一档：15 s 打 WARN（含候选类型计数）。 */
+        const val ICE_WARN_MS = 15_000L
+
+        /** 看门狗第二档：30 s 打 ERROR 并上报 UI（含「强制中继」提示）。 */
+        const val ICE_FAIL_MS = 30_000L
+
         private const val CODEC_VP9 = "VP9"
     }
 
@@ -99,6 +107,40 @@ class CallSession(
     @Volatile
     private var closed = false
 
+    // ======================= t44 诊断与竞态兜底状态 =======================
+
+    /**
+     * PeerConnection 就绪前到达的**远端 offer** 暂存（真机缺陷①：joiner 不回 answer）。
+     *
+     * 竞态：joiner 侧 `joined`（带来 TURN 配置）与 `offer` 是两条独立信令，
+     * 若 offer 先于 PeerConnection 创建到达，原实现直接 `return` —— **既无日志也无 UI 错误**，
+     * 表现为"信令侧只有 offer_forward、没有 answer_forward"。暂存后在 [start] 成功时回放。
+     */
+    private var pendingRemoteOffer: String? = null
+
+    /** 同上，**远端 answer** 暂存（host 侧对称竞态）。 */
+    private var pendingRemoteAnswer: String? = null
+
+    /** 同上，**远端 ICE candidate** 暂存（PC 未就绪时丢失会导致候选对永远配不上）。 */
+    private val pendingRemoteCandidates = ArrayList<RemoteCandidate>()
+
+    /** 本端/对端候选按类型的计数（ICE 超时兜底时一次性打印，供下一轮真机定因）。 */
+    private val candidateCounter = IceCandidateCounter()
+
+    /** ICE/DTLS 连通性看门狗（超时兜底 + 错误上报 UI）。 */
+    private var connectivityWatchdog: ScheduledExecutorService? = null
+
+    /** 看门狗启动时刻（用于 `ice_watchdog_ok` 的耗时字段）。 */
+    @Volatile
+    private var connectivityWatchdogStartMs = 0L
+
+    /** 是否已收到远端描述（决定看门狗起点）。 */
+    @Volatile
+    private var remoteDescriptionSet = false
+
+    /** 一条待回放的远端候选。 */
+    private data class RemoteCandidate(val sdp: String, val sdpMid: String?, val sdpMLineIndex: Int?)
+
     /** 是否已关闭。 */
     fun isClosed(): Boolean = closed
 
@@ -115,6 +157,22 @@ class CallSession(
     fun start(ice: IceServerConfig?, forceRelay: Boolean): Boolean {
         if (closed) return false
         if (peerConnection != null) return true
+        // 【t44】把"本次到底用了什么 ICE 配置"与"是否强制中继"显式落盘：
+        // 真机复测时这一行即可判定"没配 TURN"还是"配了但连不上"（原 `rtc_config` 在 INFO，
+        // 被日志过滤 Bug 吞掉，导致上一轮完全看不到）。
+        val iceSummary = buildString {
+            if (ice?.stunUrl?.isNotBlank() == true) append("stun")
+            if (ice?.turnUrl?.isNotBlank() == true) {
+                if (isNotEmpty()) append('+')
+                append("turn")
+            }
+            if (isEmpty()) append("-")
+        }
+        AppLog.i(
+            TAG,
+            "pc_starting",
+            mapOf("ice_servers" to iceSummary, "force_relay" to forceRelay.toString()),
+        )
         val config = WebRtcConfig.build(ice, forceRelay)
         val observer = PeerConnectionObserverImpl(events)
         val connection = factory.createPeerConnection(config, observer)
@@ -140,6 +198,8 @@ class CallSession(
         statsMapper.reset()
         startStatsLoop(connection)
         AppLog.i(TAG, "pc_created")
+        // 【t44】把 PeerConnection 就绪前暂存的远端 offer/answer/ICE 回放进来（消除信令竞态）
+        flushPendingRemote()
         listener.onReady()
         return true
     }
@@ -156,8 +216,18 @@ class CallSession(
         connection.createOffer(
             object : SdpObserver {
                 override fun onCreateSuccess(sdp: SessionDescription) {
+                    // 【t44】证明"候选确实进入了 SDP"（trickle 下初始 offer 通常为 0，随后逐个 ICE 发送）
+                    AppLog.i(
+                        TAG,
+                        "offer_created",
+                        mapOf(
+                            "sdp_bytes" to sdp.description.length.toString(),
+                            "candidates" to IceCandidateInfo.summarizeSdpCandidates(sdp.description),
+                        ),
+                    )
                     connection.setLocalDescription(localSetObserver, sdp)
                     signaling.sendOffer(sdp.description)
+                    AppLog.i(TAG, "offer_sent")
                 }
 
                 override fun onSetSuccess() = Unit
@@ -182,19 +252,47 @@ class CallSession(
      * @param sdp 远端 SDP（doc/09 §3.4）。
      */
     fun onRemoteOffer(sdp: String) {
-        val connection = peerConnection ?: return
+        // 【t44】先记录"确实收到了 offer"，再做就绪判断 —— 原实现把日志放在 early-return 之后，
+        // 一旦 PC 未就绪就**完全没有痕迹**（真机缺陷①无法定因的直接原因之一）。
         AppLog.i(TAG, "offer_received", mapOf("sdp_bytes" to sdp.length.toString()))
+        val connection = peerConnection
+        if (connection == null) {
+            if (closed) {
+                AppLog.e(TAG, "offer_dropped", mapOf("reason" to "session_closed"))
+                listener.onError("会话已关闭，收到 Offer 无法处理（未回 answer）")
+            } else {
+                pendingRemoteOffer = sdp
+                AppLog.w(
+                    TAG,
+                    "offer_deferred",
+                    mapOf("reason" to "pc_not_ready", "sdp_bytes" to sdp.length.toString()),
+                )
+                listener.onError("会话尚未就绪，Offer 已暂存（就绪后会回 answer）")
+            }
+            return
+        }
         connection.setRemoteDescription(
             object : SdpObserver {
                 override fun onCreateSuccess(sdp0: SessionDescription) = Unit
 
                 override fun onSetSuccess() {
+                    remoteDescriptionSet = true
+                    startConnectivityWatchdog(connection)
                     AppLog.i(TAG, "answer_create")
                     connection.createAnswer(
                         object : SdpObserver {
                             override fun onCreateSuccess(description: SessionDescription) {
+                                AppLog.i(
+                                    TAG,
+                                    "answer_created",
+                                    mapOf(
+                                        "sdp_bytes" to description.description.length.toString(),
+                                        "candidates" to IceCandidateInfo.summarizeSdpCandidates(description.description),
+                                    ),
+                                )
                                 connection.setLocalDescription(localSetObserver, description)
                                 signaling.sendAnswer(description.description)
+                                AppLog.i(TAG, "answer_sent")
                             }
 
                             override fun onSetSuccess() = Unit
@@ -230,8 +328,28 @@ class CallSession(
      * @param sdp 远端 SDP。
      */
     fun onRemoteAnswer(sdp: String) {
-        val connection = peerConnection ?: return
-        AppLog.i(TAG, "answer_received", mapOf("sdp_bytes" to sdp.length.toString()))
+        AppLog.i(
+            TAG,
+            "answer_received",
+            mapOf(
+                "sdp_bytes" to sdp.length.toString(),
+                "candidates" to IceCandidateInfo.summarizeSdpCandidates(sdp),
+            ),
+        )
+        val connection = peerConnection
+        if (connection == null) {
+            if (closed) {
+                AppLog.e(TAG, "answer_dropped", mapOf("reason" to "session_closed"))
+                listener.onError("会话已关闭，收到 Answer 无法处理")
+            } else {
+                pendingRemoteAnswer = sdp
+                AppLog.w(TAG, "answer_deferred", mapOf("reason" to "pc_not_ready"))
+                listener.onError("会话尚未就绪，Answer 已暂存（就绪后自动应用）")
+            }
+            return
+        }
+        remoteDescriptionSet = true
+        startConnectivityWatchdog(connection)
         connection.setRemoteDescription(
             remoteSetObserver,
             SessionDescription(SessionDescription.Type.ANSWER, sdp),
@@ -246,13 +364,32 @@ class CallSession(
      * @param sdpMLineIndex 媒体行索引（可空；二者至少一个有效，§8.2）。
      */
     fun onRemoteIceCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int?) {
-        val connection = peerConnection ?: return
         val mid = sdpMid ?: ""
         // §8.2：sdpMid 与 sdpMLineIndex 至少一个有效
         if (mid.isEmpty() && sdpMLineIndex == null) {
             AppLog.w(TAG, "ice_dropped", mapOf("reason" to "no_mid_and_no_index"))
             return
         }
+        // 【t44】对端候选的类型/地址/端口必须落盘：这是判断"对端把什么候选送到了本端"的唯一证据
+        val info = IceCandidateInfo.parse(candidate)
+        candidateCounter.addRemote(info)
+        val connection = peerConnection
+        if (connection == null) {
+            if (closed) {
+                AppLog.w(TAG, "ice_dropped", mapOf("reason" to "session_closed", "remote" to info.summary()))
+                return
+            }
+            synchronized(pendingRemoteCandidates) {
+                pendingRemoteCandidates.add(RemoteCandidate(candidate, sdpMid, sdpMLineIndex))
+            }
+            AppLog.w(
+                TAG,
+                "ice_deferred",
+                mapOf("remote" to info.summary(), "queued" to pendingRemoteCandidates.size.toString()),
+            )
+            return
+        }
+        AppLog.i(TAG, "ice_candidate_remote", mapOf("remote" to info.summary()))
         connection.addIceCandidate(IceCandidate(mid, sdpMLineIndex ?: 0, candidate))
     }
 
@@ -275,6 +412,8 @@ class CallSession(
         closed = true
         statsTimer?.shutdownNow()
         statsTimer = null
+        connectivityWatchdog?.shutdownNow()
+        connectivityWatchdog = null
         val connection = peerConnection
         peerConnection = null
         videoTrack = null
@@ -325,19 +464,70 @@ class CallSession(
 
     private val events = object : PeerConnectionObserverImpl.Events {
         override fun onIceCandidate(candidate: IceCandidate) {
+            // 【t44】本端候选类型/地址/端口落盘（判断是否真的 gather 到 host/srflx/relay）
+            val info = IceCandidateInfo.parse(candidate.sdp)
+            candidateCounter.addLocal(info)
+            AppLog.i(
+                TAG,
+                "ice_candidate_local",
+                mapOf(
+                    "local" to info.summary(),
+                    "mid" to (candidate.sdpMid ?: "-"),
+                    "idx" to candidate.sdpMLineIndex.toString(),
+                ),
+            )
             signaling.sendIce(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex)
-            emitEvent(IceEventType.CANDIDATE, "mid=${candidate.sdpMid} idx=${candidate.sdpMLineIndex}")
+            emitEvent(IceEventType.CANDIDATE, "mid=${candidate.sdpMid} idx=${candidate.sdpMLineIndex} ${info.summary()}")
         }
 
         override fun onIceConnectionState(state: PeerConnection.IceConnectionState) {
+            // 事件名由 PeerConnectionObserverImpl 统一落盘（`pc_ice_connection_state`，§9.1 固定表），
+            // 这里只做状态机处理，避免同名事件重复两遍、字段不一致。
+            if (state == PeerConnection.IceConnectionState.CONNECTED ||
+                state == PeerConnection.IceConnectionState.COMPLETED
+            ) {
+                stopConnectivityWatchdog(ifConnected = true)
+            }
             emitEvent(IceEventType.ICE_CONNECTION, state.name)
         }
 
         override fun onIceGatheringState(state: PeerConnection.IceGatheringState) {
             emitEvent(IceEventType.ICE_GATHERING, state.name)
             if (state == PeerConnection.IceGatheringState.COMPLETE) {
-                emitEvent(IceEventType.END_OF_CANDIDATES, "complete")
+                // 新增事件名（t44，已在 reports/15-connection-defect.md 登记）：
+                // 收集结束时一次性给出**按类型的候选计数**，这是"到底 gather 到什么"的直接证据。
+                AppLog.i(
+                    TAG,
+                    "ice_gathering_complete",
+                    mapOf("local" to candidateCounter.localSummary(), "relay" to candidateCounter.localRelayCount().toString()),
+                )
+                emitEvent(IceEventType.END_OF_CANDIDATES, "complete local=${candidateCounter.localSummary()}")
             }
+        }
+
+        override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
+            // 事件名由 PeerConnectionObserverImpl 统一落盘（`pc_connection_state`，t44 新增，已在报告登记）
+            if (state == PeerConnection.PeerConnectionState.CONNECTED) {
+                stopConnectivityWatchdog(ifConnected = true)
+            }
+            emitEvent(IceEventType.ICE_CONNECTION, "transport=${state.name}")
+        }
+
+        override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {
+            val local = IceCandidateInfo.parse(event.local?.sdp ?: "")
+            val remote = IceCandidateInfo.parse(event.remote?.sdp ?: "")
+            emitEvent(
+                IceEventType.CANDIDATE_PAIR,
+                "local=${local.summary()} remote=${remote.summary()} reason=${event.reason ?: "-"}",
+            )
+        }
+
+        override fun onIceCandidateError(event: IceCandidateErrorEvent) {
+            emitEvent(
+                IceEventType.CANDIDATE,
+                "ice_candidate_error url=${event.url ?: "-"} addr=${event.address ?: "-"}:${event.port} " +
+                    "code=${event.errorCode} text=${event.errorText ?: "-"}",
+            )
         }
 
         override fun onSignalingState(state: PeerConnection.SignalingState) {
@@ -380,6 +570,125 @@ class CallSession(
 
     private fun emitEvent(type: IceEventType, detail: String) {
         listener.onIceEvent(IceEvent(type, detail))
+    }
+
+    // ============================ t44：竞态兜底与连通性看门狗 ============================
+
+    /**
+     * 回放 PeerConnection 就绪前暂存的远端 offer/answer/ICE（t44 真机缺陷①修复）。
+     *
+     * 为什么必须做：`joined` 与 `offer` 是两条独立信令，joiner 侧如果 offer 先到，
+     * 原实现在 `peerConnection == null` 时**静默 return** ⇒ 信令侧只看到 `offer_forward`、
+     * 没有 `answer_forward`，且 UI 无任何错误提示（真机现象完全一致）。
+     * 这里保证"**收到 offer 必回 answer**"：暂存 → 就绪后立即回放；真回放失败则经
+     * [Listener.onError] 报出可诊断错误。
+     */
+    private fun flushPendingRemote() {
+        val offer = pendingRemoteOffer
+        val answer = pendingRemoteAnswer
+        val candidates = synchronized(pendingRemoteCandidates) {
+            val copy = ArrayList(pendingRemoteCandidates)
+            pendingRemoteCandidates.clear()
+            copy
+        }
+        if (offer != null) {
+            pendingRemoteOffer = null
+            AppLog.i(TAG, "offer_replayed", mapOf("sdp_bytes" to offer.length.toString()))
+            onRemoteOffer(offer)
+        }
+        if (answer != null) {
+            pendingRemoteAnswer = null
+            AppLog.i(TAG, "answer_replayed", mapOf("sdp_bytes" to answer.length.toString()))
+            onRemoteAnswer(answer)
+        }
+        if (candidates.isNotEmpty()) {
+            AppLog.i(TAG, "ice_replayed", mapOf("count" to candidates.size.toString()))
+            for (candidate in candidates) {
+                onRemoteIceCandidate(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex)
+            }
+        }
+        AppLog.i(
+            TAG,
+            "remote_replay_done",
+            mapOf(
+                "offer" to (offer != null).toString(),
+                "answer" to (answer != null).toString(),
+                "candidates" to candidates.size.toString(),
+            ),
+        )
+    }
+
+    /**
+     * ICE/DTLS 连通性看门狗（t44）。
+     *
+     * 目的：把"停在正在连接会议"从**不可诊断**变成**一次复测即可定因** ——
+     * 15 s 打 WARN（含本端/对端候选类型计数），30 s 打 ERROR 并**上报 UI**（含「强制中继」提示）。
+     * 若期间 ICE/传输已 CONNECTED，则取消（记 `ice_watchdog_ok`）。
+     */
+    private fun startConnectivityWatchdog(connection: PeerConnection) {
+        if (connectivityWatchdog != null || closed) return
+        val timer = Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "ice-watchdog").apply { isDaemon = true }
+        }
+        connectivityWatchdog = timer
+        connectivityWatchdogStartMs = System.currentTimeMillis()
+        AppLog.i(TAG, "ice_watchdog_started", mapOf("timeout_ms" to ICE_WARN_MS.toString()))
+        timer.schedule({ checkConnectivity(connection, ICE_WARN_MS) }, ICE_WARN_MS, TimeUnit.MILLISECONDS)
+        timer.schedule({ checkConnectivity(connection, ICE_FAIL_MS) }, ICE_FAIL_MS, TimeUnit.MILLISECONDS)
+    }
+
+    /** 连通性仍未建立时的诊断/上报；[afterMs] 区分 WARN（15 s）与 ERROR（30 s）两档。 */
+    private fun checkConnectivity(connection: PeerConnection, afterMs: Long) {
+        if (closed) return
+        val iceState = try {
+            connection.iceConnectionState()
+        } catch (t: Throwable) {
+            null
+        }
+        val transportState = try {
+            connection.connectionState()
+        } catch (t: Throwable) {
+            null
+        }
+        if (iceState == PeerConnection.IceConnectionState.CONNECTED ||
+            iceState == PeerConnection.IceConnectionState.COMPLETED
+        ) {
+            stopConnectivityWatchdog(ifConnected = true)
+            return
+        }
+        val fields = mapOf(
+            "after_ms" to afterMs.toString(),
+            "ice_state" to (iceState?.name ?: "-"),
+            "transport" to (transportState?.name ?: "-"),
+            "local_candidates" to candidateCounter.localSummary(),
+            "remote_candidates" to candidateCounter.remoteSummary(),
+            "local_relay" to candidateCounter.localRelayCount().toString(),
+            "remote_desc_set" to remoteDescriptionSet.toString(),
+        )
+        if (afterMs >= ICE_FAIL_MS) {
+            AppLog.e(TAG, "ice_timeout", fields)
+            listener.onError(
+                "ICE 未连通（本端候选 ${candidateCounter.localSummary()}；" +
+                    "对端候选 ${candidateCounter.remoteSummary()}）。" +
+                    "可在诊断页打开「强制中继」后重试，并立即导出日志",
+            )
+        } else {
+            AppLog.w(TAG, "ice_not_connected", fields)
+        }
+    }
+
+    /** 停止看门狗；[ifConnected] 为真表示"因已连通而停止"（记一条正面证据）。 */
+    private fun stopConnectivityWatchdog(ifConnected: Boolean) {
+        val timer = connectivityWatchdog ?: return
+        connectivityWatchdog = null
+        if (ifConnected) {
+            AppLog.i(
+                TAG,
+                "ice_watchdog_ok",
+                mapOf("elapsed_ms" to (System.currentTimeMillis() - connectivityWatchdogStartMs).toString()),
+            )
+        }
+        timer.shutdownNow()
     }
 
     /** 每 2 s 拉一次 stats（§7.4）。 */

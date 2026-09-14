@@ -1,8 +1,10 @@
 package com.example.webrtcdemo.webrtc
 
 import com.example.webrtcdemo.log.AppLog
+import org.webrtc.CandidatePairChangeEvent
 import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
+import org.webrtc.IceCandidateErrorEvent
 import org.webrtc.MediaStream
 import org.webrtc.PeerConnection
 import org.webrtc.RtpReceiver
@@ -15,8 +17,13 @@ import org.webrtc.RtpReceiver
 //
 // 实现集合取 org.webrtc M129 的 PeerConnection.Observer 经典必需集
 // （与官方 AppRTC 的 PeerConnectionClient.Observer 一致）；
-// 其余带默认实现的方法（onTrack / onConnectionChange / onSelectedCandidatePairChanged 等）
-// 不覆盖，避免依赖不确定的默认实现形态。
+// 【t44 诊断加固】额外覆盖三个**默认实现**的回调（本版 jar 实测存在：
+// `javap org.webrtc.PeerConnection$Observer` 列出 onConnectionChange /
+// onSelectedCandidatePairChanged / onIceCandidateError）：
+//   onConnectionChange(PeerConnectionState)                    → 传输/DTLS 是否真正建立（CONNECTED）
+//   onSelectedCandidatePairChanged(CandidatePairChangeEvent)   → 被选中的候选对（本地/远端类型）
+//   onIceCandidateError(IceCandidateErrorEvent)                → 候选/检查错误（STUN/TURN 层）
+// 真机「连不通」时，这三者是把"停在连通性检查"与"根本没建链"区分开的关键证据。
 // ============================================================================
 
 /**
@@ -60,6 +67,15 @@ class PeerConnectionObserverImpl(private val events: Events) : PeerConnection.Ob
 
         /** 新增远端轨道接收器（Unified Plan 路径）。 */
         fun onAddTrack(receiver: RtpReceiver, streams: Array<MediaStream>)
+
+        /** 传输层（含 DTLS）状态变化：`CONNECTED` 才代表 DTLS 握手成功（t44）。 */
+        fun onConnectionChange(state: PeerConnection.PeerConnectionState) = Unit
+
+        /** 选中的候选对变化：本地/远端候选类型（t44；`host/srflx/relay`）。 */
+        fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) = Unit
+
+        /** 候选/检查层错误（STUN/TURN 分配失败、绑定失败等，t44）。 */
+        fun onIceCandidateError(event: IceCandidateErrorEvent) = Unit
     }
 
     override fun onSignalingChange(newState: PeerConnection.SignalingState) {
@@ -108,6 +124,61 @@ class PeerConnectionObserverImpl(private val events: Events) : PeerConnection.Ob
     override fun onAddTrack(receiver: RtpReceiver, mediaStreams: Array<MediaStream>) {
         AppLog.i(TAG, "pc_add_track", mapOf("kind" to (receiver.track()?.kind() ?: "-")))
         events.onAddTrack(receiver, mediaStreams)
+    }
+
+    /**
+     * 传输层状态（含 DTLS 握手结果）。
+     *
+     * `CONNECTED` 出现即代表 ICE 已完成**且** DTLS 握手成功；真机"停在正在连接会议"
+     * 时该事件通常只会看到 `CONNECTING`/`FAILED` —— 这是判定"是否真的建链"的第一手证据（t44）。
+     */
+    override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
+        val fields = mapOf(
+            "state" to newState.name,
+            // 本版 org.webrtc 没有独立的 "dtls_state" 回调：**DTLS 完成即传输 CONNECTED**
+            // （ICE 完成后立即进入 DTLS 握手），故这里显式标注二者的关系，便于日志检索。
+            "dtls" to (newState == PeerConnection.PeerConnectionState.CONNECTED).toString(),
+        )
+        if (newState == PeerConnection.PeerConnectionState.FAILED) {
+            AppLog.e(TAG, "pc_connection_state", fields)
+        } else {
+            AppLog.i(TAG, "pc_connection_state", fields)
+        }
+        events.onConnectionChange(newState)
+    }
+
+    /** 选中的候选对（本地/远端类型 + 地址端口），决定 P2P 还是 RELAY（t44）。 */
+    override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {
+        val local = IceCandidateInfo.parse(event.local?.sdp ?: "")
+        val remote = IceCandidateInfo.parse(event.remote?.sdp ?: "")
+        AppLog.i(
+            TAG,
+            "selected_candidate_pair",
+            mapOf(
+                "local" to local.summary(),
+                "remote" to remote.summary(),
+                "mode" to if (local.isRelay() || remote.isRelay()) "RELAY" else "P2P",
+                "reason" to (event.reason ?: "-"),
+                "last_data_ms" to event.lastDataReceivedMs.toString(),
+            ),
+        )
+        events.onSelectedCandidatePairChanged(event)
+    }
+
+    /** 候选/检查错误（STUN 绑定失败、TURN 分配失败等）——真机连不通时必须能看到（t44）。 */
+    override fun onIceCandidateError(event: IceCandidateErrorEvent) {
+        AppLog.w(
+            TAG,
+            "pc_ice_candidate_error",
+            mapOf(
+                "url" to (event.url ?: "-"),
+                "address" to (event.address ?: "-"),
+                "port" to event.port.toString(),
+                "code" to event.errorCode.toString(),
+                "text" to (event.errorText ?: "-"),
+            ),
+        )
+        events.onIceCandidateError(event)
     }
 
     private companion object {
