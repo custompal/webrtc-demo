@@ -935,7 +935,7 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 - 因此本项**按 medium（潜在、需裁定）**记，不作失败判定：请 captain 二选一 —— **(i) 落 B**（补 AV1 非 native 桩，同时满足判据③=194 与 §13.6），或 **(ii) 明确裁定"A 可接受"**，并在交付说明里写明"AV1 路径不可达 + 若启用则 `NoSuchMethodError`"。
 
 #### 门禁脚本 `scripts/check_jn_binding.py` 的评价（我**未能执行**，只做静态审查 + 等价复跑）
-- **我（verifier 容器）无法运行它**：本容器 **无 python3**（`command -v python3/python/python3.11/python3.12` 全空）⇒ **署名作者在宿主机执行不受影响**（其给的 staging 原始输出即宿主侧结果），但**容器内不可复跑**；引用该脚本时请注明执行环境。另该文件当前为 **`M`（未提交）**，与 `1621d72` 入库版可能不同（mtime 18:08、mode 0600）——请注明以哪一版为准。**我没有执行它**，下述 staging 结论全部由我自己的 `javap`/常量池扫描得出。
+- **我（verifier 容器）无法运行它**：本容器 **无 python3**（`command -v python3/python/python3.11/python3.12` 全空）⇒ **署名作者在宿主机执行不受影响**（其给的 staging 原始输出即宿主侧结果），但**容器内不可复跑**；引用该脚本时请注明执行环境。另该文件当前为 **`M`（未提交）**，与 `1621d72` 入库版可能不同（mtime 18:08、mode 0600）——请注明以哪一版为准。**我没有执行它**，下述 staging 结论全部由我自己的 `javap`/常量池扫描得出。 **← 就地更正（§13.26(6)/§13.12(d)）：容器内 `python3` 在盘可用（`webrtc-build/src/third_party/cpython3/host/bin/python3` = 3.11.9；另有 linux-amd64 与 depot_tools 的 cpython3），加 PATH 即可跑；本容器"无 python3"的说法作废（真缺仅 `unzip`/`strings`）。**
 - **静态审查要点**：`KNOWN_EXEMPT = {"org_webrtc_LibaomAv1Encoder_create"}`（`:52`）会把 AV1 未覆盖项计为"已知豁免"，`RESULT` 仍 **PASS**（`:188-199`、`:211`）⇒ **该门禁对 A 与 B 都会 PASS**，因此它**不能**用来证明"AV1 路径安全"，只能证明判据①④与②（这是本修复的实质部分）。建议注释里写明这一边界，避免"闸门绿 = AV1 安全"的误读。
 - **它设计得对的地方**：符号期望值按官方规则正向复算（`Java_` + `jni_mangle('J/N')` + `_` + `jni_mangle(hashed)`，`_`→`_1`/`$`→`_00024`/`/`→`_`），并做**双向**差集 ⇒ 与 §13.3/§13.7 的判据同构（不是数量对齐）✅
 
@@ -1006,7 +1006,7 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 
 **工具陷阱（对方首报、我复现认同）**：`llvm-objdump -d --disassemble-symbols=JNI_OnLoad` 在符号匹配失败时会**静默退化为全文件反汇编**（其第一遍误数出 `blr=324`）⇒ 数 `blr` 必须用显式 `--start-address/--stop-address`（本报告 §13.1 即如此，`0x29f718–0x29f78c` → **0 blr / 6 bl**）。
 
-**门禁脚本可执行性提醒（重复强调）**：`scripts/check_jn_binding.py` 需要 `python3`，而**本容器无 `python3`**（§13.8 已记）⇒ 在容器内不可复跑；其 `KNOWN_EXEMPT` 白名单使 A/B 两形态都会 PASS（不构成"AV1 安全"证据）。**t34 我会用 `jar`/`javap` + 我自写的 `jni_mangle` 双向集合脚本独立复算，不依赖该脚本。**
+**门禁脚本可执行性提醒（重复强调）**：`scripts/check_jn_binding.py` 需要 `python3`，而**本容器无 `python3`**（§13.8 已记）⇒ 在容器内不可复跑；其 `KNOWN_EXEMPT` 白名单使 A/B 两形态都会 PASS（不构成"AV1 安全"证据）。**t34 我会用 `jar`/`javap` + 我自写的 `jni_mangle` 双向集合脚本独立复算，不依赖该脚本。** **← 就地更正（§13.26(6)/§13.12(d)）：容器内 `python3` 在盘可用（`webrtc-build/src/third_party/cpython3/host/bin/python3` = 3.11.9；另有 linux-amd64 与 depot_tools 的 cpython3），加 PATH 即可跑；本容器"无 python3"的说法作废（真缺仅 `unzip`/`strings`）。**
 
 
 ### 13.11 **t31 已落位实测（2026-09-14 18:17:28）**：jar/AAR 侧路线 A(**B 形态**) 完成，APK 侧仍待重编（**历史小节**：APK 侧已于 t33 完成、t34 复验为 **已闭合**，见 §13.26）
@@ -1056,7 +1056,7 @@ $NDK/llvm-objdump -d --start-address=0x29f718 --stop-address=0x29f87c <so> | awk
 #### (d) 工具可用性修正（本容器）
 - **无 `strings`**：`strings -a <so> | grep -c …` 会"静默返回 0"（管道收到空输入）——**不可用作"字符串不存在"的证据**！请用 **`grep -a -c '<pat>' <so>`**（或 node 扫二进制）。我以此复测：`org/jni_zero/GEN_JNI` = 0、`org_webrtc_` = 0、`org_jni_1zero_` = 0 ✅（§13.1 的结论不变，但取证命令须换）。
 - **无 `unzip`**（§13.7(d) 已记）：改用 `jar tf` / `jar xf`。
-- ⚠️ **"静默空输入"陷阱（webrtc-builder 首报、我复核同意）**：容器内**既无 `unzip` 也无 `python3`**，用它们查 zip/class 会**静默得到 0**；而**空输入的 sha256 恒为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`** ⇒ 若某次校验输出该值，几乎一定是"没读到数据"而非"文件为空"。**容器内可复跑**的正解 = `jar`/`javap` + 常量池扫描（本报告全部判据如此）。
+- ⚠️ **"静默空输入"陷阱（webrtc-builder 首报、我复核同意）**：容器内**既无 `unzip` 也无 `python3`**，用它们查 zip/class 会**静默得到 0**；而**空输入的 sha256 恒为 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`** ⇒ 若某次校验输出该值，几乎一定是"没读到数据"而非"文件为空"。**容器内可复跑**的正解 = `jar`/`javap` + 常量池扫描（本报告全部判据如此）。 **← 就地更正（§13.26(6)/§13.12(d)）：容器内 `python3` 在盘可用（`webrtc-build/src/third_party/cpython3/host/bin/python3` = 3.11.9；另有 linux-amd64 与 depot_tools 的 cpython3），加 PATH 即可跑；本容器"无 python3"的说法作废（真缺仅 `unzip`/`strings`）。**
 - **`javap -classpath <jar> J.N` 可用（原"单字母包名会失败"的 caveat 已被 native-dev 本人撤回）**：我实测 `javap -p -classpath <jar> J.N`（native=193）与 `… J/N`、`… org.jni_zero.GEN_JNI`（native=0）**均正常**；"先抽条目再 `javap -p <dir>/J/N.class`"**同样可用、非必需**，仅作更稳的规范做法（t34 采用后者以留原样文本）。该 caveat **从未进入任何文件**（我复核其 `logs/{t34-gate,README-logs,commands-portable}.md` 中 `classpath` 命中 = **0/0/0**）⇒ 复现命令段**不含**"必须抽条目"的约束。
 - **JDK 版本口径（container）**：容器内在盘的 JDK 为 `webrtc-build/src/third_party/jdk/current/bin`（**`javap -version` = 25.0.4.1**，容器里没有 JDK 17）—— **读**方法列表/描述符与版本无关，但**要"重编复现"必须显式 `--release 17`**（本报告 §13.16 的现场重编即如此）。
 - **`t30/logs/commands-portable.md`（`588a8800…`）的环境表措辞偏强**：其"容器无 JDK ⇒ 门禁不能在容器跑"与实测不符 —— **默认 PATH 无，但 JDK/NDK 在盘、加 PATH 即可**（`jar`/`javap`/`java`/`llvm-nm`/`llvm-readelf` 立即可用 ⇒ 判据①②③④ 与 ELF 检查**容器内可复跑**）；真缺的只有 `unzip`/`python3`/`strings`（Python 版判据与 `unzip -oq` 走宿主/SSH）。native-dev 已认账；因写盘令**冻结不改**（避免作废该 sha）⇒ t34 记本条更正，解冻后由其改并按 P-13 同步新 sha。
@@ -1275,7 +1275,7 @@ stat -c %s J/N.class org/jni_zero/GEN_JNI.class                          # 6 924
 2. **交付件里的 AV1 桩并非"官方本目标输入"的产物**，但**也不是有人手写一段桩文本**：它由 **jni_zero 官方 `_stub_for_missing_native`** 生成（逐字 message `RuntimeException("Native method not present")` 相同），前提是**把 `LibaomAv1Encoder.java` 加进 `--java-sources-file`** 并开 `--add-stubs-for-missing-native`（`generate-final-B-with-av1.log` 的 `cmd` 逐字如此）⇒ 准确写法是"**官方生成器 + 扩展输入集 + 官方开关**"。
 3. **行为层结论不变**：仅在真正创建软件 AV1 编码器时抛 `RuntimeException`；本项目走 VP9 ⇒ 不影响启动/通话。
 
-> ⚠️ **更正 webrtc-builder 本轮的论证**："不带 / 带 `--add-stubs-for-missing-native` → 同一个 sha256（逐字节相同）"与产物不符：其 `out/B` 日志显示**同时换了输入清单**（165 行含 libaom），而 A/B 的 srcjar 哈希本就不同（`2e352096…` vs `dca67dc7…`）。"**只加 flag、不改输入**"这一情形我**无法复跑**（本容器 **无 `python3`**），故该子命题记为**未验证**；本目标官方输入下"无 absent proxy ⇒ 无桩"由第 1 点的实测支持。
+> ⚠️ **更正 webrtc-builder 本轮的论证**："不带 / 带 `--add-stubs-for-missing-native` → 同一个 sha256（逐字节相同）"与产物不符：其 `out/B` 日志显示**同时换了输入清单**（165 行含 libaom），而 A/B 的 srcjar 哈希本就不同（`2e352096…` vs `dca67dc7…`）。"**只加 flag、不改输入**"这一情形我**无法复跑**（本容器 **无 `python3`**），故该子命题记为**未验证**；本目标官方输入下"无 absent proxy ⇒ 无桩"由第 1 点的实测支持。 **← 就地更正（§13.26(6)/§13.12(d)）：容器内 `python3` 在盘可用（`webrtc-build/src/third_party/cpython3/host/bin/python3` = 3.11.9；另有 linux-amd64 与 depot_tools 的 cpython3），加 PATH 即可跑；本容器"无 python3"的说法作废（真缺仅 `unzip`/`strings`）。**
 > 📌 报告内口径：§12.2(5) 引用的 `_stub_for_missing_native` 行号（`gen_jni_java.py:10-15`）与开关行号（`jni_registration_generator.py:280/:511`）**仍然正确**，但**出处须按本条表述**（扩展输入集触发，而非本目标官方输入）。
 
 ### 13.20 候选 jar 全矩阵（我逐项实测）——落位件 = `FINAL2` 的绑定类，但**缺 `FINAL2` 的版本统一**
@@ -1369,7 +1369,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 ```
 
 #### (c) 两项 checker（captain 报告 + 我的等价复跑）
-- `scripts/check_jn_binding.py`（**须宿主运行**：容器无 `python3`）：E1 `J.N` native 193 ↔ `.so` 193 **双向差集 0/0**、E2 `GEN_JNI` `native=0`/方法 194、E3 调用点 194/194、**豁免 0 与真缺失 0**，EXIT=0。
+- `scripts/check_jn_binding.py`（**须宿主运行**：容器无 `python3`）：E1 `J.N` native 193 ↔ `.so` 193 **双向差集 0/0**、E2 `GEN_JNI` `native=0`/方法 194、E3 调用点 194/194、**豁免 0 与真缺失 0**，EXIT=0。 **← 就地更正（§13.26(6)/§13.12(d)）：容器内 `python3` 在盘可用（`webrtc-build/src/third_party/cpython3/host/bin/python3` = 3.11.9；另有 linux-amd64 与 depot_tools 的 cpython3），加 PATH 即可跑；本容器"无 python3"的说法作废（真缺仅 `unzip`/`strings`）。**
   **我无法在容器执行该脚本**，改以 `jar`+`javap`+自写 `jni_mangle` 双向差集**等价复跑**，结论相同；且 **B 落位后"未被覆盖 = 0" ⇒ 其 `KNOWN_EXEMPT` 白名单已无触发场景**（此前"白名单使 A/B 都 PASS、故不能证 AV1 安全"的限定随之失效，§13.8）。
 - `scripts/check_jar_link_integrity.py`：509 类、严格缺失 0、`J/N` native 193（captain 报告）；我以**常量池扫描**等价复核：`*Jni` **48 存在 / 47 被引用 / 0 缺失 / 1 未引用（`Dav1dDecoderJni`）**。
 
@@ -1772,7 +1772,7 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
   ⇒ **K-17 读侧"零不可读"已达成**（此前"2 或 3 件不可读"的表述全部作废）。
 - **审计提示（身份口径）**：本轮 §13.26 的 8 次提交在 `git log --format='%cn'` 下显示为 **`env-installer`** —— 因仓内 `.git/config` 现为 `user.name=env-installer`（我**未改**该配置）；此前 verifier 名下的 65 次提交系以 `-c user.name=verifier` 提交。⇒ 审计归属请以**提交 hash + 提交内容**为准，勿仅看 `%cn`（本节后续提交已改回 `-c user.name=verifier`）。
 - **报告文件漂移续证（我 `[读盘 20:32:16]`）**：`reports/05-libwebrtc-build.md` = **995 行 / `bccea2ff…`**（与 §13.22(e) 现值一致）；`reports/15-java-jar-rebuild.md` = **828 行 / `3da734f8c19ba9f13b58572a490b886a3ef2e6031934877c2794164bc6ee90b6`**（mtime **18:57:27**）—— **晚于** native-dev 18:56:46 引用的"827 行 / `65cd51f4…`" **仅 1 分钟**即再次变更 ⇒ **"引用他人报告哈希前必须当场重取"**（P-13 ③）在本次会话内被**再次实证**；`git status --porcelain` 现已 **空**（此前在途的 `M` 已入库）。
-- **顺带更正一处他方假设**：**"容器内无 `python3`"不成立** —— 我用**交付树自带**的 `webrtc-build/src/third_party/cpython3/host/bin/python3`（3.11.9）在容器内**真实执行**了 `check_jn_binding.py`（§3.1 的 PASS/EXIT=0 即容器内读数；另需显式 `--javap/--nm`，见 F-2）。
+- **顺带更正一处他方假设**：**"容器内无 `python3`"不成立** —— 我用**交付树自带**的 `webrtc-build/src/third_party/cpython3/host/bin/python3`（3.11.9）在容器内**真实执行**了 `check_jn_binding.py`（§3.1 的 PASS/EXIT=0 即容器内读数；另需显式 `--javap/--nm`，见 F-2）。 **← 就地更正（§13.26(6)/§13.12(d)）：容器内 `python3` 在盘可用（`webrtc-build/src/third_party/cpython3/host/bin/python3` = 3.11.9；另有 linux-amd64 与 depot_tools 的 cpython3），加 PATH 即可跑；本容器"无 python3"的说法作废（真缺仅 `unzip`/`strings`）。**
 - **`t30/handoff` 校验和（我第一手复核，`[读盘 20:30]`）**：`SHA256SUMS.canonical` = **`2a59276e5a8a25ea…`**（479 B），`sha256sum -c` = **5 项全 OK**（`classes/J/N.class`、`classes/org/jni_zero/GEN_JNI.class`、srcjar、`src/J/N.java`、`src/org/jni_zero/GEN_JNI.java`）✅；原 `SHA256SUMS` = **`f5a599ad2a49ebdfa67527b13d2b2158e3846e8b8865ed3778669a7d242cee38`**（539 B，**未动**）但**不可直接 `-c`** —— 其行尾带人类可读注解（如 `GEN_JNI.class  (24910 B)`）⇒ `sha256sum -c` 报 `improperly formatted` / `FAILED open or read`（**不是文件损坏，是格式含注解**）⇒ 机器复核一律用 **`.canonical`**。
 
 #### (7) **第一手复跑**：`jni_zero generate-final` 四格对照（我**容器内**完成，升级此前"仅宿主侧"的结论；读盘 20:29）
