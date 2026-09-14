@@ -1,6 +1,11 @@
 package com.example.webrtcdemo.ui.call
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Share
@@ -84,6 +90,16 @@ fun CallScreen(
     var exportMessage by remember { mutableStateOf<String?>(null) }
     var exporting by remember { mutableStateOf(false) }
 
+    // 【t39 修复②】复制会议号：用**框架 ClipboardManager**（版本稳定，避开 Compose 侧
+    // `LocalClipboardManager` 在不同 BOM 版本的弃用差异）+ Toast 可见反馈。
+    // `CLIPBOARD_SERVICE` 是 Android 核心系统服务（API 1 起恒存在），故此处强转安全。
+    val copyRoomId: () -> Unit = {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        // label 与内容都用房间号本身（避免为此再新增第 4 个字符串资源）
+        clipboard.setPrimaryClip(ClipData.newPlainText(roomId, roomId))
+        Toast.makeText(context, context.getString(R.string.call_room_code_copied), Toast.LENGTH_SHORT).show()
+    }
+
     // 渲染器：引擎初始化完成后才能创建（initCall 在同一次 LaunchedEffect 里先行）
     var renderers by remember { mutableStateOf<Pair<SurfaceViewRenderer?, SurfaceViewRenderer?>?>(null) }
 
@@ -144,6 +160,36 @@ fun CallScreen(
                     .height(150.dp),
                 factory = { localRenderer },
             )
+        }
+
+        // 【t39 修复②】会议号**常驻顶部覆盖层**：整个通话生命周期可见（原先只在 isConnecting
+        // 遮罩内渲染 ⇒ 连接完成/被远端画面盖住后房主无法把 6 位房间号告知第二台设备）。
+        // 空值守卫：roomId 为空白时不渲染，避免出现"会议号："空壳。
+        if (roomId.isNotBlank()) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp)
+                    .background(Color(0x99000000), MaterialTheme.shapes.small)
+                    .clickable(onClick = copyRoomId)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.call_room_code, roomId),
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                IconButton(onClick = copyRoomId) {
+                    Icon(
+                        imageVector = Icons.Filled.ContentCopy,
+                        contentDescription = stringResource(R.string.call_room_code_copy_desc),
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
         }
 
         // 状态面板 + 控制栏

@@ -28,9 +28,24 @@ class FrameNormalizer(private val downstream: CapturerObserver) : CapturerObserv
     /**
      * 采集到一帧。
      *
-     * - I420 帧：原帧**零拷贝透传**（不做任何 release）；
-     * - 其它格式：`toI420()`（在采集线程完成 GL 读取）→ 构造新 `VideoFrame`（rotation 已烘进 I420，故置 0）
-     *   → 交给下游 → `out.release()`。
+     * - I420 帧：原帧**零拷贝透传**（不做任何 release；**rotation 元数据随原帧一并保留**）；
+     * - 其它格式：`toI420()`（在采集线程完成 GL 读取）→ 构造新 `VideoFrame`，
+     *   **`rotation` 取 `frame.rotation` 原样保留** → 交给下游 → `out.release()`。
+     *
+     * ⚠️ **t39 真机缺陷修复（本地预览逆时针 90°）—— 为什么必须保留 rotation 元数据**：
+     * 上游 `toI420()` **只做 YUV 转换、不做任何旋转**：见
+     * `third_party/libwebrtc/include/sdk/android/api/org/webrtc/TextureBufferImpl.java:111-113`
+     * （`yuvConverter.convert(this)`；该文件全篇 `rotation` 命中数 = **0**）。
+     * 朝向由**渲染器读取 `VideoFrame.getRotation()` 元数据**得到：
+     * `.../org/webrtc/VideoFrameDrawer.java:204` → `renderMatrix.preRotate(frame.getRotation())`
+     * （`EglRenderer` → `drawFrame` 链路对 I420 与 texture 帧都走这里）；
+     * 编码器同样**直取元数据**：本工程 `encoder/Vp9VideoEncoder.kt:208` →
+     * `nativeEncode(..., normalizeRotation(frame.rotation), ...)`（doc/14 §6.6 第 635 行：
+     * "`VideoFrame.getRotation()` 直接映射"），且 doc/14 第 518 行要求 90/270 时交换编码尺寸。
+     * ⇒ 此处把 rotation **置 0** 会同时造成两个缺陷：①本地预览朝向错误；②编码器失去 90/270 尺寸交换信号。
+     *
+     * 注：doc/14 §7.4 第 692 行原先把第二实参（rotation）**写死为 0**，理由是"rotation 已烘进 I420"；
+     * 该假设已被上述上游源码证伪；勘误文本见 `reports/13-device-defect-fix.md`（doc/14 为冻结件，未直接改动）。
      *
      * @param frame 上游采集帧（所有权属上游）。
      */
@@ -62,7 +77,9 @@ class FrameNormalizer(private val downstream: CapturerObserver) : CapturerObserv
             AppLog.w(TAG, "frame_convert_failed", mapOf("reason" to "toI420_null"))
             return
         }
-        val converted = VideoFrame(i420, 0, frame.timestampNs)
+        // 【t39 修复】rotation 必须保留：`toI420()` 不做旋转（TextureBufferImpl.java:111-113），
+        // 朝向由渲染器/编码器读取 VideoFrame.getRotation() 元数据决定（VideoFrameDrawer.java:204）。
+        val converted = VideoFrame(i420, frame.rotation, frame.timestampNs)
         try {
             downstream.onFrameCaptured(converted)
         } finally {

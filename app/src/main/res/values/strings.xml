@@ -63,4 +63,12 @@
     <string name="diag_low_res">弱设备降级 480x360@24</string>
     <string name="diag_save_as">另存为…</string>
     <string name="call_status_peer_ids">对端身份</string>
+
+    <!-- ==================== 通话页：会议号常驻与复制（t39 真机缺陷②） ==================== -->
+    <!-- 顶部常驻覆盖层文案：显示当前会议号（%1$s = 房间号） -->
+    <string name="call_room_code">会议号：%1$s</string>
+    <!-- 复制成功后的可见反馈（Toast） -->
+    <string name="call_room_code_copied">会议号已复制</string>
+    <!-- 复制按钮的无障碍描述 -->
+    <string name="call_room_code_copy_desc">复制会议号</string>
 </resources>
