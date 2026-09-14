@@ -1560,7 +1560,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 #### (e) 与 §13.23/§13.24 的关系（三态收口）
 - **K-15（APK 侧）**现有**两层独立支撑**：① captain 转录（§13.24）；② **本轮我自跑的载荷/dex/v2 全项**（(b)）。**结论不变：已闭合**（但见 (g) 的真机限定）。
 - **`ef29e00c…` 非交付**裁定不变；其"语义等价"的**类集合 26 195/26 195**与**六载荷逐件相同**两条已由我独立复算。
-- **仍未独立复算**：t39 的"7 个差异 dex 的 `code_items` **机器码逐字节相同**"（我只核了该冻结件**存在且指纹一致**：`webrtc-build/t39-apk-crosscheck/t39-apk-diff.freeze-682e02cad862cd76.log` = 242 行 / `682e02cad862cd76…` / 22 901 B；**未**重新推导其结论）。
+- **仍未由我（verifier）自行推导、但已有两路独立复算在案**：t39 的"7 个差异 dex 的 `code_items` **机器码逐字节相同**" —— **① webrtc-builder 用区级 `map_list` 解析**（其已按**官方 DEX type 码**更正标签：逐字节相同的区 = `code_items(0x2001)`、`class_data_items(0x2000)`、`debug_info(0x2003)`、`annotation_items(0x2004)`、`method_ids`、`type_ids`、`proto_ids`、`field_ids`、`type_lists`；**不同的区 = header(7/7)、`string_data(0x2002, 7/7)`、`annotation_set_items(0x1003, 3/7)`、`class_defs(3/7)`、`encoded_arrays(0x2005, 3/7)`、`annotations_directories(0x2006, 2/7)`、`string_ids(2/7)`、`map_list(3/7)`**；其早前"`string_data` 逐字节相同"**是错的并已撤回**，该错句**从未进入本报告**）；**② android-dev 用方法级 `code_item`/`code_off` 内容**独立复核亦为真。⇒ **运行语义零影响**、**"整包非逐字节可复现但语义等价"**成立。**我本人核对到的层** = 类集合 **26 195/26 195**、逐 dex 类集合 **14/14 相同**、JNI 关键条目逐字节相同（§13.25(b)/§13.23 表）。
 
 #### (f) 治理注记（供 captain 处置；我**不改板、不追认**）
 1. **"产出入方评审"的边界情形**：t30 的 `J/N`+`GEN_JNI` 字节由 **native-dev** 生成，t31/t33 的**落位与构建由 captain 完成**，而 **t34 的 verdict 由 native-dev 给出** ⇒ 严格说不是"评审自己的实现"（实现方是 captain），但**是"评审自己产出的被落位字节"**。若团队口径要求 review 必须由**未参与该产物生成**者署名，则需**新建 verifier 名下任务**（我不能自claim 已完成任务）。
