@@ -1870,4 +1870,49 @@ libjingle 757cef81… 12 946 912 B / libc++_shared c9dbf4ec… 1 356 968 B / lib
 
 ---
 
+## 13.27 结构级指纹加固：锚点 vs `ef29e00c…` 逐 dex `CLASS/NAME/TYPE/ACCESS` 序列（captain 指定，最后一项）
+
+- **授权与边界**：captain 指定"最后一项：完成后只提交 `reports/99` 并回一行结论，然后静默"。本轮**只读**：未修改 `artifacts/`、`app/build/`、jar/AAR/`.so` 任何被验证产物；**无板面任务**，记为 verifier 只读复验。
+- **方法（自写脚本，可复跑）**：输入用**不可变副本** `artifacts/app-debug-{36ba3ec6,30c41ac9,ef29e00c}.apk`（**不用** P-16 标记为易失的 `app/build/**`）；`zipfile` 取 `classes*.dex`，`android-sdk/build-tools/34.0.0/dexdump`（7 297 120 B）逐 dex 输出，按 4 条正则抽 `CLASS`/`NAME`/`TYPE`/`ACCESS` 序列成结构指纹，逐 dex `cmp`。
+  - 固化件 sha256：`struct-eq-36ba.py` = `1e56e87f317157e41c7ae43ef1388ac521e4e5d53258fc413551e75b278913aa`；`classdiff.py` = `2286c1f084cf75f43ab5e097bae7a00760c9e8dc6b6932de5766ad990b29d391`。
+  - 日志 sha256：新锚点对 = `d0d4ad9dd0679cfe6d320e79bfd95e31480cc0991eda779467ad3efd26b0caec`（3 188 B / 76 行）；类级定位 = `3a19cbd0e14cbffba22d0736665f5e874fb7069a4257206fd0a009b37c9df6b8`（6 805 B）；旧锚点对 = `bc4a65445373e7d7794959803a346ce203ff26292fd054f5f4a44fd642865078`（1 611 B / 18 行）。
+- **实测 1（captain 指定对象）：新锚点 `36ba3ec6…` vs `ef29e00c…`**（原始输出摘关键行）
+
+```
+输入 A(锚点)  artifacts/app-debug-36ba3ec6.apk  sha256=36ba3ec6…  size=33310685
+输入 B(隔离)  artifacts/app-debug-ef29e00c.apk  sha256=ef29e00c…  size=33309445
+A dex 数=14  B dex 数=14  集合相同=True
+classes.dex    字节相同=True  结构行 A=307662 B=307662 结构指纹=相同
+classes2.dex   字节相同=False 结构行 A=2292   B=2283   结构指纹=**不同**
+classes3.dex   字节相同=False 结构行 A=1884   B=1884   结构指纹=相同
+classes5.dex   字节相同=False 结构行 A=997    B=956    结构指纹=**不同**
+classes6.dex … 相同；classes9/11/12/14 字节不同而结构相同；classes13.dex 字节相同 219899/219899
+结构指纹(CLASS/NAME/TYPE/ACCESS 序列)：相同 dex = 12 ；不同 dex = 2 ['classes2.dex', 'classes5.dex']
+```
+
+  ⇒ **不是 14/14，而是相同 12 / 不同 2**。
+- **实测 2（我自行加做的对照）**：旧锚点 `30c41ac9…` vs `ef29e00c…`，**同一脚本、同一输入口径**
+
+```
+结构指纹(CLASS/NAME/TYPE/ACCESS 序列)：相同 dex = 14 ；不同 dex = 0 []
+（classes.dex/2/4/7/8/10/13 字节亦相同；classes3/5/6/9/11/12/14 字节不同而结构相同）
+```
+
+- **两处差异的类级定位**（`classdiff.py` / `3a19cbd0…`）
+
+  | dex | A(新锚点) 类数 | B 类数 | 差异内容 |
+  |---|---|---|---|
+  | `classes2.dex` | 99 | 99 | 唯一差异类 = `Lcom/example/webrtcdemo/R$string;`：**+3 个字符串 id** `call_room_code` / `call_room_code_copied` / `call_room_code_copy_desc` |
+  | `classes5.dex` | 43 | 41 | `ui/call/CallScreenKt` 及合成类族：`$$ExternalSyntheticLambda0/1/3/6/7/8`（捕获对象由 `(Context,String)`→`CallViewModel` 等）、`ComposableSingletons$CallScreenKt`（+`lambda-4`）、`$CallScreen$6$4$3$*`（A）vs `$CallScreen$6$3$3$*`（B）、`lambda$21$lambda$20$$inlined$onDispose$1` vs `lambda$19$lambda$18…` |
+
+  - **差异类所属顶层包 = `['Lcom/example']`（唯一）** ⇒ **0 处**落在 `androidx/**`、`kotlin/**`、`kotlinx/**`、`org/webrtc/**`。
+- **定性与三态结论**
+  - **已验证**：① 旧锚点对 = **14/14 结构指纹相同**（**复现**了报告先前引用的结构级等价证据——其被测对象正是旧锚点）；② 新锚点对 = **12/14**，且两处差异**全部**落在 t39 已声明范围内（`reports/13-device-defect-fix.md`：仅 Kotlin/资源）：`res/values/strings.xml` 新增会议号相关 3 串 ⇒ `R$string`；`CallScreen.kt` 改动 ⇒ `CallScreenKt` 及其 lambda/合成类族。**方向性旁证**：`ef29e00c…`（19:04:43，t39 之前的重构建）**缺**这 3 个字符串与 `lambda-4`，锚点**有**；新锚点 = t42 对**已提交** t39 修复（`bc56901`）的重建 ⇒ 与提交时间线一致。
+  - **未验证 / 本证据不能证明**：该指纹是**签名级**（类描述符 / 成员名 / 类型 / 访问标志），**不含方法体字节码** ⇒ ① 它**不能**证明或否证 body-only 改动（如 `FrameNormalizer` rotation 常量修复）的存在；② 故**不得**据此写"`36ba3ec6…` 与 `ef29e00c…` 语义完全等价"。正确口径 = **"除 t39 修复面（`classes2.dex` 的 `R$string` + `classes5.dex` 的 `CallScreenKt` 族）外，14 个 dex 逐一签名级相同；另 6 个字节不同的 dex 结构亦全同"**。
+  - **旁证（与既有无复现性口径一致）**：两组比较均存在**字节不同而结构相同**的 dex（旧锚点对 7 个、新锚点对 6 个）⇒ 支持"APK **字节**不可复现、**结构**可复现"（差异落在 `string_data`/`map_list` 等区域，见 §13.24 区域级表）。
+  - **传递性推论（标记为推论，非实测）**：因 `30c41ac9…` ≡ `ef29e00c…`（结构 14/14）且新锚点仅 `classes2/5` 有别 ⇒ **两个锚点之间**的结构差异同样只落在这两个 dex。
+- **勘误 / 口径修正（并入最终口径）**：报告 §13.23 / §13.24 中"结构级指纹 14/14 相同"的表述，**适用范围 = 旧锚点 `30c41ac9…`**（本轮已复现，`bc4a6544…`）；对**新锚点 `36ba3ec6…`** 必须改用 **12/14 + 两处修复面差异**。凡引用该证据的收口行（含 K-15）按此限定读；**不影响** `verdict = pass` 与锚点钉值。
+
+---
+
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
