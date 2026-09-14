@@ -1141,6 +1141,30 @@ native-dev 称 webrtc-builder 在**构建树**内独立跑出同名 srcjar：`we
 - 上述**复现的是 A**（193 转发、无 AV1 桩）；
 - **B**（`dca67dc7…`，194 = 193 转发 + 1 条 AV1 非 native 桩）仍是 t30 侧产物，但其两份 class 已被**落位实测证实**：live jar 内 `J/N.class` = `1ff8d3ff…`、`GEN_JNI.class` = `a6e7edcf…`（§13.11）⇒ **实际交付采用的是 B**。
 
+### 13.17 ⚠️ 落位件 ≠ webrtc-builder 的 `FINAL.jar`：**45 个 `*Jni` 的"统一到 61"没有进落位件**（t33 前必须定夺）
+
+I 侧全部为我自跑（逐条目解压 + 逐类比较）。
+
+| 项 | **落位件**（live `third_party/libwebrtc/java/libwebrtc-java.jar`） | webrtc-builder 的 staging `FINAL.jar`（`tmp/jn-fix/`） |
+|---|---|---|
+| sha256 / 大小 / mtime | **`0c776934c1452b7b…`** / 1 206 602 B / **18:17:28** | `d0d05244a13ed059…` / 1 181 426 B / 18:07:34 |
+| 类数 | **509** | 509 |
+| **major 分布** | **`{55: 51, 61: 458}`** | **`{55: 2, 61: 507}`** |
+| 非 61 的类 | **51 个** = 45 个 `*Jni` + 6 个（`BuildConfig`、`NativeLibraries`、`Dav1dDecoder$Natives`、`Dav1dDecoder`、`EglBase10Impl$FakeSurfaceHolder`、`PeerConnection$Builder`） | **2 个** = `EglBase10Impl$FakeSurfaceHolder`、`PeerConnection$Builder`（及其书面说明的"源修订差异"） |
+| `J/N.class` | `1ff8d3ff40326433…`（= t30 handoff **B**） | `0eac3fb54ecb1d95…`（**不同字节**，两者 major 均 61） |
+| `GEN_JNI.class` | `a6e7edcf9b90a4f7…`（= handoff B） | `32448db8bf033fcd…`（**不同字节**） |
+| 绑定语义 | `J.N` native **193**、`GEN_JNI` native **0**、含 AV1 桩 → **B，可用** | 同（193 / 0 / 含桩）→ **B，可用** |
+| **48 个 `*Jni` 逐字节比较** | 基准 | **45 个不同、3 个相同**；两 jar 的 `*Jni` 成员集合**完全相同**（各 0 个独有） |
+
+**结论（三态）**：
+1. **已验证**：落位件在**绑定语义**上完成（判据①②③④全绿，§13.11），且 `*Jni` 成员齐备（48/48，被引用 47、缺失 0）。
+2. **已验证**：**落位件未包含"45 个 `*Jni` 统一到 61"**（它仍是 `{55:51, 61:458}`），而 `FINAL.jar` 才实现了统一（`{55:2, 61:507}`）⇒ **captain 的"全部统一到 61"要求在落位件上未达成**。
+3. **影响评估**：major **55 = Java 11**，AGP 8.5/D8 接受 ≤61 ⇒ **不是交付阻塞**（与早期 major 69 被拒不同）；但它是**与既定交付口径的偏离**，且两个候选的 `*Jni` 字节不同（45 类）⇒ **t33 用哪一份，dex 内容就不同**。
+4. **t33 前需 captain 二选一**：**(甲) 就用落位件**（版本分布按 `{55:51, 61:458}` 记，`J/N`/`GEN_JNI` 为 handoff B 字节）；**(乙) 重新落位 `FINAL.jar`**（达成 `{55:2, 61:507}`，但 `J/N`/`GEN_JNI` 换成其自身字节，须**重新复跑**判据①②③④ + §13.15 回归护栏）。
+
+#### 追加：`comm` 的 locale 陷阱（webrtc-builder 首报）
+其首跑 `comm -3` 得 214 行"伪差异"，加 `LC_ALL=C sort` 后为 0。**我本容器未能复现**：环境默认即 C/POSIX（`LANG` 空、`LC_CTYPE=POSIX`，实测默认与 `LC_ALL=C` 均为 0 行）⇒ 该陷阱依赖 UTF-8 collation 环境。**处置**：凡集合差集命令一律写 **`LC_ALL=C sort` + `LC_ALL=C comm`**（我自己的判定式用 node `Set`，不受 locale 影响）。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
