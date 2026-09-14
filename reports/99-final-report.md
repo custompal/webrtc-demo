@@ -842,10 +842,11 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 | **路线 A 判据 3** | `handoff/src/org/jni_zero/GEN_JNI.java`：`static native` = **0**、转发 `J.N.` 调用 = **193**、抛异常桩 = **1** | ✅ 转发层已替换 Placeholder |
 | AV1 处置 | `J/N.java:576-577` 与 `GEN_JNI.java:1035-1036` 均为**非 native 抛异常桩**（`throw new RuntimeException("Native method not present")`）；`out/A` 的 `J/N.java` **无**该桩 | 设计内豁免；集合相等按 **193↔193**（AV1 不计入） |
 | 编译产物（我已 `javap`，未复跑 `javac`） | `handoff/classes/J/N.class` = `1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932`、`handoff/classes/org/jni_zero/GEN_JNI.class` = `a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08`；两者 **major 61**；`J/N.class` **native = 193** + 非 native AV1 桩 1；`GEN_JNI.class` **native = 0**；`javap -classpath handoff/classes:<jar> J.N` 可解析 | 与源文件计数一致 |
-| **是否已落位** | **落位前（历史快照）**：jar `dc5f8919…`（508 条目）与 APK `721df1c8…` 内 `J/N.class` 均 = **0**。**现行（18:33:42 起）**：jar `0c776934…` 内 `J/N.class` = **1**（`1ff8d3ff…`）⇒ **K-15 的 jar/AAR 侧已闭合**；**APK 侧**：旧 `721df1c8…` 已在 t33 构建窗口被清理，**t33 新件见 §13.23（含双哈希分歧待裁定）** |
+| **是否已落位** | **落位前（历史快照）**：jar `dc5f8919…`（508 条目）与 APK `721df1c8…` 内 `J/N.class` 均 = **0**。**现行（18:33:42 起）**：jar `0c776934…` 内 `J/N.class` = **1**（`1ff8d3ff…`）⇒ **K-15 的 jar/AAR 侧已闭合**；**APK 侧 = 已闭合（captain 转录，见 §13.24）**：交付 APK `30c41ac9…` 的 dex 内 `LJ/N;` = 3、`GEN_JNI;` = 3、`PCF_Jni;` = 2 |
 
 
-### 13.6 路线 A 的**变体选择**与交叉核对（对象 = t30 handoff 在盘产物；新增于 t27 收尾后）
+### 13.6 路线 A 的**变体选择**与交叉核对（对象 = t30 handoff 在盘产物）
+> **收口状态（2026-09-14 18:33:42 起）**：**落位已完成，且落的就是本节推荐的 B**（jar `0c776934…` / AAR `8e8f2baf…` / `J/N.class 1ff8d3ff…` / `GEN_JNI.class a6e7edcf…`）；本节"输入请取 `handoff`（`dca67dc7…`）、别取 A"已是**既成事实**；A 变体 = **WITHDRAWN**（18:32:24 非授权落位 → 18:33:42 回滚，事故件隔离于 `tmp/jn-fix/QUARANTINE-A/`，见 §13.21）。
 
 > 触发：native-dev 于 t30 后追加"推荐 B（含 AV1 桩）"与若干可复算数字。以下**全部为我（verifier）自己复跑**的读数。
 
@@ -1016,7 +1017,7 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 | AV1 调用点 | `org.webrtc.LibaomAv1EncoderJni` 仍 `invokestatic` 该方法，**且 GEN_JNI 现提供非 native 桩** ⇒ 由 `NoSuchMethodError` 变为设计内 `RuntimeException("Native method not present")` | §13.8 分歧**已闭合** ✅ |
 | 两 class `major` | **61 / 61** | AGP/D8 可消费 |
 | live `libwebrtc-arm64.aar` | `8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099`（6 492 067 B，18:17:28）；内 `classes.jar` = **`0c776934…`，与 live jar 逐字节相同** | jar↔AAR 一致 ✅ |
-| **交付 APK** | 仍为 **`721df1c8…`**（33,293,061 B，**11:28:34**）；dex 14 个：含 `PeerConnectionFactoryJni` = 1、含 `GEN_JNI` = 2、**含 `LJ/N;` = 0** | ⇒ **APK 未重编，K-15 在交付物层面仍开放**（t33） |
+| **交付 APK** | **已重编（t33，captain 接管执行）**：`30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2`（33 309 445 B，mtime 18:41:59）；dex 14 个：`LJ/N;` = **3**、`Lorg/jni_zero/GEN_JNI;` = **3**、`PeerConnectionFactoryJni` = **2**。历史轮次 `721df1c8…`（33,293,061 B / 11:28:34，`LJ/N;` = 0）保留为前代 | ⇒ **K-15 交付物层面 = 已闭合**（见 §13.24；旧件证据存于仓外 `artifacts/app-debug-721df1c8.apk`） |
 
 **live jar 哈希时间线（供后来者对齐口径）**：
 `d98939bb…`（t16/t23 前，major 61 重编件；AAR 内 `classes.jar` 同哈希）→ `7dbe8400…`（10:53:11，**在 verifier（容器）可见树内已无保留**——全树含 `/tmp` 搜索 jar 无命中；但 native-dev 报其存在于**宿主 `/tmp/pre-deploy.jar`**（容器不可见）⇒ 该"内容等价"结论**可在宿主机复算、在本容器不可复算**。其宿主侧补充读数：两份 508 条目件**内容逐字节等价、仅打包元数据不同**——一份为 `504×2001-01-01 + 4×2026-09-14 10:52:2x`，另一份 `508×` 同一 epoch；**"4" 是 A 内部偏离其固定 epoch 的条目数，不是 A↔B 差异数**）→ `dc5f8919…`（11:05:10，508 条目，**无** `J/N`）→ **`0c776934…`（18:17:28，509 条目，含 `J/N` = handoff B，即本次落位）**。
@@ -1335,7 +1336,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 - `scripts/check_jar_link_integrity.py`：509 类、严格缺失 0、`J/N` native 193（captain 报告）；我以**常量池扫描**等价复核：`*Jni` **48 存在 / 47 被引用 / 0 缺失 / 1 未引用（`Dav1dDecoderJni`）**。
 
 #### (d) 状态变更（终报口径，逐条）
-1. **K-15 分层**：**jar/AAR 侧 = 已闭合**（`J/N` 在位 + `GEN_JNI` `native=0` + 193↔193 + 194/194，且为 **B** 形态）；**APK 侧 = 未闭合，待 t33 重编后由 t34 实测**。
+1. **K-15 分层**：**jar/AAR 侧 = 已闭合**（`J/N` 在位 + `GEN_JNI` `native=0` + 193↔193 + 194/194，且为 **B** 形态）；**APK 侧 = 已闭合（captain 转录，见 §13.24）** —— 交付 APK `30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2`（33 309 445 B）；dex `LJ/N;`=3 / `GEN_JNI;`=3 / `PCF_Jni;`=2；四 `.so` `p_align=0x4000`；`libjingle 757cef81…`、`libc++_shared c9dbf4ec…`（与 `jniLibs` 逐字节相同）；单测 46/0/0（19:07:05 XML）。
 2. **现行 APK `721df1c8…`（33 293 061 B / mtime 11:28:34）标注为"已被取代的历史轮次交付物"**（由未落位 jar 构建、dex 无 `LJ/N;`）。**（18:39 起 t33 构建窗口：仓库内 `app/build/outputs/apk/debug/app-debug.apk` 已被清理，仓库内已无任何 `.apk`；仓外快照 `/data/dsh/home/workspace/artifacts/app-debug-721df1c8.apk` 仍为同哈希 `721df1c8…`/33 293 061 B，历史证据以此快照为准；交付以 t33 新 APK 为准。）**
 3. **K-17 = 已闭合**（captain 修复 + 我复验，见 §6 与 §13.21 追加）。
 4. **"AV1 残余 / 悬空引用"表述作废**：B 落位后 `LibaomAv1EncoderJni` 的引用由非 native 桩兜住；该风险**仅适用于 A 变体**，仅作对照留档（§13.8/§13.19）。
@@ -1351,6 +1352,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 #### (f) t33 构建日志内的两道门（env-installer 新增，t34 直接引用）
 - **[P-11] dex 级绑定形态**（`scripts/build_app.sh:421` 起）：**jar 侧 + dex 侧双闸**查 `J.N` 与转发 `GEN_JNI`，任一为 0 即 FAIL —— 正是 K-15 的**交付层**判据（旧 APK dex 实测 `jn=0` ⇒ 必红）。
 - **[P-12] native 交付件对象漂移护栏**（`scripts/build_app.sh:382` 起）：APK 内 `libjingle_peerconnection_so.so` 必须 == `757cef81…`、`libc++_shared.so` == `c9dbf4ec…` —— 与我 §13.15(a)/§13.20 的护栏同向，可互为交叉验证。
+- **断言精确化（防假 FAIL，webrtc-builder 实测 + 我已复核）**：`GEN_JNI` = **方法 194 / `static` 194 / `native` 0 / 转发目标（`invokestatic J/N.`）193（全为 native）/ `athrow` 桩 1（不计入转发目标）**；`J.N` = **方法 194 / native 193 / 非 native 桩 1**。⇒ **不要**写 `forward_stub == 1`（会 FAIL）；应写 `gen_jni_methods == 194 ∧ gen_jni_native == 0 ∧ jn_native == 193`，或按 captain 口径"**194/194 且 `static native` = 0**"。我 `javap -c` 实测：`invokestatic J/N.` = **193**、`athrow` = **1**；AV1 桩字节码 = `new RuntimeException` → `ldc "Native method not present"` → `invokespecial` → `athrow`。
 - 两条均含**正负例验证**，且会原样出现在 t33 的构建日志里 ⇒ **t34 把它们作为输入证据引用，并在 APK 实体上独立复跑一次**。
 - 实现细节提醒：**P-11 的脚本体用 `unzip -q -o`（`scripts/build_app.sh:402`）⇒ 其执行环境须有 `unzip`（宿主有、容器无）**；我在容器侧的等价复算一律用 **`jar xf`**（结果等价，t34 两口径都给）。
 - ⚠️ **t33 构建过程会重写 `app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so`**（我实测 mtime 19:02:06）⇒ t34 必须在**构建结束后**核该 `.so` 仍为 `757cef81…`（P-12 覆盖同一断言；构建期间的 mtime 变化**不是**漂移证据）。
