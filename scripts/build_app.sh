@@ -69,6 +69,20 @@ java -version 2>&1 | head -1
 [ -z "${GRADLE_USER_HOME:-}" ] && fail "GRADLE_USER_HOME 未设置（应指向 <WS>/.gradle-home）"
 [ -z "${TMPDIR:-}" ] && fail "TMPDIR 未设置（应指向 <WS>/tmp）"
 
+# --- [P-14] 执行位置前置断言：**本脚本必须在宿主机执行** ------------------------------------
+# 实测（2026-09-14 复核）：**容器内 `python3`/`unzip`/`jar`/`javap` 全部缺失**（`java` 亦无），
+#   在这些工具缺失的环境里运行本脚本，会以"命令不存在/工具缺失"的形式产生**误导性失败**，
+#   而不是清晰的"位置错"。故此处先做前置断言：缺任一工具即 FAIL 并显式提示执行位置要求。
+missing_tools=""
+for t in python3 unzip javap java sha256sum; do
+  command -v "$t" >/dev/null 2>&1 || missing_tools="$missing_tools $t"
+done
+if [ -z "$missing_tools" ]; then
+  ok "宿主工具齐备（python3/unzip/javap/java/sha256sum）"
+else
+  fail "缺少工具:${missing_tools} ⇒ **本脚本须在宿主机执行**（容器内无 python3/unzip/jar/javap/java）"
+fi
+
 hdr "1. 工具链版本（契约 §3.3/§3.5）"
 jc=$(javac -version 2>&1 | awk '{print $2}')
 echo "  javac  = $jc"; case "$jc" in 17*) ok "JDK 17";; *) fail "JDK 非 17";; esac
@@ -174,6 +188,18 @@ if [ -f "$JAR" ]; then
       || fail "GEN_JNI 含 ${n_gen_native:-?} 个 native 声明 ⇒ 编译期 stub 形态，与 .so 的 Java_J_N_* 不匹配"
     n_jn_native=$(javap -p -classpath "$JAR" 'J.N' 2>/dev/null | grep -c ' native ' || true)
     ok "J.N 哈希 native 声明数 = ${n_jn_native:-0}"
+    # --- GEN_JNI 方法数断言（captain 2026-09-14 授权；判别表如下）---------------------------
+    #   B（现行落位件 `0c776934…`）：方法数 = **194**、`static native` = **0**   ← 唯一合法形态
+    #   A（隔离件 `c289b4df…`     ）：方法数 = **193**、`static native` = 0     ← 缺 AV1 非 native 桩 ⇒ 必红
+    #   落位前（`dc5f8919…`       ）：方法数 = **193**、`static native` = **194** ← stub 形态 ⇒ 必红
+    #   ⚠️ 只有"方法数"这一条能自动抓 A 回退：`J.N` 的 native 数在 **A 与 B 同为 193**（不可用）。
+    n_gen_methods=$(javap -p -classpath "$JAR" org.jni_zero.GEN_JNI 2>/dev/null | grep -cE '^  (public|static)' || true)
+    n_gen_methods=$(( ${n_gen_methods:-0} - 1 ))   # 减去构造器行
+    if [ "${n_gen_methods:-0}" = "194" ]; then
+      ok "GEN_JNI 方法数 = 194（B 形态：含 1 条 AV1 非 native 桩）"
+    else
+      fail "GEN_JNI 方法数 = ${n_gen_methods:-?}（期望 194=B；193 且 native=0 ⇒ A 回退；193 且 native=194 ⇒ 落位前 stub）⇒ jar 形态漂移，禁止放行"
+    fi
   else
     warn "无 javap，跳过 GEN_JNI/J.N 形态核验"
   fi
@@ -285,12 +311,38 @@ else
   fi
 fi
 
+# --- [P-13] 构建窗口"双钉"：交付 jar/AAR 在窗口内必须逐字节不变 -----------------------------
+# 依据（2026-09-14 事故）：交付 jar 曾于 18:32:24 被非授权替换为 A 变体、18:33:42 才回滚为 B；
+#   若构建窗口跨过那 78 秒，APK 会基于 A（`LibaomAv1EncoderJni` 悬空）。
+#   判据口径（captain 要求）：**只比 sha256**，**不得**比 mtime/尺寸 —— 当日 18:47:54 已实证存在
+#   "仅触碰、内容不变"的写入（jniLibs `.so` 重拷），mtime/尺寸判据会误报 FAIL。
+P13_PRE="$TMPDIR/p13-pre-jar-aar.sha"
+P13_LOG="$LOG_DIR/p13-doublepin-$TS.log"
+: > "$P13_LOG"
+if sha256sum "$TP/libwebrtc/java/libwebrtc-java.jar" "$TP/libwebrtc/java/libwebrtc-arm64.aar" > "$P13_PRE" 2>/dev/null; then
+  { echo "[P-13] 构建窗口前双钉快照（$TS）："; cat "$P13_PRE"; } | tee -a "$P13_LOG" >/dev/null
+  ok "[P-13] 已记录构建前双钉（jar/AAR sha256）→ $P13_LOG"
+else
+  warn "[P-13] 无法生成构建前双钉快照（jar/AAR 缺失？），后续校验将跳过"
+fi
+
 hdr "7. Android 构建：./gradlew assembleDebug（契约 §3.3/§4.1）"
 if [ "$FAILED" != "0" ]; then
   fail "存在失败项（含 Kotlin 编译），跳过 assembleDebug 以保留早期错误"
 else
   cd "$PROJ"
   ./gradlew --no-daemon assembleDebug 2>&1 | tail -40 || { fail "gradlew assembleDebug 失败"; }
+fi
+
+# [P-13] 构建后校验：jar/AAR 与窗口前逐字节一致（只比哈希）
+if [ -s "$P13_PRE" ]; then
+  if sha256sum -c "$P13_PRE" >>"$P13_LOG" 2>&1; then
+    ok "[P-13] 构建后双钉校验通过（jar/AAR 逐字节未变）"
+  else
+    fail "[P-13] 构建后双钉校验失败：交付 jar/AAR 在构建窗口内发生变化（详见 $P13_LOG）——须重跑 t30/t36 的绑定/描述符证明，**产物不得放行**"
+  fi
+else
+  warn "[P-13] 无构建前快照，跳过双钉校验"
 fi
 
 hdr "8. Go 信令二进制（linux/amd64）"
