@@ -708,3 +708,78 @@ size   = 33 309 445 B      mtime = 2026-09-14 18:41:59.794      package = com.ex
 ### 9.13.7 与 t26 版的可审计关系
 
 `app/src/main/**` 自 `8a2c400`（t26 那次提交）起**零改动**（`git status --porcelain -- app/src/main` 为空、`WebRtcEngine.kt` 工作区与 HEAD 同哈希）⇒ 本轮 APK 相对 `721df1c8…` 的**唯一变化来源是 libwebrtc jar**，其 dex 增量即绑定类（旧 `jn=0` → 新 `jn=3`）。K-18（`BINDING_CLASSES` 建议增列 `J.N`）本轮**未实施**，见 §9.11。
+
+---
+
+## 9.14 t33 由 env-installer 执行的交付构建（19:02–19:07）+ 并发写入披露
+
+> **所有权说明（如实登记）**：captain 于 19:0x 直接下令"现在开跑"，但板面 `t33` 的 assignee 仍为 **captain** —— 我三次 `claim_task(t33)` 均被拒（`task t33 is assigned to "captain", not you`）。本节工作系**在任务所有者直接指令下执行**，非板面 claim 成功后的执行；结构化 `update_task` 因同一原因无法提交。
+
+### 9.14.1 门禁与 T0 双钉（uid 1000 形式）
+
+| 检查 | 实测 |
+|---|---|
+| 构建进程 | `java` = **0**、`ninja` = **0**（按 `comm` 过滤，避免命令行自匹配；先前 shell 模式计数曾出现假阳性） |
+| `app/src` 近 5 分钟写入 | **0**（最新 mtime **18:28:44**） |
+| `third_party/libwebrtc/java` 近 5 分钟写入 | **0**（live jar mtime **18:33:42**） |
+| **T0 双钉**（`su -s /bin/bash admin -c sha256sum`） | jar `0c776934…3dc757` 、AAR `8e8f2baf…a099` |
+| `GEN_JNI` 形态（B 判定） | 方法数 **194**、`static native` = **0** ⇒ 确为 B 件（A 为 193；落位前为 193/native=194） |
+
+### 9.14.2 前置校验 `--check-only`
+
+- 19:02:05 运行：`EXIT=0`、`FAIL` 计数 = **0**；`P-10` 四路径精确 live、基线指纹 `jar=0c776934…(1,206,602 B, mtime 18:33:42)` / `aar=8e8f2baf…(6,492,067 B, 18:33:42)`；jar 侧 `P-11`：`J/N.class` 在、`GEN_JNI.class` 在、`GEN_JNI static native = 0`。
+- 日志：`reports/10-t33-checkonly-20260914-190205.log`（另入库 18:47:52 那份 `…-184752.log`，见提交 `5b0781d`）。
+
+### 9.14.3 交付构建（`--no-daemon --no-build-cache clean assembleDebug`）
+
+| 项 | 实测 |
+|---|---|
+| T0 / T1 | **19:02:27.25** → **19:04:44**（用时 137 s） |
+| 结果 | **BUILD SUCCESSFUL in 2m 16s**，`GRADLE_EXIT=0` |
+| **FROM-CACHE** | **0** |
+| `:app:clean` | 出现（1 次） |
+| 任务数 | 43 actionable（42 executed / 1 up-to-date） |
+| 构建窗口内写入 | `app/src` = **0**、`third_party/libwebrtc/java` = **0** |
+| **T1 双钉复测** | `sha256sum -c`：jar **OK**、AAR **OK**（与 T0 一致） |
+| **本构建 APK** | **`ef29e00c5217b5cd0c32f97d196800c8e7068f40ed5b9926a3f87b11636cc27d`**，33,309,445 B，mtime **19:04:43** |
+| 仓外留档 | `/opt/dsh-workspaces/artifacts/app-debug-ef29e00c.apk` |
+| 决定性日志 | `reports/10-t33-nocache-assembleDebug-20260914-190227.log` |
+
+### 9.14.4 单测（真实执行）
+
+`./gradlew --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest` → `EXIT=0`、**FROM-CACHE=0**、窗口内 `app/src` 写入 = 0；XML 汇总：
+
+| 测试类 | tests | failures | errors |
+|---|---|---|---|
+| `AppConfigUrlTest` | 8 | 0 | 0 |
+| `NativeInterfaceContractTest` | 4 | 0 | 0 |
+| `SignalingErrorPolicyTest` | 17 | 0 | 0 |
+| `SignalingIdentityTest` | 11 | 0 | 0 |
+| `JniBindingClasspathTest`（t32：2→6） | **6** | 0 | 0 |
+| **TOTAL** | **46** | **0** | **0** |
+
+日志：`reports/10-t33-testDebugUnitTest-20260914-190455.log`。
+
+### 9.14.5 产物级判据（对 `ef29e00c…`）
+
+- **逐 dex**（字节级扫描全部 `classes*.dex`）：`classes.dex jn=2`；`classes13.dex jn=1, genjni=2`；`classes14.dex genjni=1, pcf_jni=2` ⇒ **`dexfmt: dex=14 jn=3 genjni=3 pcf_jni=2`**（`jn≥1 / genjni≥1 / pcf_jni≥1` 全满足；红例对照：`721df1c8…` 为 `jn=0`）。
+- **四 `.so`**：`41e9a793…`（androidx.graphics.path）/ `c9dbf4ec…`（libc++_shared）/ **`757cef81…`（libjingle，t30 证明对象未漂移）** / `95c44e5a…`（webrtcdemo_native），**`p_align` 全 `0x4000`**。
+- APK 内 `libc++_shared.so` 与 `app/src/main/jniLibs/arm64-v8a/libc++_shared.so` **逐字节相同 = True**。
+
+### 9.14.6 ⚠️ 并发写入披露（本次必须留痕）
+
+1. **19:05:19 盘上 APK 被另一次构建替换**：我构建产出 `ef29e00c…`（19:04:43）；随后标准路径 `app/build/outputs/apk/debug/app-debug.apk` 的 mtime 变为 **19:05:19**、内容回到 **`30c41ac9…`**（与 18:41:59 那次逐字节相同），ctime 19:07:29。⇒ **盘上现值 ≠ 我本次构建产物**；两份字节均已留档（`artifacts/app-debug-30c41ac9.apk`、`app-debug-ef29e00c.apk`）。
+2. **我的构建日志曾被删除**：`reports/10-t33-nocache-assembleDebug-20260914-190227.log` 在 19:04:44 写入成功后一度从 `reports/` 消失（`reports/logs/` 副本完好），已由副本恢复（内容 sha 不变、3333 B）。
+3. 期间 `reports/99-final-report.md` 由 verifier 持续提交（HEAD 已至 `713ecd7`），其 §13.22(f) 已登记本轮构建日志中的 P-11/P-12 两道门。
+4. **交付锚点待 captain 指定**：五/六代过程值 = `6653fddf…`（作废）→ `58834b5a…`（作废）→ `721df1c8…`（11:26，落位前 jar，已被取代）→ **`30c41ac9…`**（18:41:59 captain 轮次；19:05:19 盘上现值）→ **`ef29e00c…`**（19:04:43 本次 `--no-build-cache` 构建）。按既有实测 **APK 非逐字节可复现**：同源同 jar 下 `--no-build-cache` 与 cache-assisted 会产出不同字节，故两者均为"真实且可审计"，须由 captain 择一作为交付锚点。
+
+### 9.14.7 基线时点与瞬时 A（回应 18:33 的基线变更）
+
+- **T0 实测 jar mtime = 18:33:42**（内容哈希与 18:17:28 **完全一致**，仅 mtime 前进），AAR 同理；`.so` 全程 `757cef81…` 未变 —— 与 §9.10.3 表并列成立。
+- **瞬时 A 窗口**：jar 于 **18:32:24** 被非授权替换为 A 变体 `c289b4df…`（AAR `f2ea0132…`），captain 于 **18:33:42** 恢复为 B；该 **78 秒**窗口内**未产出任何 APK**（全盘 `*.apk` 扫描：窗口 `[18:32:24, 18:33:42]` 内 APK 数 = **0**）；证据件 `webrtc-build/t36/t36-addendum-transient-reland.md`（2,387 B / `d02ae1b8fa0a065684992d2e9f273ab0af547261ad8e9d59a8c14af9846b6575`）。A 变体现仅存 `tmp/jn-fix/QUARANTINE-A/`（chmod 400 + README）。
+- **语义身份**（建议终报钉住）：`J/N.class` = `1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932`（6,924 B）、`org/jni_zero/GEN_JNI.class` = `a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08`（24,910 B）。
+
+### 9.14.8 待授权增量（未实施）
+
+- `scripts/build_app.sh`：**P-13 双钉**（构建窗口前后 `sha256sum -c`）+ **`GEN_JNI` 形态断言**（方法数 == 194 且 `static native` == 0；判别表：B=`194/0`、A=`193/0`、落位前=`193/194`）+ "本脚本须在宿主机执行"前置断言（容器内 `python3/unzip/jar/javap/java` 实测全部缺失）。
+- K-18 维持"建议、未实施"（见 §9.11）；`app/src/main/**` 自 t25 起冻结不变。

@@ -1,0 +1,15 @@
+
+### 结果
+GRADLE_EXIT=0
+T1=2026-09-14 19:07:06  用时=131s
+FROM-CACHE 次数=0
+actionable: 
+BUILD: 
+窗口内 app/src 写入=0
+### 各测试类（XML）
+  com.example.webrtcdemo.config.AppConfigUrlTest             tests=8 failures=0 errors=0 skipped=0
+  com.example.webrtcdemo.nativebridge.NativeInterfaceContractTest tests=4 failures=0 errors=0 skipped=0
+  com.example.webrtcdemo.signaling.SignalingErrorPolicyTest  tests=17 failures=0 errors=0 skipped=0
+  com.example.webrtcdemo.signaling.SignalingIdentityTest     tests=11 failures=0 errors=0 skipped=0
+  com.example.webrtcdemo.webrtc.JniBindingClasspathTest      tests=6 failures=0 errors=0 skipped=0
+  TOTAL: tests=46 failures=0 errors=0 skipped=0

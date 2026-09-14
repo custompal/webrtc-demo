@@ -1,0 +1,81 @@
+### t33 交付构建（路线 A/B jar 0c776934…）：./gradlew --no-daemon --no-build-cache clean assembleDebug
+T0=2026-09-14 19:02:27.254445836
+T0 双钉:
+  0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757  third_party/libwebrtc/java/libwebrtc-java.jar
+  8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099  third_party/libwebrtc/java/libwebrtc-arm64.aar
+门禁: app/src 近5min=0 ; third_party/libwebrtc/java 近5min=0 ; java/ninja 进程=0
+命令: ./gradlew --no-daemon --no-build-cache clean assembleDebug
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.7/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Task :app:externalNativeBuildCleanDebug
+Clean webrtcdemo_native-arm64-v8a
+
+> Task :app:externalNativeBuildCleanRelease
+> Task :app:clean
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:generateDebugBuildConfig
+> Task :app:generateDebugResValues
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :app:mergeDebugResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:javaPreCompileDebug
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets
+> Task :app:compressDebugAssets
+> Task :app:processDebugManifestForPackage
+> Task :app:mergeDebugStartupProfile UP-TO-DATE
+> Task :app:checkDebugDuplicateClasses
+> Task :app:configureCMakeDebug[arm64-v8a]
+> Task :app:mergeLibDexDebug
+> Task :app:processDebugResources
+> Task :app:buildCMakeDebug[arm64-v8a]
+> Task :app:mergeDebugJniLibFolders
+> Task :app:mergeDebugNativeLibs
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:stripDebugDebugSymbols
+> Task :app:desugarDebugFileDependencies
+> Task :app:compileDebugKotlin
+> Task :app:mergeExtDexDebug
+> Task :app:compileDebugJavaWithJavac
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics
+> Task :app:processDebugJavaRes
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJavaResource
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+
+BUILD SUCCESSFUL in 2m 16s
+43 actionable tasks: 42 executed, 1 up-to-date
+
+### 结果
+GRADLE_EXIT=0
+T0=2026-09-14 19:02:27.254445836
+T1=2026-09-14 19:04:44  用时=137s
+FROM-CACHE 次数=0
+:app:clean 次数=1
+actionable: 43 actionable tasks: 42 executed, 1 up-to-date
+BUILD: BUILD SUCCESSFUL in 2m 16s
+构建窗口内 app/src 写入(>T0)=0
+构建窗口内 third_party/libwebrtc/java 写入(>T0)=0
+T1 双钉复测:
+  third_party/libwebrtc/java/libwebrtc-java.jar: OK
+  third_party/libwebrtc/java/libwebrtc-arm64.aar: OK
+APK sha256=ef29e00c5217b5cd0c32f97d196800c8e7068f40ed5b9926a3f87b11636cc27d
+APK size=33309445 mtime=2026-09-14 19:04:43.919111957 +0800
