@@ -1373,7 +1373,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 - `scripts/check_jar_link_integrity.py`：509 类、严格缺失 0、`J/N` native 193（captain 报告）；我以**常量池扫描**等价复核：`*Jni` **48 存在 / 47 被引用 / 0 缺失 / 1 未引用（`Dav1dDecoderJni`）**。
 
 #### (d) 状态变更（终报口径，逐条）
-1. **K-15 分层**：**jar/AAR 侧 = 已闭合**（`J/N` 在位 + `GEN_JNI` `native=0` + 193↔193 + 194/194，且为 **B** 形态）；**APK 侧 = 已闭合（captain 转录，见 §13.24）** —— 交付 APK `30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2`（33 309 445 B）；dex `LJ/N;`=3 / `GEN_JNI;`=3 / `PCF_Jni;`=2；四 `.so` `p_align=0x4000`；`libjingle 757cef81…`、`libc++_shared c9dbf4ec…`（与 `jniLibs` 逐字节相同）；单测 46/0/0（19:07:05 XML）。
+1. **K-15 分层**：**jar/AAR 侧 = 已闭合（B 形态）**（`J/N` 在位 + `GEN_JNI` `native=0` + 193↔193 + 194/194）；**APK 侧 = 已闭合** —— 交付 APK `30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2`（33 309 445 B）；dex `LJ/N;` = 3 / `GEN_JNI;` = 3 / `PCF_Jni;` = 2；四 `.so` `p_align=0x4000`；`libjingle 757cef81…`、`libc++_shared c9dbf4ec…`（与 `jniLibs` 逐字节相同）；单测 **46/0/0**（19:07:05 XML）；**独立复验见 `reports/99-t34-appendix.md`（184 行 / `36bad740…`，verdict = pass）**，本报告 §13.25 对其逐项复算、§13.26 为 captain 放行口径下的单批复验。
 2. **现行 APK `721df1c8…`（33 293 061 B / mtime 11:28:34）标注为"已被取代的历史轮次交付物"**（由未落位 jar 构建、dex 无 `LJ/N;`）。**（18:39 起 t33 构建窗口：仓库内 `app/build/outputs/apk/debug/app-debug.apk` 已被清理，仓库内已无任何 `.apk`；仓外快照 `/data/dsh/home/workspace/artifacts/app-debug-721df1c8.apk` 仍为同哈希 `721df1c8…`/33 293 061 B，历史证据以此快照为准；交付以 t33 新 APK 为准。）**
 3. **K-17 = 已闭合**（captain 修复 + 我复验，见 §6 与 §13.21 追加）。
 4. **"AV1 残余 / 悬空引用"表述作废**：B 落位后 `LibaomAv1EncoderJni` 的引用由非 native 桩兜住；该风险**仅适用于 A 变体**，仅作对照留档（§13.8/§13.19）。
