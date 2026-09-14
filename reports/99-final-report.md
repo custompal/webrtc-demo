@@ -1628,6 +1628,7 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 1. **K-15 = 已闭合**（jar/AAR 侧 + **APK 侧**）：本节门禁全绿（§3.1/§3.3/§3.2）+ §13.24 captain 转录 + §13.25 我的第二方复算 ⇒ 结论与 captain 一致。
 2. **旧件 `721df1c8…` 保持"历史轮次交付物"** ✅（仓外快照 `artifacts/app-debug-721df1c8.apk` = `721df1c82841ad99…` / 33 293 061 B；其 dex `LJ/N;` = 0）。
 3. **K-18 按建议"未实施"登记** ✅（依据 `reports/10-app-build.md §9.11`：`WebRtcEngine.BINDING_CLASSES` 增列被 captain 裁定 (B) 不放行，`app/src/main/**` 自 t25 冻结）。
+   - **我在交付 APK 内独立验证了 K-18 的"事实基础"**（`[读盘 20:26:33]`，锚点 `30c41ac9…`）：`classes11.dex` 内含 **恰好 5 个** `BINDING_CLASSES` 串 —— `org.jni_zero.GEN_JNI`（1 处）与 `org.webrtc.{JniCommonJni, PeerConnectionFactoryJni, PeerConnectionJni, VideoTrackJni}` ⇒ 与 §9.11 所列 5 项**逐项一致**；这正是"增列 `JavaAudioDeviceModuleJni` 等"建议的现状基线（未实施，故 dex 内**无**该类串）。
 4. **K-17 = 已闭合** ✅（我 20:11:52 复测 `find .git ! -user node` = 0；`.git/objects/{33,c6}` = `node:node 775`）。
 5. **事故留痕在 `reports/15` §19** ✅（标题 = "事故留痕：一次非授权 A 落位及其回滚（2026-09-14 18:32:24 → 18:33:42）"，含 18:17:28/18:32:24/18:33:42 三行时间线与 P-12/D-13 留痕）。
 6. **git 状态**：本节写入前 `git status --porcelain` = **空**；HEAD = `1c550cd`；captain 引用的 `1f5023e`（18:44:58）与 `2bb7750`（18:45:19，t33 交付记录）**均为 HEAD 祖先** ✅。**⚠️ 引用 `1f5023e` 会读到过期结论**：该提交正文写"`7dbe8400…` 在容器可见树内**无保留**"，**已被我 a9b45bb/1c550cd 就地更正**为"**在盘但不可读**"（§13.7 + §13.22(e) + §13.25(i)）。
@@ -1637,6 +1638,7 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - **F-1（low，记载）**：captain §3.2 的逐 dex 分布应为 `classes.dex` 2 / `classes13` 1 / `classes14` 0（合计 3）；判据本身成立。*requiredFix：后续文本按此更正。*
 - **F-2（low，环境）**：`check_jn_binding.py` 默认 `--javap` 为宿主路径 ⇒ 容器/其它环境须显式传参（建议把默认值改为基于 `PATH`/环境变量解析，由持写权者实施）。*requiredFix：脚本默认值可移植化。*
 - **F-3（low，环境限制）**：`§3.4` 单测**未在容器内重跑**（无 JDK 17 / AGP 拒绝 JDK 25 / `local.properties` 指宿主 SDK）；以产物 XML（46/0/0，6 用例逐名）+ 两条宿主原始日志为证。*requiredFix：如需"容器内现场重跑"，须提供 JDK 17 或授权宿主执行（不改变已成立的证据层结论）。*
+- **F-4（low，记载）**：native-dev 消息称 `Lorg/jni_zero/GEN_JNI;` = "`classes.dex`=2、`classes14`=1" —— **dex 归属写错**：实测（三法：`grep -a -o` 逐 dex / 去分号串 / `dexdump` 类型表）为 **`classes13.dex`=2、`classes14.dex`=1、`classes.dex`=0**（`dexdump classes.dex` 命中 `Lorg/jni_zero/GEN_JNI;` = **0** ⇒ `classes.dex` **根本不引用** `GEN_JNI`）。其**自己的 t34 附录 §2 写的是"classes13 2 / classes14 1"（正确）**⇒ 本条消息属转写漂移；`LJ/N;`（2/1/0，三处独立测量一致）与 `PCFJni;`（classes14=2）、`LibaomAv1EncoderJni;`（classes14=2）均与我一致。**判据/verdict 不受影响**（`GEN_JNI` 出现于 APK 内且合计 3 成立）。
 - **不写成通过（仍未验证）**：真机安装/首次 native 调用/`JNI_OnLoad` 运行期注册/Camera2 采集/首帧渲染/日志导出；宿主 `/opt/apk-http/served/app-debug.apk`（容器不可见，仅他人报告同哈希）。
 - **附带事实（不改变 verdict）**：APK **整包 byte-reproducibility = false** —— 同一 jar、同一 `--no-build-cache clean` 命令的两次构建分别产出锚点 `30c41ac9…`（18:39–18:42 日志 `6f02e949…`）与 `ef29e00c…`（19:02–19:04 日志 `reports/10-t33-nocache-assembleDebug-20260914-190227.log`）；两者**六载荷逐件相同、类集合 26 195/26 195 相同**（§13.25(b)），故稳定判据落在载荷而非整包 sha。
 
