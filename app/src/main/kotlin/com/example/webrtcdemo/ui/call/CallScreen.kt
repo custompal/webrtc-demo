@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,15 +46,27 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.webrtcdemo.R
 import com.example.webrtcdemo.diag.LogExporter
 import com.example.webrtcdemo.log.AppLog
 import com.example.webrtcdemo.ui.theme.CallBackgroundLight
+import com.example.webrtcdemo.webrtc.RendererRecoveryPolicy
+import com.example.webrtcdemo.webrtc.VideoRendererPool
 import com.example.webrtcdemo.webrtc.WebRtcEngine
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.webrtc.SurfaceViewRenderer
+
+/** §9.1 模块标签（UI 层固定 ui）。 */
+private const val TAG = "ui"
+
+/** t45 恢复看门狗轮询间隔（500 ms ⇒ 3 s 窗口内约 6 次判定）。 */
+private const val RECOVER_POLL_MS = 500L
 
 // ============================================================================
 // 通话页（doc/10 §3.2/§3.3；数据源 doc/14 §7.3/§7.4）
@@ -133,6 +146,116 @@ fun CallScreen(
         WebRtcEngine.rendererPool()?.attachRemote(remoteTrack, remoteRenderer)
     }
 
+    // ===================== t45：后台 → 前台预览恢复 =====================
+    // 现象：真机切后台再回前台，本地预览黑屏（其余 UI 正常）。回前台后
+    // `local_preview_resolution_changed` 仍在打点（14:34:42.835 / 14:34:44.520）⇒ **不能用
+    // "回调还在"判活**：EglRenderer 在"无 surface 丢帧"前同样会回调（见 VideoRendererPool 头注释）。
+    // 代码级根因：本页原先**没有任何** onPause/onResume 处理 —— sink 只在
+    // `LaunchedEffect(localTrack, localRenderer)` 键变化时挂载，恢复路径既不重挂也不重建渲染器，
+    // 一旦 surface/EGL surface 没自动回来（或渲染器已被 release）就永久黑屏。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val recoveryPolicy = remember { RendererRecoveryPolicy() }
+    var resumeTick by remember { mutableStateOf(0) }
+    var localGeneration by remember { mutableStateOf(0) }
+    var remoteGeneration by remember { mutableStateOf(0) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    recoveryPolicy.onPause()
+                    // §7.3：切后台**不是离页** —— 只解除看门狗，绝不 release/reinit；
+                    // 渲染器实例与其 sink 保持，回前台优先走"零成本恢复"（幂等重挂）。
+                    AppLog.i(TAG, "on_pause", mapOf("release" to "no", "reason" to "background_keep_renderers"))
+                }
+
+                Lifecycle.Event.ON_RESUME -> {
+                    recoveryPolicy.onResume(System.nanoTime())
+                    resumeTick++
+                    AppLog.i(TAG, "on_resume", mapOf("tick" to resumeTick.toString()))
+                }
+
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 恢复看门狗：① 立即幂等重挂 sink（覆盖"被 detach 过"的情形）② 3 秒内仍无帧 ⇒ 换**新实例**重建
+    LaunchedEffect(resumeTick, localRenderer, remoteRenderer) {
+        if (resumeTick == 0) return@LaunchedEffect
+        val pool = WebRtcEngine.rendererPool() ?: return@LaunchedEffect
+        val resumedAtNs = recoveryPolicy.resumedAt
+        AppLog.i(
+            TAG,
+            "preview_recover_armed",
+            mapOf(
+                "localSurface" to pool.surfaceAlive(VideoRendererPool.WHICH_LOCAL).toString(),
+                "remoteSurface" to pool.surfaceAlive(VideoRendererPool.WHICH_REMOTE).toString(),
+                "localReleased" to pool.isReleased(localRenderer).toString(),
+            ),
+        )
+        // 采集与 surface 是两条独立链路：只在采集确实已停时才重启（避免重复占用摄像头/EGL）
+        WebRtcEngine.mediaCapture()?.resumeIfNeeded()
+        pool.attachLocal(localTrack, localRenderer)
+        pool.attachRemote(remoteTrack, remoteRenderer)
+
+        while (true) {
+            delay(RECOVER_POLL_MS)
+            val now = System.nanoTime()
+            val localOk = pool.frameSeenSince(VideoRendererPool.WHICH_LOCAL, resumedAtNs)
+            val remoteOk = remoteTrack == null || pool.frameSeenSince(VideoRendererPool.WHICH_REMOTE, resumedAtNs)
+            when (recoveryPolicy.evaluate(now, localOk && remoteOk)) {
+                RendererRecoveryPolicy.Action.RECOVER -> {
+                    AppLog.w(
+                        TAG,
+                        "preview_recover_attempt",
+                        mapOf(
+                            "attempt" to recoveryPolicy.attempts.toString(),
+                            "localFrame" to localOk.toString(),
+                            "remoteFrame" to remoteOk.toString(),
+                            "localSurface" to pool.surfaceAlive(VideoRendererPool.WHICH_LOCAL).toString(),
+                            "localReleased" to pool.isReleased(localRenderer).toString(),
+                        ),
+                    )
+                    if (!localOk) {
+                        val old = localRenderer
+                        val fresh = pool.recreateRenderer(context, VideoRendererPool.WHICH_LOCAL)
+                        if (fresh != null) {
+                            renderers = fresh to remoteRenderer
+                            localGeneration++
+                        }
+                        pool.releaseRenderer(old)
+                    }
+                    if (!remoteOk) {
+                        val old = remoteRenderer
+                        val fresh = pool.recreateRenderer(context, VideoRendererPool.WHICH_REMOTE)
+                        if (fresh != null) {
+                            renderers = localRenderer to fresh
+                            remoteGeneration++
+                        }
+                        pool.releaseRenderer(old)
+                    }
+                }
+
+                RendererRecoveryPolicy.Action.GIVE_UP -> {
+                    AppLog.e(
+                        TAG,
+                        "preview_recover_give_up",
+                        mapOf(
+                            "attempts" to recoveryPolicy.attempts.toString(),
+                            "localSurface" to pool.surfaceAlive(VideoRendererPool.WHICH_LOCAL).toString(),
+                        ),
+                    )
+                    return@LaunchedEffect
+                }
+
+                RendererRecoveryPolicy.Action.NONE -> Unit
+            }
+        }
+    }
+
     // 离开页面：先 removeSink 再 release（§7.3）
     DisposableEffect(Unit) {
         onDispose {
@@ -143,23 +266,31 @@ fun CallScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(CallBackgroundLight)) {
         // 远端视频（大画面）
+        // t45：`key(generation)` —— 恢复路径重建渲染器后必须让 Compose **挂一个全新视图**，
+        // 否则复用的是旧 SurfaceView（其 surface 已销毁/EGL surface 不会重建）⇒ 仍然黑屏。
         if (remoteRenderer != null) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { remoteRenderer },
-            )
+            key(remoteGeneration) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { remoteRenderer },
+                )
+            }
         }
 
         // 本地视频（右上角小窗）
+        // 注：`Modifier.align` 是 BoxScope 扩展，必须在 `key {}` 之外求值（key 的 block 无 BoxScope 接收者）。
+        val localViewModifier = Modifier
+            .align(Alignment.TopEnd)
+            .padding(12.dp)
+            .width(110.dp)
+            .height(150.dp)
         if (localRenderer != null) {
-            AndroidView(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp)
-                    .width(110.dp)
-                    .height(150.dp),
-                factory = { localRenderer },
-            )
+            key(localGeneration) {
+                AndroidView(
+                    modifier = localViewModifier,
+                    factory = { localRenderer },
+                )
+            }
         }
 
         // 【t39 修复②】会议号**常驻顶部覆盖层**：整个通话生命周期可见（原先只在 isConnecting

@@ -113,11 +113,17 @@ class MediaCapture(
     /**
      * 启动采集（幂等：已启动直接返回同一个 [VideoTrack]）。
      *
+     * t45：幂等分支会记 `capture_already_started`（阈值 DEBUG 时可见），
+     * 便于回前台路径判断"采集本来就活着"，从而把黑屏定因收敛到渲染层。
+     *
      * @return 视频轨；摄像头不可用时返回 null（不抛异常）。
      */
     @Synchronized
     fun ensureStarted(): VideoTrack? {
-        videoTrack?.let { return it }
+        videoTrack?.let {
+            AppLog.i(TAG, "capture_already_started", mapOf("facing" to if (frontCamera) "front" else "back"))
+            return it
+        }
 
         val source = factory.createVideoSource(false)
         val helper = SurfaceTextureHelper.create(CAPTURE_THREAD_NAME, eglBase.eglBaseContext)
@@ -189,6 +195,28 @@ class MediaCapture(
 
     /** 当前视频轨（未启动为 null）。 */
     fun currentVideoTrack(): VideoTrack? = videoTrack
+
+    /** 采集是否存活（`videoTrack != null`）。t45：回前台判活用。 */
+    @Synchronized
+    fun isCapturing(): Boolean = videoTrack != null
+
+    /**
+     * 回前台恢复路径：**只在采集确实已停**时才重启（t45）。
+     *
+     * 设计要点：**采集与 surface 是两条独立链路** —— 真机日志显示回前台后
+     * `local_preview_resolution_changed` 仍在打点（帧仍流向渲染器），因此这里**不得**无条件
+     * 重建 `SurfaceTextureHelper`/`capturer`（会多占一份摄像头与 EGL 上下文，违反"不重复创建"）。
+     * 故仅在 `isCapturing() == false` 时调用 [ensureStarted]，否则只记 `capture_resume_noop`。
+     */
+    @Synchronized
+    fun resumeIfNeeded(): VideoTrack? {
+        if (isCapturing()) {
+            AppLog.i(TAG, "capture_resume_noop")
+            return videoTrack
+        }
+        AppLog.w(TAG, "capture_resume_start")
+        return ensureStarted()
+    }
 
     /** 彻底释放（进程退出/引擎销毁）。 */
     @Synchronized
