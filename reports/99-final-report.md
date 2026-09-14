@@ -1667,6 +1667,18 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
   | `tmp/jn-fix/QUARANTINE-A/repro-c289b4df.jar` | `sha256sum`（期望 `c289b4df…`）+ <code>jar tf &#124; wc -l</code>（期望 509） |
   **更优解**：对上述三件做 `chmod 644`（或 `chown 1000:1000`）即可由我**自行复算**，无需转述（`QUARANTINE-A/README.txt` 已为 644，其哈希 `b46581b8…` 我可读）。
 
+#### (6) 门禁证据补录（`--check-only` 三条日志 + 提交）+ K-17 归因更新（读盘 20:27:26）
+- **`scripts/build_app.sh --check-only` 原始日志（宿主侧，我可读并已核对关键行）**：
+  | 日志 | sha256(前 16) | 行 | 关键行 |
+  |---|---|---|---|
+  | `reports/10-t33-captain-checkonly-20260914-183850.log` | `3df36de27ef3b3b1` | 70 | `命令 … --check-only EXIT=0`；**[基线指纹] jar `0c776934…` 1 206 602 B mtime 18:33:42 / AAR `8e8f2baf…` 6 492 067 B**；`jar 含 J/N.class` ✅；`jar 内 *Jni.class = 48`；`org/webrtc 类条目 = 476`；JAR/AAR **精确 live 路径**（P-10 对象真实性）|
+  | `reports/10-t33-checkonly-20260914-184752.log` | `890322979899da26` | 66 | 同上关键行（`jar 含 org/jni_zero/GEN_JNI.class` ✅）|
+  | `reports/10-t33-checkonly-20260914-190205.log` | `890322979899da26` | 66 | **与上一条逐字节相同**（同源重复落盘）|
+  ⇒ 与 §3.5 N-5 的构建日志互为闭环：**门禁阶段与构建阶段的 jar/AAR 钉值同为 B（`0c776934…` / `8e8f2baf…`）**，锚点 APK 的基线因此无漂移。
+- **相关提交存在性**：`5b0781d`（18:49:29，t33 门禁证据入库）✅、`6e260e9`（18:50:05，我的 `JNI_OnLoad` 区间更正）✅ —— 均为当前 HEAD 祖先。
+- **K-17 归因更新（不点名、只归因"机制"）**：**两名成员自述在 root 侧跑过 git** —— env-installer（`t18/t26/c6fcfcd/3acc1d2` 等提交）与 **webrtc-builder（约 18:31–18:55 的 `git status/diff/log/show`）**；其自述的**首条 git 命令 ≈18:31 晚于 18:25/18:27 两次抢占** ⇒ 那两次不能归到它头上。**结论不变**：根因 = **root 侧 git 会重写 `.git/index`（root:root 0644）**，属机制问题而非个人过失；**护栏 = 仓库内禁止 root 侧 git（必要时仅 `git --no-optional-locks`，该选项不写 index）**，叠加 captain 的 `chown -R 1000:1000` 与"uid-1000-only"规则。
+- **顺带更正一处他方假设**：**"容器内无 `python3`"不成立** —— 我用**交付树自带**的 `webrtc-build/src/third_party/cpython3/host/bin/python3`（3.11.9）在容器内**真实执行**了 `check_jn_binding.py`（§3.1 的 PASS/EXIT=0 即容器内读数；另需显式 `--javap/--nm`，见 F-2）。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
