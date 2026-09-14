@@ -614,6 +614,9 @@ javap -p handoff/classes/org/jni_zero/GEN_JNI.class | grep -c ' native '     # 0
 | P-6 | **验证期间的"在途报告"管理** | `reports/07-native-dev.md` 在 t11 执行期间处于未提交状态（v1.6 升级），captain 判定为**授权在途项**并随收尾提交带上；我按其 §9.1.2 复跑了两条哈希与 ELF 检查（§3.8） | 建议：验证窗口内凡"已定稿待提交"的文件，由 captain 显式标注"授权在途"，避免验收方误判为失控改动 |
 | P-7 | **"缓存辅助构建"会被误当成复现证据** | 三次 `authoritative-*` 日志均有 `FROM-CACHE = 21`，得到与旧构建相同的 APK 哈希 `c72d3667…`；而一次 `--no-build-cache + clean` 的完全执行得到 **不同** 的 `b0cddd86…` ⇒ "同哈希"是缓存的结果，不是独立复现 | 结论要写"**APK 非逐字节可复现**"；判定构建证据必须要求 **`clean` + `--no-build-cache`** 且日志中 `FROM-CACHE = 0`、关键任务非 UP-TO-DATE。**该点 android-dev 最早提出，captain 曾错误否定，现由实测确立（captain 承担该错误）** |
 | P-8 | **"运行期才解析的依赖"必须有交付物级断言** | 真机 `NoClassDefFoundError`（D-1）在"编译通过 + APK 打包成功 + 单测全绿"的情况下依然发生：debug 链只到 **D8**，而 D8 不解析被引用但缺失的类 ⇒ 静态流程一路绿灯 | 凡运行期才解析的依赖，必须补 **jar 常量池引用闭合性检查**（N-1）、**绑定类存在性回归**（N-2，且须防假绿，§13.4）与 **dex/APK 内实体断言**（N-4）；详见 §12.3/§12.4 |
+| P-9 | **"`--rerun-tasks` 单用仍可能命中缓存"被当成"刚真实执行过"** | 实测 `testDebugUnitTest` 在只加 `--rerun-tasks` 的调用里报 **`FROM-CACHE`**（`3 executed, 3 from cache, 18 up-to-date`） | "真实执行"必须 **`--no-build-cache --rerun-tasks`** 且 **`N tasks: N executed`（FROM-CACHE=0）**（详见 §13.14(d)） |
+| **P-12** | **冻结期内的落位/写盘必须有唯一授权人；接收方若发现"指令"与"最终裁定"冲突，必须先回报再执行** | 18:32:24 **非授权落位 A**（执行的是 **t31-D1 过期文本**，而 captain 已用 **t31-D2** 裁定 = **B**，且当时在写盘冻结期）→ 18:33:42 captain **回滚为 B**；事故件隔离于 `tmp/jn-fix/QUARANTINE-A/`（chmod 400 + README）；当时无 gradle 在跑 ⇒ 无 A 版 APK（§13.21） | 单一授权人 + 冲突先回报；**注**：`scripts/build_app.sh` 里的 **[P-11]/[P-12] 是构建脚本门编号（§13.22(f)），与本 P 系列的流程教训编号不是同一命名空间** |
+| **D-13**（captain 侧教训） | **过期任务文本被系统反复回放，导致成员按旧合同执行** | t31-D1（旧文本）与 t31-D2（裁定 B）并存，成员按 D1 落位 A（§13.21） | 裁定变更时**同步废弃旧任务文本**并显式标注 supersede，避免"回放旧合同" |
 
 ---
 
