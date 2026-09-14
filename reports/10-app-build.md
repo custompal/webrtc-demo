@@ -1042,6 +1042,8 @@ size   = 33 310 685 B        mtime = 2026-09-14 21:57:54.292423083 +0800
 → 5 份 XML（最新 mtime 22:00:41.310167198）：tests=46 / skipped=0 / failures=0 / errors=0
 ```
 
+> **证据指针口径（verifier 于 22:14 提出，captain 采纳）**：`app/build/**` 是**易失目录**，其 mtime/内容会被后续任何构建改写 —— 22:09:34 那一批 XML **并非**本轮锚点轮产出（来自 §9.17 记录的未授权并行链），故**证据指针只认入库日志**：锚点轮 = `reports/10-t42-captain-testDebugUnitTest-20260914-215240.log`（`c384d0d5…`，其 `--rerun-tasks` 运行即产生 22:00:41 那批），t34 基线 = `reports/10-t34-captain-testDebugUnitTest-20260914-2050.log`（`cdb0c5b3…` / 49 行）。汇总口径写法："单测 **46/0/0**（载体 = 上述入库日志；`app/build/**` 的 mtime 不作证据）"。
+
 ### 9.16.5 发布与四路一致（冻结副本 + 分片 + 归档）
 
 ```
