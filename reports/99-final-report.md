@@ -842,7 +842,7 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 | **路线 A 判据 3** | `handoff/src/org/jni_zero/GEN_JNI.java`：`static native` = **0**、转发 `J.N.` 调用 = **193**、抛异常桩 = **1** | ✅ 转发层已替换 Placeholder |
 | AV1 处置 | `J/N.java:576-577` 与 `GEN_JNI.java:1035-1036` 均为**非 native 抛异常桩**（`throw new RuntimeException("Native method not present")`）；`out/A` 的 `J/N.java` **无**该桩 | 设计内豁免；集合相等按 **193↔193**（AV1 不计入） |
 | 编译产物（我已 `javap`，未复跑 `javac`） | `handoff/classes/J/N.class` = `1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932`、`handoff/classes/org/jni_zero/GEN_JNI.class` = `a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08`；两者 **major 61**；`J/N.class` **native = 193** + 非 native AV1 桩 1；`GEN_JNI.class` **native = 0**；`javap -classpath handoff/classes:<jar> J.N` 可解析 | 与源文件计数一致 |
-| **是否已落位** | 现行 `libwebrtc-java.jar` 与现行 APK `721df1c8…` 内 `J/N.class` 均 = **0**（判别命令：对 jar 与 APK 分别 `jar tf … &#124; grep -c '^J/N\.class$'`，两者均得 0）⇒ **K-15 在本轮仍未闭合，本轮交付 APK 仍不可运行** | 需 t29/后续重建 APK 后按 §13.3 四条复验 | **(§13.22 更新：B 已于 18:17:28 落位、18:33:42 复核，本行"未落位"结论作废)**
+| **是否已落位** | **落位前（历史快照）**：jar `dc5f8919…`（508 条目）与 APK `721df1c8…` 内 `J/N.class` 均 = **0**。**现行（18:33:42 起）**：jar `0c776934…` 内 `J/N.class` = **1**（`1ff8d3ff…`）⇒ **K-15 的 jar/AAR 侧已闭合**；**APK 侧**：旧 `721df1c8…` 已在 t33 构建窗口被清理，**t33 新件见 §13.23（含双哈希分歧待裁定）** |
 
 
 ### 13.6 路线 A 的**变体选择**与交叉核对（对象 = t30 handoff 在盘产物；新增于 t27 收尾后）
@@ -1361,6 +1361,25 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 3. **K-17 已在 §6 与本条前十节记为"已闭合"**（captain `chown -R 1000:1000` + 我复验：`find .git ! -user node` = 0、uid 1000 `git hash-object -w` 成功；副作用 blob `9daeafb9…` 不可达、`git gc` 回收）——与 captain 指令一致，无需再改。
 4. **`reports/08-android-dev.md` 无需再加注（已自纠）**：其 `:1264-1305` 已自行更正"落位源 = `FINAL2.jar`"的推断（说明该推断源自已移除脚本的默认值），并写明"落位件 majors = `{55:51, 61:458}`、`FINAL2`/`FINAL` 属被弃变体"。我实测该文件**不再把 `FINAL2` 记为落位件** ⇒ native-dev 关于"`reports/08` 仍写错"的提醒**已过期**（我另测：部署件 51 个 major-55 = 45 个 `*Jni.class` + 6 个其它，其它名单与 native-dev 所列**完全一致**）。
 5. **A/B 分歧按 B 闭合、终态判据 `194/194`**（§13.18/§13.22(c)）；`FINAL.jar`/`FINAL2.jar` 的 `{55:2, 61:507}` 与手加桩 variant **仅作对照登记**，不进入落位件口径。
+
+#### 13.23 ⚠️ t33 产物**双哈希分歧**：构建日志记录 `ef29e00c…`，交付路径现值 `30c41ac9…`（19:05:19 被 18:41 旧件覆盖）
+
+**事实（我 19:1x 只读实测）**：
+| 工件 | sha256 | 大小 (B) | mtime | 说明 |
+|---|---|---|---|---|
+| t33 构建日志记录（`reports/10-t33-nocache-assembleDebug-20260914-190227.log`） | **`ef29e00c5217b5cd0c32f97d196800c8e7068f40ed5b9926a3f87b11636cc27d`** | 33 309 445 | 19:04:43.919 | `BUILD SUCCESSFUL in 2m16s`、`42 executed / 1 up-to-date`、**FROM-CACHE=0**、`:app:clean`=1、**双钉复测 jar/AAR 均 OK** |
+| 同一时刻的仓外快照 `artifacts/app-debug-ef29e00c.apk` | `ef29e00c…`（同上） | 33 309 445 | 19:04:43.919 | 与日志一致 ✅ |
+| **交付路径现值** `app/build/outputs/apk/debug/app-debug.apk` | **`30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2`** | 33 309 445 | **19:05:19.310** | **晚于 t33 收工 36 s**；与仓外快照 `artifacts/app-debug-30c41ac9.apk`（**mtime 18:41:59**）**同哈希** ⇒ 形态上像"**把 18:41 的旧产物拷回交付路径**" |
+
+**两份 APK 的差异（逐条目实测）**：条目集**完全相同**（各 165 条）、**无仅一方存在的条目**；**内容不同的条目 = 7 个 dex**（`classes3/5/6/9/11/12/14`），其大小几乎相同（`classes3` 差 4 B、`classes14` 差 8 B、其余同长）；**两侧的绑定类计数完全相同**：`LJ/N;` = **3**、`Lorg/jni_zero/GEN_JNI;` = **3**、`Lorg/webrtc/PeerConnectionFactoryJni;` = **2**（14 个 dex）。
+⇒ 属于**同源、不同次构建的 dex 字节布局差异**（增量 vs 干净构建的非确定性），**不是**"一个含 `J/N`、一个不含"。
+
+**要点（t34 前须裁定）**：
+1. **交付哈希必须钉一个**：日志/快照侧 = **`ef29e00c…`**；交付路径现值 = **`30c41ac9…`**。二者都含 `J/N` 绑定类，**功能口径未观察到差异**，但"日志记录的产物 ≠ 交付路径现值"**必须由 captain 明确**（否则 t34 无法给出可复算的判定对象）。
+2. **t33 的双钉与静默窗口证据是合格的**（jar/AAR 在窗口内 `OK`、`app/src` 窗口内写入 = 0、FROM-CACHE = 0、`:app:clean` = 1）——本分歧**不是** t33 的构建过程问题，而是**收工后 19:05:19 的一次文件级覆盖**。
+3. **APK 非逐字节可复现**再获一例：同源、同绑定类的两次构建在 7 个 dex 上字节不同 ⇒ 与我既有结论（APK 非字节可复现）一致，**t34 以"钉死的单一哈希"为判定对象**。
+4. t34 复验清单不变（`LJ/N;` 出现、`J/`≥1、`GEN_JNI` 方法 **194**、`J.N` native 193 ↔ `.so` 193、四 `.so` `p_align=0x4000`、`libjingle`==`757cef81…`、`libc++_shared`==`c9dbf4ec…` 且与 `jniLibs` 落位件逐字节相同），**只把"新 APK sha"换成裁定后的那一个**。
+
 
 ---
 
