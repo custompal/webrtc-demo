@@ -1543,6 +1543,102 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 - **`FINAL.jar`（未采用变体）复核 ✅ 与 native-dev 主张一致**：`d0d05244…` / 1 181 426 B / major 分布 **{55: 2, 61: 507}**；两个 major-55 类 = `org/webrtc/EglBase10Impl$FakeSurfaceHolder`（`2e62e9f7…` / 236 B）与 `org/webrtc/PeerConnection$Builder`（`e304e7ce…` / 219 B），二者**与交付 jar 同名类逐字节相同**，且都在交付 jar **51 个 major-55** 名单内（我实测交付 jar = `{55: 51, 61: 458}`，51 含 45 个 `*Jni` + 6 个其它，含上述两名）。其绑定类 `J/N.class` = `0eac3fb5…`（6 898 B）、`GEN_JNI.class` = `32448db8…`（24 828 B），**均与交付件（`1ff8d3ff…`/6 924 B、`a6e7edcf…`/24 910 B）不同** ⇒ 印证 §13.22(g) 判据边界：**若改落 `FINAL.jar`，六数与 t36 必须重跑**；此次复核**不改变** captain 裁定 **(甲) 保持现落位件**。
 - **过期口径提示**：native-dev 本条 §3（"现行 APK 仍为 `721df1c8…`（`J/` = 0）⇒ K-15 仍开放；t33 已 in_progress"）**已被取代** —— 现行锚点 = **`30c41ac9…`**（dex `LJ/N;` = 3）、t33 与 t34 **均 completed** ⇒ 见 §13.25(h) 的 D-13 提示，勿据此重开 K-15。
 
+### 13.26 **t34 复验**（captain 2026-09-14 放行口径）：逐条结果 + **verdict = pass** + 3 条低危记载更正
+
+> **读盘行**（P-13 ②，均为我本节自跑）：`[读盘 20:15:08] jar=0c776934c1452b7b`（1 206 602 B）· `[读盘 20:16:01] apk=30c41ac9d3363cab`（33 309 445 B / mtime 19:05:19.310）· `[读盘 20:16:16] 四 .so` · `[读盘 20:24:17] doc/14=b3b67438…`（1337 行，未变）· AAR=`8e8f2baf…`。
+
+#### (0) ⚠️ 板面冲突（先声明，避免"无据 verdict"）
+- captain 来信**放行 t34 并要我给 verdict**；但板面实际为 **`t34 [completed] review r2 verdict pass attempt 2 → native-dev`**，我 `agent_teams_claim_task("t34")` 被平台拒绝，原文：**`Error: task t34 is assigned to "native-dev", not you`** ⇒ 我**无法**在 t34 上写 verdict（也不能改板/追认）。
+- 处理：本节 = **captain 直接指示下的独立复验结论**，以**报告 + 消息**交付；**若需板面记录，请 captain 新建一条 review 任务**（我等 scheduler 认领）。此现象与 **D-13**（过期任务文本回放）同类，已在 §13.25(f) 登记。
+
+#### (1) 被验对象（与 captain 口径逐字对齐）
+```
+APK            = app/build/outputs/apk/debug/app-debug.apk
+                 sha256 30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2  33 309 445 B
+                 仓内路径 mtime = 19:05:19.310（captain §13.23 裁定的交付锚点；宿主/留档 mtime = 18:41:59）
+jar            = 0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757  1 206 602 B  509 条目  ^J/ = 1
+AAR            = 8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099  6 492 067 B（内 classes.jar == jar，逐字节）
+三值语义身份   = jar 0c776934… + J/N.class 1ff8d3ff…(6 924 B) + GEN_JNI.class a6e7edcf…(24 910 B)   ✅ 全部复算一致
+```
+
+#### (2) 判据逐条结果（captain §3.1–§3.5）
+**§3.1 三值 + §13.3 四条 —— ✅ 通过（用权威脚本实跑，非等价自写）**
+```
+python3 scripts/check_jn_binding.py --jar <jar> --so <so> --javap <JDK/javap> --nm <NDK/llvm-nm>
+  [E1] J/N native 193 ↔ .so Java_J_N_* 193：双向差集 J.N 独有 0 / .so 独有 0  → PASS（逐条可绑定）
+  [E2] GEN_JNI native = 0；方法 194；invokestatic J/N.<name> distinct = 193（全为 native）；absent-proxy 非转发目标 = 0
+  [E3] *Jni 调用点 distinct = 194 ；GEN_JNI 提供 194 ；未覆盖 0 → 已知豁免 0；真缺失 0
+  RESULT: PASS   EXIT=0
+python3 scripts/check_jar_link_integrity.py <jar>
+  class 总数 509 ；被引用 *Jni 49 ；缺失 0 ；PCFJni 25 方法/native 0/调用 GEN_JNI YES ；GEN_JNI native 0 ；J/N native 193
+  RESULT: PASS   EXIT=0
+```
+- 📌 **环境注意（F-2，低危）**：`check_jn_binding.py` **默认 `--javap` 指向宿主路径** `/opt/dsh-workspaces/webrtc-build/src/third_party/jdk/current/bin/javap`，容器内直接跑会 `FileNotFoundError`（原文见日志）⇒ 须显式传 `--javap/--nm`。脚本本体**只读**（仅 `shutil.rmtree` 自己的临时目录）。
+
+**§3.2 APK 内 dex —— ✅ 判据成立；⚠️ 但 captain 给的分布需更正（F-1）**
+
+| dex | `LJ/N;` | `Lorg/jni_zero/GEN_JNI;` | `Lorg/webrtc/PeerConnectionFactoryJni;`(描述符) | `org_webrtc_LibaomAv1Encoder_create`(可读名) |
+|---|---|---|---|---|
+| `classes.dex` | **2** | 0 | 0 | 1 |
+| `classes13.dex` | **1** | **2** | 0 | 1 |
+| `classes14.dex` | **0** | **1** | **2** | 1 |
+| 合计 | **3** | **3** | **2** | **3** |
+
+- **F-1（低危 · 记载更正）**：captain 信里"**classes13 J.N=1 / classes14 J.N=2** ⇒ 合计 3"**不可复现** —— 我两法（`grep -a -o` 逐 dex + `dexdump` 类型引用）一致得到 **`classes.dex` 2 / `classes13` 1 / `classes14` 0**；合计同为 **3**，故**判据本身成立**。看起来是把 **`PCFJni` 列（`classes14` = 2）**串到了 `J.N` 列。**更正建议**：`LJ/N;` = `classes.dex` 2 + `classes13.dex` 1。
+- **名字级补充（webrtc-builder 建议，我已在锚点实测通过，§13.25(h)）**：AV1 可读名 1/1/1 ⇒ B 形态（可读桩）而非 A 形态；`J/N` 侧为可读名 + 非 native 抛异常桩。
+
+**§3.3 四 `.so` 护栏 —— ✅ 全部通过**
+```
+libjingle_peerconnection_so.so  757cef81…c233259e  12 946 912 B  LOAD p_align = 0x4000 ×3   ✅ 仍为冻结值（t30/t36 证明对象未漂移）
+libc++_shared.so                c9dbf4ec…97d1e36   1 356 968 B  LOAD p_align = 0x4000 ×4   ✅ 仍为冻结值
+libwebrtcdemo_native.so         95c44e5a…f821bc0   1 231 512 B  LOAD p_align = 0x4000 ×3
+libandroidx.graphics.path.so    41e9a793…115bfb6      10 096 B  LOAD p_align = 0x4000 ×3
+APK libjingle      == app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so  逐字节相同 ✅
+APK libjingle      == third_party/libwebrtc/java/jni/arm64-v8a/libjingle_peerconnection_so.so 逐字节相同 ✅
+APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so                逐字节相同 ✅
+判据④ Java_J_N_* 导出 = 193（llvm-nm -D 与 llvm-readelf --dyn-syms 两法同值）        ✅
+```
+（注：`jniLibs/libjingle_peerconnection_so.so` mtime 19:02 = t33 构建窗口内的"内容不变重写"，**内容仍是 `757cef81…`** ⇒ 门禁只认 sha，不认 mtime，见 §13.25(P-14)）。
+
+**§3.4 单测 `--no-build-cache --rerun-tasks` = 46/0/0 —— ⏳ 容器内不可重跑（F-3，环境限制）；以"产物 XML + 宿主原始日志"成立**
+- **我实跑了**（`[20:23:08 → 20:24:03]`，`GRADLE_USER_HOME` 置工作区、`ANDROID_HOME` 置容器 SDK）：
+  ```
+  ./gradlew --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest
+  * What went wrong: 25.0.4.1        ← AGP 8.5.2 的 JDK 上限闸门（容器内只有 Temurin 25.0.4.1，无 JDK 17）
+  BUILD FAILED in 54s   EXIT=1
+  ```
+  （前置：`./gradlew --version` 可跑通 = Gradle 8.7 / JVM 25；`local.properties` 的 `sdk.dir` 仍指宿主 `/opt/dsh-workspaces/android-sdk`。）
+- **无污染核对（重跑前后一致）**：APK `30c41ac9…`、jar `0c776934…`、`jniLibs` `.so` `757cef81…` **均未变**；5 份 XML 指纹与重跑前基线**逐份相同**（`f59d405a…`/`b410d54a…`/`837c4c42…`/`43ba061e…`/`63f37999…`）；`git status --porcelain` **空**。
+- **成立的证据（两层）**：
+  1. 产物自带 XML（19:07:05）：5 套 = `8 + 4 + 17 + 11 + 6` = **46 / 0 / 0**；`JniBindingClasspathTest` **6 用例逐名可核**（`genJniDeclaresSameMethodCountAsHashNativeClass`、`genJniIsPureForwardingLayer`、`requiredBindingsLedgerIsComplete`、`referencedJniBindingClassesAreResolvable`、`hashNativeClassDeclaresSoBoundaryNatives`、`coreWebrtcApiClassesAreResolvable`），`<failure>`=0、`<error>`=0；
+  2. **宿主原始日志两条**：`reports/10-t33-testDebugUnitTest-20260914-190455.log`（`ae0139b2…`，`FROM-CACHE 次数=0`，逐类 8/4/17/11/6、TOTAL 46/0/0）与 `reports/10-t33-captain-testDebugUnitTest-20260914-184232.log`（`5ea263a5…`，`24 actionable tasks: 24 executed`，合计 46/0/0）。
+- ⇒ 判据**在证据层成立**；"容器内现场重跑"**未能完成**（无 JDK 17；且 `local.properties` 指宿主 SDK —— 二者都需宿主或环境变更，我不自行改 `local.properties`）。**如实记为"未在容器内重跑"，不写成通过**。
+
+**§3.5 §12.3 N-1..N-5（在新交付物上） —— ✅ 五条全部成立**
+| 项 | 结论 | 我本轮证据 |
+|---|---|---|
+| N-1 被引用但缺失的 `*Jni` = 0 | ✅ | `check_jar_link_integrity.py`：被引用 49、缺失 **0**（EXIT=0） |
+| N-2 绑定类回归测试（`JniBindingClasspathTest`） | ✅ | XML 6 用例 0 失败；宿主日志 46/0/0 |
+| N-3 APK 实体 `p_align` + `libc++_shared` 与落位件字节同 | ✅ | 四 `.so` 全 `0x4000`；`cmp` 与 `jniLibs` 逐字节相同 |
+| N-4 dex `class_defs` 含关键绑定类 | ✅ | **全 14 dex** 定义级扫描：`LJ/N;`→`classes.dex`、`GEN_JNI`→`classes13.dex`、`PCFJni`→`classes14.dex`（各自唯一） |
+| N-5 构建窗口静默 + `--no-build-cache` + `FROM-CACHE=0` | ✅ | 锚点构建日志 `reports/10-t33-captain-assembleDebug-20260914-183903.log`（**`6f02e949…`**）：`T0/T1 双钉 jar 0c776934…`、**`本次产出 APK = 30c41ac9…`**、`2m56s`、`42 executed, 1 up-to-date`、`:app:clean 出现`、`FROM-CACHE 行 = 0` |
+
+#### (3) 收口项（captain §4）—— 逐条落实
+1. **K-15 = 已闭合**（jar/AAR 侧 + **APK 侧**）：本节门禁全绿（§3.1/§3.3/§3.2）+ §13.24 captain 转录 + §13.25 我的第二方复算 ⇒ 结论与 captain 一致。
+2. **旧件 `721df1c8…` 保持"历史轮次交付物"** ✅（仓外快照 `artifacts/app-debug-721df1c8.apk` = `721df1c82841ad99…` / 33 293 061 B；其 dex `LJ/N;` = 0）。
+3. **K-18 按建议"未实施"登记** ✅（依据 `reports/10-app-build.md §9.11`：`WebRtcEngine.BINDING_CLASSES` 增列被 captain 裁定 (B) 不放行，`app/src/main/**` 自 t25 冻结）。
+4. **K-17 = 已闭合** ✅（我 20:11:52 复测 `find .git ! -user node` = 0；`.git/objects/{33,c6}` = `node:node 775`）。
+5. **事故留痕在 `reports/15` §19** ✅（标题 = "事故留痕：一次非授权 A 落位及其回滚（2026-09-14 18:32:24 → 18:33:42）"，含 18:17:28/18:32:24/18:33:42 三行时间线与 P-12/D-13 留痕）。
+6. **git 状态**：本节写入前 `git status --porcelain` = **空**；HEAD = `1c550cd`；captain 引用的 `1f5023e`（18:44:58）与 `2bb7750`（18:45:19，t33 交付记录）**均为 HEAD 祖先** ✅。**⚠️ 引用 `1f5023e` 会读到过期结论**：该提交正文写"`7dbe8400…` 在容器可见树内**无保留**"，**已被我 a9b45bb/1c550cd 就地更正**为"**在盘但不可读**"（§13.7 + §13.22(e) + §13.25(i)）。
+
+#### (4) **verdict = pass**（含 3 条低危"记载/环境"项，均不构成 needs_revision）
+- 通过：§3.1 三值 + §13.3 四条（权威脚本 PASS）、§3.2 dex 判据、§3.3 四 `.so` 护栏、§3.5 N-1..N-5、§4 收口五项、git 干净。
+- **F-1（low，记载）**：captain §3.2 的逐 dex 分布应为 `classes.dex` 2 / `classes13` 1 / `classes14` 0（合计 3）；判据本身成立。*requiredFix：后续文本按此更正。*
+- **F-2（low，环境）**：`check_jn_binding.py` 默认 `--javap` 为宿主路径 ⇒ 容器/其它环境须显式传参（建议把默认值改为基于 `PATH`/环境变量解析，由持写权者实施）。*requiredFix：脚本默认值可移植化。*
+- **F-3（low，环境限制）**：`§3.4` 单测**未在容器内重跑**（无 JDK 17 / AGP 拒绝 JDK 25 / `local.properties` 指宿主 SDK）；以产物 XML（46/0/0，6 用例逐名）+ 两条宿主原始日志为证。*requiredFix：如需"容器内现场重跑"，须提供 JDK 17 或授权宿主执行（不改变已成立的证据层结论）。*
+- **不写成通过（仍未验证）**：真机安装/首次 native 调用/`JNI_OnLoad` 运行期注册/Camera2 采集/首帧渲染/日志导出；宿主 `/opt/apk-http/served/app-debug.apk`（容器不可见，仅他人报告同哈希）。
+- **附带事实（不改变 verdict）**：APK **整包 byte-reproducibility = false** —— 同一 jar、同一 `--no-build-cache clean` 命令的两次构建分别产出锚点 `30c41ac9…`（18:39–18:42 日志 `6f02e949…`）与 `ef29e00c…`（19:02–19:04 日志 `reports/10-t33-nocache-assembleDebug-20260914-190227.log`）；两者**六载荷逐件相同、类集合 26 195/26 195 相同**（§13.25(b)），故稳定判据落在载荷而非整包 sha。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
