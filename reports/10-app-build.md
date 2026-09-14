@@ -434,3 +434,13 @@ sha256 : 721df1c82841ad992ffef016cdb4fc09335028869fa443e98f24fe797055b724
 **单元测试（同窗口后立即执行）**：`./gradlew --no-daemon :app:testDebugUnitTest` → BUILD SUCCESSFUL 35s；**tests=42 / skipped=0 / failures=0 / errors=0** ✅（android-dev 在本轮把断言从 38 扩到 **42**，与 t23 补齐的 `*Jni`+`GEN_JNI` 台账一致）。日志 `reports/logs/t26d-testDebugUnitTest-20260914-112836.log`。
 
 > **中间产物作废声明**：`6653fddf…`（基于 jar `7dbe8400…`，10:59 构建）与 `58834b5a…`（11:07 构建，期间 jar mtime 被 touch ⇒ 按判据作废）**均非交付物**，仅存哈希与当时记录。**本报告的交付 APK 只认 `721df1c8…`**（静默窗口 + 完全执行 + jar 前后完全一致）。
+
+## 9.7 jar ↔ .so 边界一致性（t26 附加证据，captain 指令）
+
+**结论：`GEN_JNI` 的 native 方法数 = 194，`.so` 边界符号 = 193，逐名交集 193/193；唯一未命中 = `org_webrtc_LibaomAv1Encoder_create`（`Java_J_N_M0vTiIkf`）。**
+
+- 差值定性（已由 native-dev 在 `reports/07-native-dev.md` **§16 / §16.5** 完成，附件 `reports/07-native-dev-jnizio-mapping.tsv`）：**AV1 编码器未编入本 `.so`（本项目只用 VP9）** ⇒ **已知豁免 + 书面理由**，其余 **193/193 逐条命中**。
+- 证据链：`libjingle_peerconnection_so.so` 的 `llvm-nm -D --defined-only` = `JNI_OnLoad` + `JNI_OnUnload` + **193 个 `Java_J_N_<hash>`**；`GEN_JNI` 的 16 个分片并集 = **194**；生成头可见 `JNI_ZERO_BOUNDARY_EXPORT int64_t Java_J_N_M0vTiIkf(JNIEnv*, jclass)`（AV1 行在 TSV 中标 `no`）。
+- **口径纪律（重要）**：**不得**把 `GEN_JNI` 的期望 native 数写成 193 —— 194 才是 `GEN_JNI` 侧的期望值，193 是 `.so` 侧实际导出数，二者差异就是上面这一条豁免。
+- 引用：`reports/07-native-dev.md` §16/§16.5（v1.10/v1.11）、`reports/07-native-dev-jnizio-mapping.tsv`（194 行 4 列，含 `generated_header` 与 `so_exported`）。
+- 与本轮交付的关系：`libjingle_peerconnection_so.so` **无需重编**（其 193 个边界符号完整）；t26 交付 APK 内该 so 仍为 `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e`（与 t5 交付逐字节一致）。
