@@ -901,17 +901,20 @@ reports/10-t33-captain-testDebugUnitTest-20260914-184232.log # BUILD SUCCESSFUL 
 | A 隔离件 `c289b4df…` | 193 | 0 | 0 | **FAIL** |
 | 落位前 `dc5f8919…` | 193 | 194 | 0 | **FAIL** |
 
-**B3｜可复现性判据改钉"载荷 5 件"**：整包 sha **仅作"冻结交付件身份"**（锚点 `30c41ac9…`）；载荷判据为：
+**B3｜可复现性判据改钉"载荷 6 件"**（captain 追加更正：第 6 件 = `classes13.dex`，与 `reports/99 §13.24` 及 `reports/99-t34-appendix.md` 口径统一）：整包 sha **仅作"冻结交付件身份"**（锚点 `30c41ac9…`）；载荷判据为：
 
-| 载荷 | sha256（前 16） | 说明 |
+| 载荷 | sha256 | 说明 |
 |---|---|---|
-| `classes.dex` | `a1b2ebdc…` | 44,668,428 B；含 `J.N` |
-| `lib/arm64-v8a/libjingle_peerconnection_so.so` | `757cef81…` | t30 证明对象 |
-| `lib/arm64-v8a/libc++_shared.so` | `c9dbf4ec…` | 与 `jniLibs` 落位件逐字节相同 |
-| `lib/arm64-v8a/libwebrtcdemo_native.so` | `95c44e5a…` | 自有库（strip 后形态） |
-| `lib/arm64-v8a/libandroidx.graphics.path.so` | `41e9a793…` | AndroidX 依赖 |
+| `classes.dex` | `a1b2ebdceec4f1fd11f78df7b22ca0133c50768c5f0e8dfee68429f63941028d` | 44,668,428 B；含 `J.N` |
+| **`classes13.dex`** | **`a1f35bd51c0e5a30ceb2c3f453da59bdfa8054e56f3f761c79541d3f42a98a16`** | **含 `GEN_JNI`**（B 形态判据所在 dex） |
+| `lib/arm64-v8a/libjingle_peerconnection_so.so` | `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e` | t30 证明对象 |
+| `lib/arm64-v8a/libc++_shared.so` | `c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36` | 与 `jniLibs` 落位件逐字节相同 |
+| `lib/arm64-v8a/libwebrtcdemo_native.so` | `95c44e5ab9ff6f851e5e1de26b9d28810c09017264909424e64985b57f821bc0` | 自有库（strip 后形态） |
+| `lib/arm64-v8a/libandroidx.graphics.path.so` | `41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6` | AndroidX 依赖 |
 
-⚠️ 这 5 件在 `30c41ac9…` 与 `ef29e00c…` 之间**逐字节相同**；**`115aa211…` 是未剥离中间件**（`…/cxx/…/obj/arm64-v8a/`），**钉它必假失败**；`app/src/main/jniLibs/` 只有 2 个 `.so`（另两件由构建中间件产出），故"载荷 5 件"比"只钉 jniLibs"更完整。
+（可选**从钉**：`resources.arsc` 与 `AndroidManifest.xml` —— 两包间亦逐字节相同，写作第二层。）
+
+⚠️ 这 6 件在 `30c41ac9…` 与 `ef29e00c…` 之间**逐字节相同**；**`115aa211…` 是未剥离中间件**（`…/cxx/…/obj/arm64-v8a/`），**钉它必假失败**；`app/src/main/jniLibs/` 只有 2 个 `.so`（另两件由构建中间件产出），故"载荷 6 件（从 APK 内解出）"比"只钉 jniLibs"更完整。
 
 **B4｜两条口径**
 - **整包 byte-reproducibility = false**：`ef29e00c…` 与 `30c41ac9…` 属**同输入**（T0/T1 双钉 jar `0c776934…`/aar `8e8f2baf…` 均 OK）却**整包 sha 不同**；正确表述 = **"语义可复现（类集合与逐 dex 分区一致）／整包 sha 不跨构建稳定"**。
