@@ -1580,9 +1580,18 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
   **使用注意（webrtc-builder 提醒，我已核）**：该字面量在 `app/src` 内**只出现在单测** `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt:60`，**`app/src/main/**` = 0 处** ⇒ 不污染 APK 判据，但**不得**据此说"主代码也发这条消息"。
 - **⚠️ D-13 类过期口径提示**：webrtc-builder 本条消息的③仍以 `721df1c8…`（33 293 061 B / 11:28:34）为"现行 APK"、K-15"仍开放"、t33"in_progress" —— 三项**均已被取代**：现行锚点 = **`30c41ac9…`**、dex `LJ/N;` = **3（非 0）**、t33 已 completed（captain 接管 attempt 3）、t34 已 completed（→ native-dev）⇒ 其"APK 侧仍开放、待 t33 关闭"的结论**过期，不采纳**（其"重编后 dex 应出现 `LJ/N;`"的预期**已实现**）。
 
-#### (i) `7dbe8400…` ↔ `dc5f8919…`"同内容、异时间戳"：**半侧我可复算、半侧不可**（读盘 20:12）
-- **我可复算的一侧（已实测）**：`/data/dsh/home/workspace/tmp/t31/pre-routeA-libwebrtc-java.jar` = **`dc5f8919…`**（1 187 970 B / mode 600 / node 可读）= **508 条目 / 508 个 `.class` / `^J/` 条目 = 0**（印证"落位前 508 条目、无 `J/N`"，§13.11/§13.20）。
-- **我不能复算的一侧**：`artifacts/pre-deploy-7dbe8400.jar` **此刻复测仍为 `root:root` mode `600`（uid 1000 不可读）** ⇒ webrtc-builder 新给的"`7dbe8400…` = 宿主机 `/tmp/pre-deploy.jar`；与 `dc5f8919…` **508/508 条目内容逐字节相同、508/508 时间戳不同、两者 compress_type 均 0（ZIP_STORED）**"**仍属宿主侧读数，我无法验证**。要闭环需持写权者把该件 `chmod 644`/`chown 1000:1000`（或在容器可见路径留一份）。
+#### (i) `7dbe8400…` ↔ `dc5f8919…`"同内容、异时间戳"：**~~半侧我可复算、半侧不可~~ ⇒ 现已两侧全部可复算（2026-09-14 20:53–20:54 闭环）**
+- **✅ 闭环（captain 归档 + 我第一手复算）**：captain 把该件落到仓外稳定位置 **`artifacts/pre-deploy-7dbe8400.jar`**（现 **`root:root 644`，uid 1000 可读**），sha256 = **`7dbe840049e239fbbd18d7f921b3d3cfc6ea6c1b61026bd8d75261c0551c98d1`** / 1 187 970 B ⇒ 我用 `zipfile` 逐条复算（`[读盘 20:53:52]`）：
+  | 比对项 | 结果 |
+  |---|---|
+  | 条目数 | **508 / 508** |
+  | 名称集合 / 顺序 | **相等 / 完全相同** |
+  | **逐条内容哈希** | **相同 = 508 ；不同 = 0** |
+  | **zip 时间戳（`date_time`）** | **相同 = 0 ；不同 = 508** |
+  | `compress_type` | A = `[0]`、B = `[0]`（**均 ZIP_STORED**） |
+  | `external_attr` / `create_system` | **相同 = 508 ；不同 = 0** |
+  ⇒ **webrtc-builder 的结论（同一内容、仅 zip 时间戳不同 ⇒ sha256 不同）已由我第一手证实**；口径与 §13.22(e) 一致。
+- （此前记录，保留为过程史）~~"半侧可复算"~~：`tmp/t31/pre-routeA-libwebrtc-java.jar` = **`dc5f8919…`**（1 187 970 B / mode 600 / node 可读）= **508 条目 / 508 个 `.class` / `^J/` 条目 = 0**（印证"落位前 508 条目、无 `J/N`"，§13.11/§13.20）；~~"我不能复算的一侧：`artifacts/pre-deploy-7dbe8400.jar` 为 `root:root 600` 不可读"~~ ⇒ **该限制已由 captain 归档（chmod 644）解除，见上表闭环结果**。
 - **口径**：其结论"**同一内容、仅 zip 时间戳不同 ⇒ sha256 不同**"**与本报告 §13.22(e) 既有记录一致**（该点我已按 native-dev 更正采纳，**不是**新增分歧）；**唯一仍开放的是"容器侧可复算性"**。K-17 相关：本条消息①的"已闭合"与我的记录（§13.21 追加、§13.22(d)3）**同向，无冲突**——我此刻复测 `find .git ! -user node` = **0**，`.git/objects/{33,c6}` 均为 `node:node 775`（`56`/`ac` 已不存在）。
 
 #### (j) native-dev 的 **v1/v2 指针提醒** + `FINAL.jar` 变体复核（我 20:13 实测）
@@ -1735,7 +1744,14 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - **K-17 归因更新（不点名、只归因"机制"）**：**两名成员自述在 root 侧跑过 git** —— env-installer（`t18/t26/c6fcfcd/3acc1d2` 等提交）与 **webrtc-builder（约 18:31–18:55 的 `git status/diff/log/show`）**；其自述的**首条 git 命令 ≈18:31 晚于 18:25/18:27 两次抢占** ⇒ 那两次不能归到它头上；其**自述 18:54 那次 = root `git diff --stat`**，正对应本报告 §13.21(d) 记录的 **18:54:11** 事件 ⇒ 时间线归因：**18:25/18:27 非其；18:31:18 · 18:46:11 · 18:54:11 落在其窗口内**。**结论不变**：根因 = **root 侧 git 会重写 `.git/index`（root:root 0644）**，属机制问题而非个人过失；**护栏 = 仓库内禁止 root 侧 git（必要时仅 `git --no-optional-locks`，该选项不写 index）**，叠加 captain 的 `chown -R 1000:1000` 与"uid-1000-only"规则。
 - **K-17 现场复核（`[读盘 20:31:37]`，webrtc-builder 所报 18:54 快照的后续）**：`.git/index` = **`node:node 644`**（mtime `20:31:15` = 我最近一次提交）、**`find .git ! -user node` = 0**、无 `index.lock`、无 git 进程；我 **20:24–20:31 的 8 次提交（`806988b`→`c5c1418`）均以 uid 1000 成功** ⇒ **写侧已恢复且可用**，其 18:54 快照**已被其后修复取代**（无需再 chown）。
 - **`app/build` 属主复核（`[读盘 20:40:57]`，对 webrtc-builder 19:06:40 快照）**：现盘 `app/build` = **`node:node 755`**（mtime 19:07:02）、**非 node 项 = 0** ⇒ 其报的"`app/build` = `root:root`、root-owned 条目 **1047**"**已被 19:07:02 的 uid-1000 构建取代**，**无需 `chown -R app/build`**。
-  **K-17 读侧最终口径（我实测）**：**仓库内** `mode 600 ∧ uid≠1000` = **0**；**残余仅 12 个 `root:root 644`**（全在 `app/.cxx/**` 的构建产物 `.o`，**uid 1000 可读**，且所属目录均 `node:node` ⇒ **不阻塞 uid 1000 的 clean/覆盖**）；**仓外工作区**不可读文件 = **3**（`artifacts/pre-deploy-7dbe8400.jar` 600、`tmp/jn-fix/backup-B-before-A-incident-20260914-183224.jar` 600、`QUARANTINE-A/repro-c289b4df.jar` 400，均 `root` 属主）。
+  **K-17 读侧最终口径（我实测）**：**仓库内** `mode 600 ∧ uid≠1000` = **0**；**残余仅 12 个 `root:root 644`**（全在 `app/.cxx/**` 的构建产物 `.o`，**uid 1000 可读**，且所属目录均 `node:node` ⇒ **不阻塞 uid 1000 的 clean/覆盖**）。
+  **✅ 仓外 3 件原不可读者已于 20:53–20:54 全部解除并逐件复核（K-17 读侧就此闭合）**：
+  | 件 | 现权限 | sha256 | 我复核内容 |
+  |---|---|---|---|
+  | `artifacts/pre-deploy-7dbe8400.jar` | `root:root 644` | **`7dbe8400…c98d1`**（1 187 970 B）| 508 条目；与 `dc5f8919…` **内容 508/508 相同、时间戳 508/508 不同、均 ZIP_STORED**（§13.25(i)）|
+  | `tmp/jn-fix/backup-B-before-A-incident-20260914-183224.jar` | `root:root 644` | **`0c776934c1452b7b…`**（1 206 602 B）| **509 条目**；`J/N.class 1ff8d3ff…`(6 924 B)、`GEN_JNI.class a6e7edcf…`(24 910 B) ⇒ **即事故前 B 备份** |
+  | `tmp/jn-fix/QUARANTINE-A/repro-c289b4df.jar` | `root:root 644` | **`c289b4dfd06827bc…`**（1 206 237 B）| **509 条目**；两类 `9ada0641…`/`8f3ce613…` 与 `ACCIDENT-landed-A-c289b4df.jar` **逐字节相同** ⇒ 事故件复现 |
+  ⇒ **K-17 读侧"零不可读"已达成**（此前"2 或 3 件不可读"的表述全部作废）。
 - **审计提示（身份口径）**：本轮 §13.26 的 8 次提交在 `git log --format='%cn'` 下显示为 **`env-installer`** —— 因仓内 `.git/config` 现为 `user.name=env-installer`（我**未改**该配置）；此前 verifier 名下的 65 次提交系以 `-c user.name=verifier` 提交。⇒ 审计归属请以**提交 hash + 提交内容**为准，勿仅看 `%cn`（本节后续提交已改回 `-c user.name=verifier`）。
 - **报告文件漂移续证（我 `[读盘 20:32:16]`）**：`reports/05-libwebrtc-build.md` = **995 行 / `bccea2ff…`**（与 §13.22(e) 现值一致）；`reports/15-java-jar-rebuild.md` = **828 行 / `3da734f8c19ba9f13b58572a490b886a3ef2e6031934877c2794164bc6ee90b6`**（mtime **18:57:27**）—— **晚于** native-dev 18:56:46 引用的"827 行 / `65cd51f4…`" **仅 1 分钟**即再次变更 ⇒ **"引用他人报告哈希前必须当场重取"**（P-13 ③）在本次会话内被**再次实证**；`git status --porcelain` 现已 **空**（此前在途的 `M` 已入库）。
 - **顺带更正一处他方假设**：**"容器内无 `python3`"不成立** —— 我用**交付树自带**的 `webrtc-build/src/third_party/cpython3/host/bin/python3`（3.11.9）在容器内**真实执行**了 `check_jn_binding.py`（§3.1 的 PASS/EXIT=0 即容器内读数；另需显式 `--javap/--nm`，见 F-2）。
