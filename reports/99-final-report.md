@@ -1501,7 +1501,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 | `libc++_shared` ↔ `jniLibs` | **逐字节相同** |
 | 单测 | **46 / 0 / 0**（5 份 XML @19:07:05；`8+4+17+11+6`；`JniBindingClasspathTest` = 6） |
 | 载荷钉（跨两次独立构建稳定） | `classes.dex a1b2ebdc…` + `classes13.dex` + 四 `.so` 共 6 件 |
-| 语义等价旁证（三条独立证据） | 类集合 26 195 / 26 195（双向差集 0）；逐 dex 分区 **14/14** 一致；7 个差异 dex 的 **`code_items` 机器码逐字节相同**（区级 `map_list` 与方法级 `code_off` 两路独立） |
+| 语义等价旁证（**四条**独立证据） | ① 类集合 26 195 / 26 195（双向差集 0）；② 逐 dex 类集合 **14/14** 一致；③ 7 个差异 dex 的 **`code_items` 机器码逐字节相同**（区级 `map_list` 与方法级 `code_off` 两路独立，**非我自推**）；④ **结构指纹（我自跑）**：以 `dexdump` 逐 dex 提取 `CLASS/NAME/TYPE/ACCESS` 序列后比对 —— **14/14 dex 完全相同、0 不同**（各行数亦逐一相同：`classes.dex 307 662`、`classes13.dex 219 899`、`classes14.dex 14 806`、`classes2 2 283`、`classes3 1 884`、`classes9 2 056`、`classes5 956`、`classes6 624`、`classes11 1 011`、`classes10 490`、`classes8 235`、`classes12 193`、`classes7 82`、`classes4 73`） |
 
 **(3) 结论**
 - **K-15 = 已闭合**（jar/AAR 侧 + **APK 侧**）。
