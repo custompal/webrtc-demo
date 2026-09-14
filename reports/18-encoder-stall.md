@@ -24,7 +24,7 @@
 | 已修复缺陷 D-2（功能/契约核心） | SDK 实际下发 **5×4** 矩阵，旧代码按内部上限 **3×3** 校验 ⇒ 每次 `SetRates` 被 `bad_dim` 拒绝，且一旦放宽即会**越界写 11 个 int**（§4.2） |
 | 已加固 D-3 | JNI 注册表锁跨 `Encode` 全程持有 ⇒ 慢/卡编码会阻塞挂断路径（真机「首帧后无 `nativeRelease` 日志」的真因之一）（§4.3） |
 | 已加取证标记 D-4 | `encode_vpx_begin` / `encode_vpx_done` / `encode_no_packet`，把「崩在 libvpx 内」与「崩在取包/回调层」收敛到一行（§4.4） |
-| DTLS | 单列判定见 §6：现有日志**不能**证明 DTLS 有问题（采集面缺 DTLS tag），且三个编码会话都在握手可能完成之前就终止了 |
+| DTLS | **运行期未知**（§6，captain 复核后口径）：本 checkout 的 `pc/dtls_transport.cc` **全文仅 1 处 `RTC_LOG(LS_ERROR)`**（`:114`）⇒ 成功握手**本就不打印日志**，「无握手日志」不能推断失败；不列为疑似缺陷，留待新版本 `pc_connection_state`+`dtls` 诊断/真机复测判定 |
 | 验收边界 | 「`nativeEncode` 连续被调用 + `encoded_frame` + `encoded_bytes>0`」**必须在重编 APK 后用真机确认**（§7）；本轮只能给出代码级修复 + 容器内可复现证据 |
 
 ---
@@ -292,28 +292,38 @@ $NDK/clang++ --target=aarch64-linux-android26 -std=c++17 -fno-exceptions -fno-rt
 `webrtc_webrtc_session_de` 的 `DTLS-SRTP enabled; sending DTLS identity request (key_type: 1)`
 （每个会话一条），没有任何握手/transport 完成日志。
 
-**判定：现有日志不能证明 DTLS 有问题**，理由三条：
-1. 该 `webrtc.log` 是**按 tag 过滤的 logcat 采集**（22 个 tag，如
+**判定（captain 源码复核后的口径修正）：本版本 DTLS 成功握手不打印任何日志 ⇒ DTLS 状态属运行期未知，不能由「无握手日志」推断失败；留待新版本 `pc_connection_state`+`dtls` 诊断与真机复测判定。** 理由四条：
+
+1. **（决定性）源码级：本 checkout 的 DTLS transport 只在 ERROR 级打日志。**
+   `third_party/libwebrtc-src/pc/dtls_transport.cc` 全文**仅 1 处** `RTC_LOG`，且为
+   `LS_ERROR`（`:114` `"DtlsTransport in connected state has incomplete ..."`）；
+   `third_party/libwebrtc/include/pc/dtls_transport.cc` 同为 `:114` 一处。
+   ⇒ 握手**成功**在 libwebrtc 侧**根本不产生日志**，「只有 identity request、无握手日志」
+   是**预期行为**，不是缺失证据（由 captain 2026-09-14 复核指出，本报告据此修正）。
+2. 该 `webrtc.log` 是**按 tag 过滤的 logcat 采集**（22 个 tag，如
    `webrtc_webrtc_session_de`、`webrtc_basic_ice_control`、`webrtc_jsep_transport_co`、
    `webrtc_rtp_transport_con`、`webrtc_network_cc`…），采集面里**没有** DTLS transport
-   自己的 tag（例如 `dtls_transport` / `srtp_transport` / `dtls_transport_cc`）⇒
-   「没有 DTLS 完成日志」至少部分是**过滤产物**，不是缺失证据。
-2. 三个编码会话都只活到首帧后 0.2–0.7 s（§2.4）：DTLS 握手需要 ICE 完成后若干
-   RTT，进程在此之前就终止了，握手日志本来也无从产生。
-3. 与「远端无画面」的因果链：本缺陷使**上行 0 字节**，即使 DTLS/transport 完全
-   正常，对端也必然看不到画面；因此黑屏的主因已由 §2/§4 解释，DTLS 是并列
-   待查项而非前置。
+   自己的 tag（例如 `dtls_transport`）⇒ 即便有日志，当前导出也未必包含。
+3. 三个编码会话都只活到首帧后 0.2–0.7 s（§2.4）：DTLS 握手需要 ICE 完成后若干
+   RTT，进程在此之前就终止了，握手也无从完成。
+4. 与「远端无画面」的因果链：本缺陷使**上行 0 字节**，即使 DTLS/transport 完全
+   正常，对端也必然看不到画面；因此黑屏的主因已由 §2/§4 解释，DTLS 不是前置项。
+
+> 验收口径（按 captain 指令）：「**本版本无成功日志 ⇒ 仍未知，留待新版本诊断/真机复测**」；
+> 本轮**不要求**证明 DTLS 正常，也**不把 DTLS 列为疑似缺陷**（降级为运行期未知）。
+> 精力集中在编码器管线停住（§2–§4）。
 
 **取证方案（重编 APK 后一次真机复测即可判定）**：
 1. t44 已加入的诊断会直接落盘：`pc_connection_state`（含 `dtls` 字段）、
    `selected_candidate_pair`、`pc_ice_candidate_error`、`pc_starting`、
    `ice_gathering_complete`（`app.log`，t44 同时修掉了等级过滤 Bug ⇒ 这次 INFO/WARN/ERROR 可见）；
 2. 复测时额外抓**完整 logcat**（不再按 tag 过滤）：
-   `adb logcat -b all -v threadtime > logcat.txt`，然后在 `webrtc-build`/导出包中
-   一并保留，`grep -iE 'DtlsTransport|Dtls|Srtp|Transport.*[Cc]omplete'` 判定；
-3. 判据：`pc_connection_state` 到达 `CONNECTED`（t44 的 `dtls` 字段应为
-   `CONNECTED`/`true`）⇒ DTLS 正常；若长时间停在 `CONNECTING` 且无
-   `DtlsTransport` 日志，则单开缺陷。
+   `adb logcat -b all -v threadtime > logcat.txt`，与导出包一并保留；
+   **不要**用「没有 DtlsTransport 行」判失败（成功态本就不打印），只以
+   `pc_connection_state` 的 `state`/`dtls` 字段与 RTP 收发为判据；
+3. 判据：`pc_connection_state` 到达 `CONNECTED`（t44 的 `dtls` 字段
+   `CONNECTED`/`true`）⇒ DTLS 正常；若长时间停在 `CONNECTING/CHECKING`
+   **且**在 `encoded_bytes>0` 之后仍无 RTP 收发，才单开缺陷；否则记为「未知」。
 
 ---
 
@@ -328,6 +338,7 @@ $NDK/clang++ --target=aarch64-linux-android26 -std=c++17 -fno-exceptions -fno-rt
 | U5 | `su=sv=640`（U/V stride = width）是否合理 | 真机 `nativeEncode` 日志三次都是 `sy=640 su=640 sv=640`（640×480）。`CheckPlaneCapacity` 通过说明缓冲区确实 ≥153280 B，故不构成越界；但**来源未在容器内证实**（可能来自 SDK 纹理→I420 转换的实现细节）。已在报告中登记，不改代码 |
 | U6 | 是否还存在别的首帧崩溃点（如 `VP8E_GET_LAST_QUANTIZER`） | 已在 `libvpx-src/vp9/vp9_cx_iface.c:2260` 确认该 ctrl 存在于 VP9 控制表（`ctrl_get_quantizer`），**不是**崩溃候选；但 U1 未定前不敢宣称穷尽 |
 | U7 | `nativeRelease` 不再同步 `delete` 是否满足契约 §6.7 字面要求 | 语义：摘除注册表 + 由 `shared_ptr` 释放；无并发调用时析构仍在 `nativeRelease` 内**同步**完成。若评审要求「返回前必须已 `vpx_codec_destroy`」，需回改（可加 `WaitIdle`） |
+| U8 | DTLS/SRTP 是否随 ICE 建立（**运行期未知，非疑似缺陷**） | 本 checkout `pc/dtls_transport.cc` 仅 `LS_ERROR` 一处日志（`:114`）⇒ 成功不打印；只能用新版本 `pc_connection_state` 的 `dtls` 字段判定（§6 取证方案）。判据：`CONNECTED` = 正常；停在 `CONNECTING/CHECKING` 且在 `encoded_bytes>0` 后仍无 RTP 收发才单开缺陷 |
 
 **假设（容器内无法验证，逐条声明）**：
 - A-1：`nativeSetRates` 收到的 `5×4` 矩阵来自 libwebrtc 的
