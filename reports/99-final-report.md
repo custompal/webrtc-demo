@@ -708,8 +708,8 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 - 交付链里**没有任何一步**检查"jar 的引用闭合性"——直到我们补上**常量池引用扫描**（N-1）与**绑定类回归测试**（N-2）；
 - 结论（已登记为流程留痕 **P-8**）：**凡"运行期才解析的依赖"，必须有交付物级（jar/dex/APK）存在性断言**，不能依赖编译器/打包器默认行为。
 
-### 12.5 未闭合项（**必须带走，不得当成已修好**）
-> **历史快照（18:17 落位前）**：K-15 运行期绑定缺口：jar 内 `GEN_JNI` 仍是 **Placeholder 实现**（194 native 可读名、0 转发），`.so` 侧为 **hashing/short-proxy** 模式（193 `Java_J_N_<hash>`、无 `kMethods`）⇒ 静态预期真机首次 native 调用 **`UnsatisfiedLinkError`**。按 captain 定向由 **t29/t30 路线 A** 修复（§13.3），**修复后须重编 APK 并复跑本节全部检查**。 **⇒ 现状见 §13.22（jar/AAR 侧已闭合为 B 形态；APK 侧待 t33）。**
+### 12.5 未闭合项（**必须带走，不得当成已修好**）—— **t34 后更新（2026-09-14）**
+> **历史快照（18:17 落位前）**：K-15 运行期绑定缺口：jar 内 `GEN_JNI` 仍是 **Placeholder 实现**（194 native 可读名、0 转发），`.so` 侧为 **hashing/short-proxy** 模式（193 `Java_J_N_<hash>`、无 `kMethods`）⇒ 静态预期真机首次 native 调用 **`UnsatisfiedLinkError`**。按 captain 定向由 **t29/t30 路线 A** 修复（§13.3），**修复后须重编 APK 并复跑本节全部检查**。 **⇒ 现状（t34 后，见 §13.26）**：**jar/AAR 侧 ✅ + APK 侧 ✅ 均已闭合** —— 交付锚点 **`30c41ac9…`**（33 309 445 B）、APK dex 内 `LJ/N;` = **3**、四 `.so` 的 `LOAD` 段全 `0x4000`、`libjingle` `757cef81…` / `libc++_shared` `c9dbf4ec…` 未漂移、单测 **46/0/0**；verifier 复验 **verdict = pass**。**本节仍须"带走"的只剩真机运行期项**：真机安装 / 首次 native 调用 / `JNI_OnLoad` 运行期注册 /Camera2 采集 / 首帧渲染 / 日志导出（无设备 ⇒ **未验证**）。
 
 ---
 
@@ -1004,7 +1004,7 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 **门禁脚本可执行性提醒（重复强调）**：`scripts/check_jn_binding.py` 需要 `python3`，而**本容器无 `python3`**（§13.8 已记）⇒ 在容器内不可复跑；其 `KNOWN_EXEMPT` 白名单使 A/B 两形态都会 PASS（不构成"AV1 安全"证据）。**t34 我会用 `jar`/`javap` + 我自写的 `jni_mangle` 双向集合脚本独立复算，不依赖该脚本。**
 
 
-### 13.11 **t31 已落位实测（2026-09-14 18:17:28）**：jar/AAR 侧路线 A(**B 形态**) 完成，APK 侧仍待重编
+### 13.11 **t31 已落位实测（2026-09-14 18:17:28）**：jar/AAR 侧路线 A(**B 形态**) 完成，APK 侧仍待重编（**历史小节**：APK 侧已于 t33 完成、t34 复验为 **已闭合**，见 §13.26）
 
 以下全部为我（verifier）只读实测；**未修改任何落位产物**。
 
@@ -1716,6 +1716,36 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - **rc=1 的语义（重要，与 webrtc-builder 审计说明一致）**：A1/A2/B1/B1b 的 `rc=1` 发生在**写盘之后**的 `assert not os.path.isabs(path)`（我传了绝对 `--depfile/--srcjar-path`，承 `jni_registration_generator.py:465`）⇒ **srcjar 已写出且哈希正确**，产物有效。
 - **结论升级 + 限定语确认**：此前记"宿主侧可复算、容器侧不可复算"的这项 ⇒ **升级为"我容器内第一手复跑，逐字节一致"**；同时确认 webrtc-builder 的限定：**在官方输入集上 `--add-stubs-for-missing-native` 是 no-op**（A1≡A2），**B 的差异来自输入清单扩展（160 → 165，恰 +1 文件）**，flag 的作用是"让扩展通过检查并生成 absent-proxy 桩" ⇒ **两者缺一不可**。
 - **附带核对**：`Java_J_N_M0vTiIkf`（AV1 的哈希名）在 `.so` 动态符号中 = **0**，`.so` 导出 `Java_J_N_*` = **193** ⇒ 与 t36 的"AV1 行 = `no`（头内有原型、`.so` 无导出）"及 E1 的 193↔193 双向相等**自洽**。
+
+#### (8) t34 核心动作**单批复验**（captain 放行令要求的合并跑，`[读盘 20:34:54]`，uid 1000，`LC_ALL=C`）
+- 复验脚本：`/data/dsh/home/workspace/tmp/t34-final.sh` = `649b470bcf54a9c61569e5bc8ee894a435826b66fcfe7ca515c71c380b5a8619`；**原始输出** `/data/dsh/home/workspace/tmp/t34-final.log` = `7f46ff8d454ea380c539dfe0a9a81fa2dca9aad762d093ce41280fb24bf0773c`（72 行；位于**仓库外**的工作区临时目录，正文已内联全部关键行）。
+```
+### [0] 三值语义身份
+jar   0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757  1206602 B  entries=509  ^J/=1
+AAR   8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099  6492067 B
+APK   30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2  33309445 B  mtime=19:05:19.310
+J/N.class     1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932  6924 B
+GEN_JNI.class a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08  24910 B
+AAR.classes.jar == jar : 逐字节相同
+### [1] §13.3 四条（权威脚本，容器内实跑）
+J.N native 193 ↔ .so Java_J_N_* 193：双向差集 0 / 0        GEN_JNI native 0 / 方法 194 / 转发目标 193
+E3：调用点 194 / 覆盖 194 / 未覆盖 0 / 已知豁免 0 / 真缺失 0 → RESULT: PASS
+check_jar_link_integrity.py：class 509 / 被引用 *Jni 49 / 缺失 0 / PCFJni 25 方法·native 0 / GEN_JNI native 0 / J/N native 193 → RESULT: PASS
+### [2] 规范六数
+J.N 193/194 ; GEN_JNI 0/194 ; invokestatic J/N. = 193 ; athrow = 1 ; 非 native 唯一 = org_webrtc_LibaomAv1Encoder_create(long)
+### [3] APK dex 逐 dex
+classes.dex LJ/N;=2 ; classes13.dex LJ/N;=1 GEN_JNI;=2 ; classes14.dex GEN_JNI;=1 PCFJni;=2  ⇒ 合计 LJ/N;=3 GEN_JNI;=3 PCFJni;=2
+### [4] 四 .so（APK 内解出）
+libjingle 757cef81… 12 946 912 B / libc++_shared c9dbf4ec… 1 356 968 B / libwebrtcdemo_native 95c44e5a… 1 231 512 B / androidx 41e9a793… 10 096 B
+四者 LOAD 段全 0x4000；libjingle == jniLibs == third_party…/jni；libc++_shared == jniLibs（均逐字节相同）；判据④ = 193（llvm-nm）/193（readelf）
+### [5] 单测
+5 套 XML：8 / 4 / 17 / 11 / 6 = 46 / 0 / 0 ；日志 10-t33-testDebugUnitTest-…190455.log = GRADLE_EXIT=0 / TOTAL 46-0-0 ；10-t33-captain-testDebugUnitTest-…184232.log 逐类同值
+### [6] N-5 锚点构建日志
+双钉 jar 0c776934… ；本次产出 APK = 30c41ac9… ；BUILD SUCCESSFUL 2m56s ；42 executed, 1 up-to-date ；:app:clean 出现 ；FROM-CACHE 行 = 0
+### [7] jar 条目=509 / .class=509 / *Jni.class=48
+```
+- **结论：captain 清单全部成立 ⇒ verdict 维持 `pass`**（findings 见 (4)：F-1 记载更正 · F-2 脚本默认 `--javap` 可移植性 · F-3 单测**未在容器内重跑**（AGP 拒 JDK 25）· F-4 他方 `GEN_JNI` dex 归属 · F-5 sidecar 时间戳 · F-6 `grep -c 'org_'` 作用域）。
+- **同批写入的终报收口**：`§12.5 未闭合项` 的历史快照尾句改为"**jar/AAR ✅ + APK ✅ 均已闭合**……仅剩真机运行期项"；`### 13.11` 标题加注"**历史小节**：APK 侧已于 t33 完成、t34 复验为已闭合"；§6 汇总行与风险表 K-15 行（`c5c1418`）此前已改为"已闭合"。
 
 ---
 
