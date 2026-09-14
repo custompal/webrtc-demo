@@ -48,6 +48,8 @@ object AppLog {
      * @param defaultLevel 未持久化时的默认等级。
      */
     fun init(context: Context, defaultLevel: LogLevel = FileLogger.DEFAULT_LEVEL): FileLogger {
+        // t25：**先记住目录**再构造 FileLogger —— 这样即使构造/写盘失败，兜底留痕也有地方可写。
+        FileLogger.rememberLogDir(context)
         val persisted = context
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getInt(KEY_LEVEL_KOTLIN, -1)
@@ -214,6 +216,30 @@ object AppLog {
     fun logDir(context: Context): File =
         FileLogger.get()?.logDir() ?: FileLogger.resolveLogDir(context)
 
+    /**
+     * **关键日志**（t25）：同步直写 `app.log`，保证**必定落盘**（绕过异步队列）。
+     *
+     * 用于引擎生命周期等"失败必须可诊断"的事件。若日志器本身不可用/写失败，
+     * 会向 `app-fallback.log` 留一条 `critical_not_persisted` 兜底记录（**绝不静默**）。
+     *
+     * @param tag 模块标签（§9.1 的 tag 段）。
+     * @param message 事件名（如 `engine_ready`）。
+     * @param fields 行尾 k=v 字段。
+     */
+    fun critical(tag: String, message: String, fields: Map<String, String> = emptyMap()) {
+        val logger = FileLogger.get()
+        if (logger != null && logger.critical(LogLevel.INFO, tag, message, fields)) return
+        FileLogger.fallbackMarker("critical_not_persisted event=$message tag=$tag")
+        Log.println(
+            LogLevel.INFO.androidPriority,
+            FileLogger.LOGCAT_TAG,
+            message + if (fields.isEmpty()) "" else " " + fields.toSortedMap().entries.joinToString(" ") { "${it.key}=${it.value}" },
+        )
+    }
+
+    /** 文件写盘失败累计次数（t25；供诊断页/导出自检；未初始化返回 -1）。 */
+    fun fileWriteFailureCount(): Int = FileLogger.get()?.writeFailureCount() ?: -1
+
     private fun emit(
         level: LogLevel,
         tag: String,
@@ -226,7 +252,9 @@ object AppLog {
             logger.log(level, tag, message, fields, throwable)
             return
         }
-        // 未初始化：只写 logcat，避免丢日志或抛异常
+        // 未初始化：只写 logcat，避免丢日志或抛异常。
+        // t25：**同时**在日志目录旁留一条兜底落痕 —— 否则"app.log 为空"在导出物里毫无线索。
+        FileLogger.fallbackMarker("log_sink_missing tag=$tag event=$message")
         val text = buildString {
             append(message)
             for ((key, value) in fields.toSortedMap()) append(' ').append(key).append('=').append(value)

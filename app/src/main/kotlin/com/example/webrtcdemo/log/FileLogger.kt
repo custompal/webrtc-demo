@@ -84,6 +84,9 @@ class FileLogger private constructor(
     /** 是否有 I/O 正在进行（flush() 需要等待） */
     private var writing = false
 
+    /** 写盘失败累计（t25：让"日志系统自身故障"可观测，而不是静默丢日志）。 */
+    private val writeFailures = java.util.concurrent.atomic.AtomicInteger(0)
+
     @Volatile
     private var currentLevel: LogLevel = initialLevel
 
@@ -142,6 +145,64 @@ class FileLogger private constructor(
             lock.unlock()
         }
     }
+
+    /**
+     * **同步直写**一条关键日志（t25）：绕过内存队列，直接 append 到 `app.log` 并立即 flush。
+     *
+     * 用途：**必须落盘**的引擎生命周期事件（`log_sink_state` / `engine_native_loaded` /
+     * `engine_init_skipped` / `jni_binding_missing` / `engine_init_failed` / `engine_ready`）。
+     * 动机：真机上曾出现"`native.log`（C++ 独立写）有记录、而 Kotlin 的 `app.log` 整段为空"——
+     * 异步写盘路径（队列 + writer 线程）一旦静默失败，外部就完全看不到 Kotlin 侧发生了什么。
+     *
+     * 行格式与异步路径**完全一致**（复用 [formatLine]），因此不影响 §9.1 契约。
+     *
+     * @return `true` = 已写入文件；`false` = 写失败（此时已向 `app-fallback.log` 留痕并计数）。
+     */
+    fun critical(
+        level: LogLevel,
+        moduleTag: String,
+        message: String,
+        fields: Map<String, String> = emptyMap(),
+    ): Boolean {
+        if (!currentLevel.isEnabledFor(level)) return true
+        val line = formatLine(
+            OffsetDateTime.now(ZoneOffset.UTC), level, LogChannel.APP, moduleTag, message, fields, null,
+        )
+        Log.println(level.androidPriority, LOGCAT_TAG, line.substringAfter("] "))
+        return directAppend(line)
+    }
+
+    /**
+     * 直接 append 一行到 `app.log`（自建流，独立于 writer 线程）。
+     *
+     * 失败时：计数 + 向 `app-fallback.log` 留痕（**绝不静默**）。
+     */
+    private fun directAppend(line: String): Boolean = try {
+        val file = File(logDirectory, LogChannel.APP.baseName)
+        FileOutputStream(file, true).use { out ->
+            out.write((line + "\n").toByteArray(Charsets.UTF_8))
+            out.flush()
+        }
+        true
+    } catch (t: Throwable) {
+        writeFailures.incrementAndGet()
+        fallbackAppend("direct_append_failed msg=${t.javaClass.simpleName}:${t.message}")
+        false
+    }
+
+    /** 兜底文件 append（同步、best-effort）：`<logs>/app-fallback.log`。 */
+    private fun fallbackAppend(reason: String): Boolean = try {
+        FileOutputStream(File(logDirectory, FALLBACK_FILE_NAME), true).use { out ->
+            out.write(("${OffsetDateTime.now(ZoneOffset.UTC)} $reason\n").toByteArray(Charsets.UTF_8))
+            out.flush()
+        }
+        true
+    } catch (t: Throwable) {
+        false
+    }
+
+    /** 写盘失败累计次数（供诊断页/导出自检引用；t25）。 */
+    fun writeFailureCount(): Int = writeFailures.get()
 
     /** 组装 §9.1 行格式（layer 取 channel.layer）。 */
     private fun formatLine(
@@ -255,7 +316,9 @@ class FileLogger private constructor(
                 out.write(bytes)
                 state.size += bytes.size
             } catch (t: Throwable) {
-                // 日志失败绝不能影响业务，只回报到 logcat
+                // 日志失败绝不能影响业务；但**不得静默**（t25）：计数 + 兜底文件留痕 + logcat。
+                writeFailures.incrementAndGet()
+                fallbackAppend("write_failed ch=${record.channel.baseName} msg=${t.javaClass.simpleName}:${t.message}")
                 Log.e(LOGCAT_TAG, "写入日志文件失败(${record.channel.baseName}): ${t.message}", t)
             }
         }
@@ -414,6 +477,9 @@ class FileLogger private constructor(
         private const val WRITER_THREAD_NAME = "webrtcdemo-log-writer"
         private const val STACK_INDENT = "        "
 
+        /** 兜底文件（t25）：日志系统自身故障的落痕，与 `app.log` 同目录、随导出一并打包。 */
+        const val FALLBACK_FILE_NAME = "app-fallback.log"
+
         /** logcat tag：固定值（§9.2） */
         const val LOGCAT_TAG = "WebRtcDemo"
 
@@ -456,6 +522,46 @@ class FileLogger private constructor(
 
         @Volatile
         private var instance: FileLogger? = null
+
+        /**
+         * 最近一次解析出的日志目录（t25）。
+         *
+         * 存在意义：当 `FileLogger` **根本没初始化成功**（`get() == null`）时，业务日志会退化为
+         * "只有 logcat"，外部完全看不到 `app.log` 为什么是空的。记住目录后即可用
+         * [fallbackMarker] 在其旁边落一条 `app-fallback.log`，把"日志系统故障"变成**可导出的证据**。
+         */
+        @Volatile
+        private var lastKnownLogDir: File? = null
+
+        /** 记录日志目录（`AppLog.init` 在构造 FileLogger 之前调用；幂等）。 */
+        fun rememberLogDir(context: Context): File =
+            resolveLogDir(context).also { lastKnownLogDir = it }
+
+        /** 当前已知日志目录（可能为 null：尚未调用过 remember/resolve）。 */
+        fun knownLogDir(): File? = lastKnownLogDir
+
+        /**
+         * **日志器不可用时的兜底落痕**（t25，同步、best-effort）。
+         *
+         * 写到 `<logs>/app-fallback.log`（与 `app.log` 同目录 ⇒ 会被日志导出一起打包），
+         * 因此"app.log 为空"这类现象**总能**在导出物里找到原因记录。
+         *
+         * @return `true` = 已写入兜底文件。
+         */
+        fun fallbackMarker(reason: String): Boolean {
+            val dir = lastKnownLogDir ?: return false
+            return try {
+                FileOutputStream(File(dir, FALLBACK_FILE_NAME), true).use { out ->
+                    out.write(
+                        ("${OffsetDateTime.now(ZoneOffset.UTC)} $reason\n").toByteArray(Charsets.UTF_8)
+                    )
+                    out.flush()
+                }
+                true
+            } catch (t: Throwable) {
+                false
+            }
+        }
 
         /**
          * 初始化全局日志器（幂等）。

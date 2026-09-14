@@ -399,3 +399,38 @@ sha256 : 6653fddfb396c38cd69df6b263c2ef8200923f604851cb21d0503d5dce8b690c
 见提交 `fix(android): 补齐 libwebrtc jni_zero 绑定类 + 16KB 页对齐 + 引擎失败可诊断化`；范围：
 `app/build.gradle.kts`、`app/src/main/cpp/CMakeLists.txt`、`app/src/main/kotlin/**`（3 个文件）、`app/src/test/kotlin/**`（t25 新测试）、`scripts/build_java_sdk_with_jni.sh`、`scripts/check_jar_link_integrity.py`、`scripts/make-libcxx-shared-16k.sh`、`reports/07`、`reports/08`、`reports/10`。
 **不含**：`doc/**`（契约零改动）、`third_party/**` 产物、`app/build/**`、`reports/logs/*`、`signaling` 二进制；`app/src/main/jniLibs/**` 的 `.so` 由 `.gitignore` 排除（未用 `-f`）。
+
+## 9.6 **最终静默窗口构建（取代 §9.2–§9.4 的中间产物）** — 交付 APK
+
+captain 追加硬时序：「开编前必须确认写者已静默」。实测 android-dev 在 11:12 仍在写 `app/src/main/kotlin/**`，我**中止了 11:04 那次构建**并等待；守候任务（每 60s 采样）在 **11:25–11:26 达到静默**后自动开编：
+
+| 项 | 实测 |
+|---|---|
+| 静默判据 | `jar 稳定=yes`（全程 `dc5f8919…|1789355110 1187970`）＋ `app/src` 近 5 分钟写入 **11:25=0、11:26=0` → **SILENT ✅** |
+| T0 → T1 | **2026-09-14 11:26:08 → 11:28:35**；`--no-daemon --no-build-cache clean assembleDebug`；**BUILD SUCCESSFUL in 2m 26s**，EXIT=0 |
+| 完全执行证据 | **FROM-CACHE = 0**；`:app:clean` 出现；`43 actionable tasks: 42 executed, 1 up-to-date`；`packageDebugResources`/`buildCMakeDebug[arm64-v8a]`/`compileDebugKotlin`/`dexBuilderDebug`/`packageDebug` **实际执行** |
+| 构建窗口内写入 | `find app/src -newermt "$T0"` → **0** ✅ |
+| jar 前后 | **完全一致**：`dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915`，`stat "%Y %s"` = `(1789355110, 1187970)` ✅（我只读，未写 third_party） |
+| 日志 | `reports/logs/t26d-nocache-assembleDebug-20260914-112608.log` |
+
+**交付 APK（本轮最终）**
+```
+path   : /opt/dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk
+mtime  : 2026-09-14 11:28:34.950
+size   : 33,293,061 B
+sha256 : 721df1c82841ad992ffef016cdb4fc09335028869fa443e98f24fe797055b724
+```
+**APK 内四个 `.so`：sha256 + LOAD `p_align`（全 0x4000）**
+
+| .so | size | p_align | sha256 |
+|---|---|---|---|
+| libandroidx.graphics.path.so | 10,096 | **0x4000** | `41e9a793…15bfb6` |
+| **libc++_shared.so** | 1,356,968 | **0x4000** | **`c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36`**（= 期望） |
+| libjingle_peerconnection_so.so | 12,946,912 | **0x4000** | `757cef8128bf9151…33259e` |
+| libwebrtcdemo_native.so | 1,231,512 | **0x4000** | `95c44e5ab9ff6f851e5e1de26b9d28810c09017264909424e64985b57f821bc0` |
+
+**四项 + 新增不变式**：(a) dex **14 个**，`com.example.webrtcdemo` **4481** 条；**`Lorg/webrtc/PeerConnectionFactoryJni;` 50 ✅**、**`Lorg/jni_zero/GEN_JNI;` 197 ✅**、`Lorg/webrtc/PeerConnectionFactory;` 86；(b) 四个 so 就位；(c) Manifest 权限 6 + 组件 5；(d) `resources.arsc` 可解析（`Package name=com.example.webrtcdemo id=7f`）。
+
+**单元测试（同窗口后立即执行）**：`./gradlew --no-daemon :app:testDebugUnitTest` → BUILD SUCCESSFUL 35s；**tests=42 / skipped=0 / failures=0 / errors=0** ✅（android-dev 在本轮把断言从 38 扩到 **42**，与 t23 补齐的 `*Jni`+`GEN_JNI` 台账一致）。日志 `reports/logs/t26d-testDebugUnitTest-20260914-112836.log`。
+
+> **中间产物作废声明**：`6653fddf…`（基于 jar `7dbe8400…`，10:59 构建）与 `58834b5a…`（11:07 构建，期间 jar mtime 被 touch ⇒ 按判据作废）**均非交付物**，仅存哈希与当时记录。**本报告的交付 APK 只认 `721df1c8…`**（静默窗口 + 完全执行 + jar 前后完全一致）。

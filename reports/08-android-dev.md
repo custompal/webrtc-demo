@@ -1038,10 +1038,10 @@ CallScreen.kt:98   pool.createRenderer(context, mirror = false) { viewModel.onRe
 | 同上 | `:101-111` | **启动自检**：A 分支写入 `lastFailure`；新增自检命中 → **新事件 `jni_binding_missing`（字段 `cls`）** + `lastFailure="NoClassDefFoundError: <类名>"` + 快速失败 |
 | 同上 | `:163-173` | `catch(t: Throwable)`：**保留事件名 `engine_init_failed`**，**新增字段 `ex`（异常类名）、`msg`（message，截断 300）、`cause`（cause 类名，若有）** |
 | 同上 | `:182-189` | 新增 `lastFailureDetail()` / `describe(t)`（`异常类名: message` 单行口径，UI 与日志共用） |
-| 同上 | `:197-207` | 新增 `BINDING_CLASSES`（**5 项**：`org.jni_zero.GEN_JNI`、`PeerConnectionFactoryJni`、`PeerConnectionJni`、`VideoTrackJni`、`JniCommonJni`） |
+| 同上 | `:219-225` | 新增 `BINDING_CLASSES`（**运行期自检清单，5 项**：**`org.jni_zero.GEN_JNI`**、`PeerConnectionFactoryJni`、`PeerConnectionJni`、`VideoTrackJni`、`JniCommonJni`）—— 含 `GEN_JNI` 是为了在**真机现场**就挡住"只补 `*Jni`/漏 `GEN_JNI`"的半修复（运行期自检比单测更贴近崩溃现场） |
 | `ui/call/CallViewModel.kt` | `:149-160` | 失败文案改为 **`WebRTC 引擎初始化失败（<异常类名>: <message>）`**；无详情时保留原兜底文案 |
 | `diag/DiagnosticsScreen.kt` | `:302-310` | 诊断页"WebRTC 引擎"行在未就绪时追加 **`（失败原因: <详情>）`**（可复制，便于远程排障） |
-| `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt` | 新文件（2 用例，断言在 `:53` 前后） | ① `referencedJniBindingClassesAreResolvable`：断言 **5 个**绑定类可在 classpath 解析（**一次性列出全部缺失**）；② `coreWebrtcApiClassesAreResolvable`：**正向对照**，证明 classpath 接线正常、失败确由"jar 缺绑定类"引起 |
+| `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt` | 新文件（2 用例） | ① `referencedJniBindingClassesAreResolvable`：断言 **43 个**绑定类可在 classpath 解析（**`org.jni_zero.GEN_JNI` + t22 实测的 42 个 `*Jni` 全量台账**；一次性列出全部缺失）；② `coreWebrtcApiClassesAreResolvable`：**正向对照**，证明 classpath 接线正常、失败确由"jar 缺绑定类"引起 |
 
 **新增事件/字段一览（未改名、未删除任何既有事件）**：新增事件 `jni_binding_missing`（字段 `cls`）；既有 `engine_init_failed` 新增字段 `ex` / `msg` / `cause`；`engine_init_skipped` 不变（仅补 `lastFailure`）。
 
@@ -1119,6 +1119,11 @@ VideoTrackJni / YuvHelperJni
 4. **同代际**：`src` HEAD `5c25072b`；部署 jar == AAR `classes.jar`（同 sha256）；⇒ 修复 = **只并入类、不必重编 `.so`**。
 5. ⚠️ **量化缺口**：14 份**分包** `GEN_JNI` 的 native 合计 **187**，而 `.so` 边界 **193**（差 6）⇒ 必须用**合并后的单一 `GEN_JNI`**；"合并产物是否存在"native-dev 未在构建树见到，**留 t5/构建方确认**。
 6. **建议 t26 增做一项跨产物核对**（单测挡不住"存在但不完整"）：`llvm-nm -D` 取 `.so` 的 193 个 `Java_J_N_*`，与合并 `GEN_JNI` 的 native 数量/名字逐一对齐。
+   > ⚠️ **注意两者不可直接字符串比对**（native-dev 提醒）：A 是**符号名** `Java_J_N_<hash>`，B 是**Java 方法名** `org_webrtc_<Class>_<method>`，需经 jni_zero 的 mangling 映射。**可判定的是：数量一致（193 = 合并 `GEN_JNI` 的 native 数）**，以及"我方所需符号 ⊆ 合并 `GEN_JNI` 可提供的集合"这条语义检查；若要**逐名映射**，native-dev 可从 `gen/jni_headers/sdk/android/generated_*/…_jni.h` 导出对应表（按需索取）。
+
+7. **计数对账（48 / 45 / 42；native-dev 2026-09-14 追加）**：生成 `*Jni.java` = **48**；14 个模块 `*.javac.jar` 编译出 `*Jni.class` 累计 **45**（**去重后仍 45，无重名**）；其中**被本 jar 引用**的 = **42**（与 native-dev 独立扫描结果 **`SET_EQUAL`**，逐名一致）。
+   ⇒ **42 是"运行时必须齐的最小集"**；而**打包更稳妥的做法是并入全部 45 个编译产物**（多 3 个无害），这样不依赖"引用扫描"的正确性。
+   ⇒ 本层的回归测试（43 项 = `GEN_JNI` + 42 个被引用类）**钉的是最小集**：t23 只要并入含这 42 个 + 合并 `GEN_JNI` 的产物即可转绿；**若只并入 42 而漏掉那 3 个未被引用者，运行时同样安全**（它们不被任何类引用）。
 
 #### 8.15.4 冻结面确认（未触碰 JNI 契约与既有事件名）
 
@@ -1153,6 +1158,127 @@ JniBindingClasspathTest     tests="2"  failures="0" errors="0"   ← 修复前�
 | 修复后 | 508 类 / `*Jni`=48 / 有 `GEN_JNI` | **2 通过** | **BUILD SUCCESSFUL / 38 用例 0 失败** |
 
 > 残余（非本层可测）：本次只验证了"**类存在即可解析**"；"`GEN_JNI` 存在但不完整（native-dev 实测分包合计 187 ↔ `.so` 边界 193）"**单测挡不住**，仍需 t26 的跨产物核对（见 §8.15.3 第 6 条）。
+
+### 8.16 t25 追加：Kotlin 文件日志**整段缺失**的根因与"落盘自检"
+
+**用户的真机证据（captain 解析导出 zip `webrtcdemo-logs-20260914-023211Z.zip`）**：`app.log` 最后一条
+`2026-09-14T02:20:04.894Z` 且只有 `signaling` 行；而 `native.log` 里 **PID 10433 在 02:31:28 起**有
+`nativeDetect/nat_done/nativeCancel/nativeFlush` 全套 ⇒ **该进程的 Kotlin 通道一行未落**（连 `main|app_create` 都没有）。
+
+**① 根因：Kotlin 文件日志存在三条"静默降级"路径（都不在任何文件里留痕）**
+| # | 位置 | 静默降级行为 |
+|---|---|---|
+| **D-1** | `log/Log.kt`（原 `emit` 未初始化分支） | `FileLogger.get() == null` 时**只写 logcat**，无任何文件标记 ⇒ "该进程 app.log 为空"完全不可解释 |
+| **D-2** | `log/FileLogger.kt:315-321`（`writeRecords` 的 catch） | 单条写失败（打开/滚动/写入）**只 `Log.e` 到 logcat**：`FileLogger.get()` 仍非 null、logcat 继续工作，**文件却停止增长** —— 与"native.log 继续、app.log 冻结"的现象完全吻合 |
+| **D-3** | `log/FileLogger.kt`（`rollFiles`/`closeStream`） | 滚动重命名/删除/flush/close 失败**只 `Log.w`**；若重命名失败或 `openFresh` 截断，内容可能丢失且无痕迹 |
+
+**为什么 `native.log` 挡不住这个故障**：`native.log` 由 **C++ 侧独立文件句柄**写入（同目录、不同路径），
+Kotlin 队列/线程的任何故障都**不会**体现在 `native.log` 里；因此"两边不一致"是**必然**的观测结果，而不是两套日志都坏。
+
+**触发条件（无法只凭导出物唯一确定，按可能性列出并给出判别法）**
+- **T-1 写盘失败被 D-2 吞掉**：磁盘满/文件被占用/权限（`ENOSPC`/`EMFILE`/`EPERM`）→ 判别：logcat 里应有 `WebRtcDemo|写入日志文件失败(app.log)`。
+- **T-2 该进程 `FileLogger` 未初始化**（D-1）→ 判别：logcat 里**没有** `file_logger_ready`（它由 `FileLogger.init` 在初始化时刻写）。注意 `AndroidManifest.xml:34` 已声明 `android:name=".WebRtcDemoApp"`，故 `AppLog.init` **必然**被调用；若仍缺失，说明**构造/初始化阶段抛错**，需 logcat 佐证。
+- **T-3 导出只看了 `app.log`**：导出模式为 `app*.log`（`LogExporter` §9.5），**旋转后的 `app.1.log`/`app.2.log` 也会进 zip** ⇒ **请先确认 zip 内 `app.1.log`/`app.2.log` 是否含 PID 10433 的行**；若含，则结论要改写为"轮转 + 导出解读问题"，而非"日志器失效"。（我**没有**该 zip，无法自行判定，故如实并列此条。）
+- **T-4 进程被杀在 flush 之前**：异步队列每 200 ms 或满 256 行落盘；导出前会 `AppLog.flush()`，故仅在"导出前进程已被杀"时成立。
+
+**② 修复点（全部在本层 inScope；已编译通过）**
+| 文件:行号 | 内容 |
+|---|---|
+| `log/FileLogger.kt:88` | 新增 `writeFailures` 计数器 |
+| `log/FileLogger.kt:161-178` | 新增 **`critical(level, tag, message, fields)`**：**同步直写** `app.log`（绕过队列、复用 `formatLine` ⇒ §9.1 行格式不变），保证关键事件必定落盘 |
+| `log/FileLogger.kt:180-192` | 新增 `directAppend`：失败即计数 + 兜底留痕（**绝不静默**） |
+| `log/FileLogger.kt:194-204` | 新增 `fallbackAppend`：写 `<logs>/app-fallback.log` |
+| `log/FileLogger.kt:205` | 新增 `writeFailureCount()`（供诊断页/自检引用） |
+| `log/FileLogger.kt:315-322` | **D-2 修复**：`writeRecords` 失败 → 计数 + `app-fallback.log` 留痕 + logcat（原为仅 logcat） |
+| `log/FileLogger.kt:481/534/537/551` | 新增 `FALLBACK_FILE_NAME="app-fallback.log"`、`lastKnownLogDir`、`rememberLogDir(context)`、`fallbackMarker(reason)` |
+| `log/Log.kt:52` | `AppLog.init` **先 `rememberLogDir`** 再构造 logger ⇒ 即使构造失败也有目录可兜底 |
+| `log/Log.kt:229-239` | 新增 `AppLog.critical(tag, message, fields)`（日志器不可用时自动兜底留痕 + logcat） |
+| `log/Log.kt:241 / :257` | 新增 `fileWriteFailureCount()`；**D-1 修复**：未初始化分支也写 `app-fallback.log`（`log_sink_missing`） |
+| `WebRtcDemoApp.kt:55 / 103-134 / 136-147 / 156` | **新增落盘自检 `verifyLogSink`**：同步直写 `log_sink_state` → `flush()` → **回读 `app.log` 校验**；失败则 `log_sink_degraded`（ERROR + `app-fallback.log`）。`readTail` 只读尾部 64 KiB |
+| `webrtc/WebRtcEngine.kt:104 / 109 / 114 / 167 / 188` | 引擎生命周期事件改/增为 **`AppLog.critical`**（同步直写）：`engine_init_skipped`、**`engine_native_loaded`（新事件）**、`jni_binding_missing`、`engine_ready`、`engine_init_failed`（含 `ex/msg/cause`） |
+
+> **设计取舍（如实说明）**：`engine_init_failed`/`engine_ready`/`engine_init_skipped` 现在会**各出现两条**——
+> 一条异步（含完整堆栈、保持既有事件名与字段）与一条同步直写（保证落盘）。这是**有意为之**：
+> "绝不因写盘路径故障而丢掉失败原因"优先于"日志去重"。若 captain 要求去重，可改为仅在 `critical` 失败时才补发。
+
+**③ "引擎事件会落盘"的证据**
+- **自检（新增）**：每次进程启动都会在 `app.log` 同步写入 `log_sink_state`（含 `dir/level/initialized/writable`），
+  并**回读验证**；验证失败即在 `app-fallback.log` 留下 `log_sink_degraded` ⇒ **"app.log 为空"今后必定有同目录的解释记录**，
+  不再出现本次这种"只能靠猜"的情形。
+- **编译+测试证据（宿主机真实执行）**：`./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest -PwebrtcDemo.skipNative=true`
+  → **BUILD SUCCESSFUL in 1m 55s / EXIT=0**（38 用例 0 失败，含绑定类回归测试）。
+- ⚠️ **不可在本环境证明的部分（如实标注）**：`critical`/`verifyLogSink` 的**真机落盘行为**需在设备上验证（容器无设备）；
+  且 `FileLogger`/`AppLog` 依赖 `android.util.Log` 与 `android.os.Process`，**JVM 单测无法直接驱动**（`build.gradle.kts` 未开 `unitTestOptions.returnDefaultValues`，且该文件不在本任务 inScope）⇒ 故本项以**运行时自检**而非单测作为可验证证据。
+
+**④ 给 captain 的判别清单（拿到 zip 后 1 分钟内定因）**
+1. zip 内**是否有** `app-fallback.log`？有 ⇒ 直接读它（`log_sink_missing` / `write_failed` / `log_sink_degraded` 会指出原因）。
+2. zip 内 `app.1.log`/`app.2.log`（旋转文件）里**是否有 PID 10433 的行**？有 ⇒ T-3（解读问题，日志器正常）。
+3. 原 logcat 里搜 `file_logger_ready`：**无** ⇒ T-2（初始化失败）；**有** ⇒ 排除 T-2。
+4. 原 logcat 里搜 `写入日志文件失败(app.log)`：**有** ⇒ T-1（I/O 失败，本次已修为必留痕）。
+
+### 8.17 t25 收口：JNI 接口检查**入库为可复跑单测**（替代已丢失的 `/tmp` 脚本）+ 修复后全量复跑
+
+**背景**：原 `t7iface.sh`（19 条接口检查）是**会话本地 shell 脚本**，随 `/tmp` 重置丢失 ⇒ **不可复跑、不可自证**。
+按 captain 指示改为 **JVM 反射单测**（不再写 shell 脚本入库）。
+
+**新增文件**：`app/src/test/kotlin/com/example/webrtcdemo/nativebridge/NativeInterfaceContractTest.kt`（182 行 / 4 用例）
+| 用例 | 断言 |
+|---|---|
+| `allFifteenExternalFunsArePresentWithExactSignatures` | **15 个 `external fun`**（`NativeLog` 4 + `NativeVp9Encoder` 9 + `NativeNatDetector` 2）**名称 + 参数类型 + 返回类型**逐条在位，且每个都是 **`static` + `native`**（`@JvmStatic external fun` 的可注册形态；非静态会触发 §11.4 D-4 的"字面名查找失配"） |
+| `noUnexpectedExternalFuns` | `nativebridge` 的 native 方法**集合恰好等于**契约 15 个 —— **既不能少，也不允许多**（防"偷偷加第 16 个"） |
+| `nativeCallbacksArePresent` | `NativeCallbacks.onNatTypeDetected(String,String)` / `onLogEvent(int,String,String)` 在位且为静态（§6.5） |
+| `encoderLayerAnchorsUnchanged` | 反射读常量：`SPATIAL_LAYERS=1`、`TEMPORAL_LAYERS=3`、`IMPL_NAME="SelfVp9Libvpx"`（§5.6/§6.6） |
+
+**替代关系（回答 captain 的收口问项）**：**是** —— §8.15.4 原写"会话本地 `t7iface.sh` 已丢失、只能同口径重推导"的说明，**自本节起由反射单测取代**；
+今后任何人执行 `./gradlew --no-daemon :app:testDebugUnitTest` 即可复跑这批接口不变量，无需任何临时脚本。
+
+#### 8.17.1 修复后全量复跑（t23 落位后；captain 要求的原始输出）
+
+**补丁后最终运行（`REQUIRED_BINDINGS` 扩到 43 项：`GEN_JNI` + 全量 42 个 `*Jni`）**：
+```
+$ ./gradlew --no-daemon :app:testDebugUnitTest
+BUILD SUCCESSFUL in 53s
+EXIT=0
+```
+逐类：`AppConfigUrlTest 8/0`、`NativeInterfaceContractTest 4/0`、`SignalingErrorPolicyTest 17/0`、
+`SignalingIdentityTest 11/0`、`JniBindingClasspathTest 2/0` ⇒ **42 用例 / 0 失败**。
+（扩充的是**清单条数**而非用例数：断言逻辑不变，失败时一次列全 43 个的缺失项。）
+
+**t23 落位后的收口运行（captain 通知 jar 已就位时执行；记录产物哈希）**：
+```
+$ sha256sum third_party/libwebrtc/java/libwebrtc-java.jar
+dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915   libwebrtc-java.jar
+$ ./gradlew --no-daemon :app:testDebugUnitTest
+BUILD SUCCESSFUL in 32s
+EXIT=0
+```
+逐类同前（`8/0`、`4/0`、`17/0`、`11/0`、`2/0`）⇒ **42 用例 / 0 失败**。
+产物侧核对：jar **508 类 / `*Jni`=48 / `GEN_JNI`=1**（与 captain 通知的计数一致），且 **AAR 内 `classes.jar` 与本 jar 同哈希**（`dc5f8919…`）。
+> ⚠️ **哈希对账提示**：captain 通知的 jar 哈希为 `7dbe840049e239fb…c98d1`，与**当前磁盘实测** `dc5f8919…` **不一致**（计数一致）。可能是"我通知后又重打了一次包"或"对同一快照的 zip 重打包"（zip 内时间戳/顺序变化会改哈希而不改内容）。**不影响本层结论**（测试是对**当前磁盘产物**跑的、且全绿），但 **t26 应以磁盘实测哈希为准并回填**。
+
+**更早一次（同一 jar，5 项清单）**：
+
+```
+$ ./gradlew --no-daemon :app:testDebugUnitTest      # jar 已含 *Jni/GEN_JNI
+BUILD SUCCESSFUL in 55s
+EXIT=0
+```
+逐类（`app/build/test-results/testDebugUnitTest/*.xml`）：
+```
+AppConfigUrlTest                tests="8"  failures="0" errors="0"
+NativeInterfaceContractTest     tests="4"  failures="0" errors="0"   ← 新增反射守卫
+SignalingErrorPolicyTest        tests="17" failures="0" errors="0"
+SignalingIdentityTest           tests="11" failures="0" errors="0"
+JniBindingClasspathTest         tests="2"  failures="0" errors="0"   ← 修复前为 1 失败
+```
+⇒ **42 用例 / 0 失败**（原 38 + 反射 4）；绑定类回归测试与反射守卫**同时全绿**。
+
+**t25 三次关键运行的完整对照**
+| 运行 | jar 状态 | 结果 |
+|---|---|---|
+| 修复前（§8.15.1） | 453 类 / `*Jni`=0 / 无 `GEN_JNI` | `JniBindingClasspathTest` **1 失败**；38 用例 1 失败；BUILD FAILED |
+| 修复后（§8.15.5） | 508 类 / `*Jni`=48 / 有 `GEN_JNI` | **BUILD SUCCESSFUL 3m42s**；38 用例 0 失败 |
+| **收口（本节）** | 同上 + 本层日志修复 | **BUILD SUCCESSFUL 55s**；**42 用例 0 失败** |
 
 ---
 

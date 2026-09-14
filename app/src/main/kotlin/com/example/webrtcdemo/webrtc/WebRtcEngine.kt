@@ -100,13 +100,18 @@ object WebRtcEngine {
         val nativeOk = NativeLoader.ensureLoaded()
         if (!nativeOk) {
             AppLog.e(TAG, "engine_init_skipped", mapOf("reason" to "native_lib_missing"))
+            // t25：同一事件再落一条**同步直写**（保证 app.log 里必有），字段与上面一致。
+            AppLog.critical(TAG, "engine_init_skipped", mapOf("reason" to "native_lib_missing"))
             lastFailure = "UnsatisfiedLinkError: libwebrtcdemo_native.so（native 库加载失败，详见 native_lib_load_failed）"
             return false
         }
+        // t25：native 库就绪是"引擎生命周期"的关键一步，同步直写保证可导出（此前只有 AsyncApp 路径）。
+        AppLog.critical(TAG, "engine_native_loaded", mapOf("lib" to NativeLoader.LIBRARY_NAME))
         // t25 新增自检：绑定类缺失时给出**专属事件 + 确切类名**，而不是让它在 initialize() 深处变成笼统报错。
         val missing = missingBindingClass()
         if (missing != null) {
             AppLog.e(TAG, "jni_binding_missing", mapOf("cls" to missing))
+            AppLog.critical(TAG, "jni_binding_missing", mapOf("cls" to missing))
             lastFailure = "NoClassDefFoundError: $missing"
             return false
         }
@@ -158,6 +163,15 @@ object WebRtcEngine {
                     "use_default_encoder" to AppConfig.useDefaultEncoder(appContext).toString(),
                 )
             )
+            // t25：关键事件同步直写，保证 app.log 中必有（不依赖异步队列）。
+            AppLog.critical(
+                TAG,
+                "engine_ready",
+                mapOf(
+                    "impl" to Vp9VideoEncoder.IMPL_NAME,
+                    "use_default_encoder" to AppConfig.useDefaultEncoder(appContext).toString(),
+                )
+            )
             true
         } catch (t: Throwable) {
             // t25：**只新增字段**（事件名 `engine_init_failed` 不变）—— 让真机日志一眼区分
@@ -169,6 +183,9 @@ object WebRtcEngine {
             fields["msg"] = t.message?.take(300) ?: "-"
             t.cause?.let { fields["cause"] = it.javaClass.name }
             AppLog.e(TAG, "engine_init_failed", fields, t)
+            // t25：**同步直写**同事件（含 ex/msg/cause 字段）—— 即使异步写盘路径失效，
+            // app.log 里也必然有一条 engine_init_failed 可导出；堆栈仍由上面的 AppLog.e 完整记录。
+            AppLog.critical(TAG, "engine_init_failed", fields)
             cleanupAfterFailure()
             false
         }

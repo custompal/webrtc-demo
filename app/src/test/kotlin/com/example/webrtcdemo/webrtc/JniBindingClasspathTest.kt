@@ -29,18 +29,60 @@ class JniBindingClasspathTest {
          * 说明：`Class.forName(name, false, loader)` 的 `initialize=false` 很关键 ——
          * 这些类的 `static {}` / `get()` 工厂会触碰 native，测试**不应**触发它们。
          *
-         * **`org.jni_zero.GEN_JNI` 必须在列**（native-dev 宿主机反编译实测，2026-09-14）：
-         * 生成的 `*Jni` 只是中间层，方法体把调用委托给 `GEN_JNI`（那里才是 `public static native`）。
-         * 少了它，即使 `*Jni` 全部补齐，真机仍抛 `NoClassDefFoundError`；本测试若不含它就会"假绿"
-         * —— 这正是它被放进来的原因。完整 42 个缺失 `*Jni` 台账见 reports/08-android-dev.md §8.15.3
-         * （测试只钉关键入口，避免清单随构建演进产生误报）。
+         * **`org.jni_zero.GEN_JNI` 必须在列，且必须是【合并后】的那一份**（native-dev 宿主机反编译实测，2026-09-14）：
+         * 生成的 `*Jni` 只是中间层（`class PeerConnectionFactoryJni implements PeerConnectionFactory.Natives`），
+         * 方法体把调用**委托**给 `org.jni_zero.GEN_JNI`（`public static native` 声明在那里）。
+         * ⇒ **只补 `*Jni` 必崩**（`NoClassDefFoundError: org.jni_zero.GEN_JNI`），本测试若不含它就会"假绿"。
+         * ⚠️ 且 **`GEN_JNI` 是分片生成的**：构建树里 16 个分片各自只含一部分 native（分包合计 187 ↔
+         * `.so` 边界 193），**挑任意一份都会漏方法** ⇒ 必须是**合并后**的单一 `GEN_JNI`（t23 明确要防的错）。
+         *
+         * 下面的 `*Jni` 清单 = **t22 实测的 42 个"被 jar 引用但 jar 内不存在"的绑定类全量台账**
+         * （见 reports/08-android-dev.md §8.15.3）：断言逻辑不变，失败时会**一次列全**缺失项。
          */
         val REQUIRED_BINDINGS = listOf(
             "org.jni_zero.GEN_JNI",
+            "org.webrtc.AudioTrackJni",
+            "org.webrtc.BuiltinAudioDecoderFactoryFactoryJni",
+            "org.webrtc.BuiltinAudioEncoderFactoryFactoryJni",
+            "org.webrtc.CallSessionFileRotatingLogSinkJni",
+            "org.webrtc.DataChannelJni",
+            "org.webrtc.DtmfSenderJni",
+            "org.webrtc.EglBase10ImplJni",
+            "org.webrtc.EnvironmentJni",
+            "org.webrtc.H264UtilsJni",
+            "org.webrtc.HistogramJni",
+            "org.webrtc.JavaI420BufferJni",
+            "org.webrtc.JniCommonJni",
+            "org.webrtc.LibaomAv1EncoderJni",
+            "org.webrtc.LibvpxVp8DecoderJni",
+            "org.webrtc.LibvpxVp8EncoderJni",
+            "org.webrtc.LibvpxVp9DecoderJni",
+            "org.webrtc.LibvpxVp9EncoderJni",
+            "org.webrtc.LoggingJni",
+            "org.webrtc.MediaSourceJni",
+            "org.webrtc.MediaStreamJni",
+            "org.webrtc.MediaStreamTrackJni",
+            "org.webrtc.MetricsJni",
+            "org.webrtc.NV12BufferJni",
+            "org.webrtc.NV21BufferJni",
+            "org.webrtc.NativeAndroidVideoTrackSourceJni",
+            "org.webrtc.NetworkMonitorJni",
             "org.webrtc.PeerConnectionFactoryJni",
             "org.webrtc.PeerConnectionJni",
+            "org.webrtc.RtcCertificatePemJni",
+            "org.webrtc.RtpReceiverJni",
+            "org.webrtc.RtpSenderJni",
+            "org.webrtc.RtpTransceiverJni",
+            "org.webrtc.SoftwareVideoDecoderFactoryJni",
+            "org.webrtc.SoftwareVideoEncoderFactoryJni",
+            "org.webrtc.TimestampAlignerJni",
+            "org.webrtc.TurnCustomizerJni",
+            "org.webrtc.VideoDecoderFallbackJni",
+            "org.webrtc.VideoDecoderWrapperJni",
+            "org.webrtc.VideoEncoderFallbackJni",
+            "org.webrtc.VideoEncoderWrapperJni",
             "org.webrtc.VideoTrackJni",
-            "org.webrtc.JniCommonJni",
+            "org.webrtc.YuvHelperJni",
         )
     }
 

@@ -261,21 +261,27 @@ if [ "$APPLY" = "1" ]; then
     W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
     SO_BEFORE=$(unzip -p "$AAR" jni/arm64-v8a/libjingle_peerconnection_so.so | sha256sum | cut -d' ' -f1)
     ENTRIES_BEFORE=$(unzip -Z1 "$AAR" | LC_ALL=C sort | tr '\n' ' ')
-    cp -f "$AAR" "$W/aar"
+    cp -f "$AAR" "$W/out.zip"     # 注意：Info-ZIP 会给**无扩展名**的归档名自动加 .zip
     cp -f "$DELIVERED_JAR" "$W/classes.jar"
+    # 注意①：zip 对“已存在且比源文件更新”的条目会**跳过替换**（默认 newer-than 逻辑）。
+    # 注意②：归档名若不以 .zip 结尾，zip 会自作主张写到 "<name>.zip"，原文件纹丝不动。
+    # 归一化后的 mtime（2026-01-01）早于 AAR 内既有条目 ⇒ 必须先删条再添加。
+    # （本脚本 --apply 首次即命中该组合，被下方一致性闸门拦下，未污染交付物。）
+    ( cd "$W" && TZ=UTC zip -q -d out.zip classes.jar )
     touch -h -d "@$SOURCE_DATE_EPOCH" "$W/classes.jar"
-    ( cd "$W" && TZ=UTC zip -q -X aar classes.jar )   # 默认 deflate，与 AAR 内 classes.jar 原风格一致
-    NEW_AAR_HASH=$(sha256sum "$W/aar" | cut -d' ' -f1)
-    CJ_IN=$(unzip -p "$W/aar" classes.jar | sha256sum | cut -d' ' -f1)
-    SO_AFTER=$(unzip -p "$W/aar" jni/arm64-v8a/libjingle_peerconnection_so.so | sha256sum | cut -d' ' -f1)
-    ENTRIES_AFTER=$(unzip -Z1 "$W/aar" | LC_ALL=C sort | tr '\n' ' ')
+    ( cd "$W" && TZ=UTC zip -q -X out.zip classes.jar )   # 默认 deflate，与 AAR 内 classes.jar 原风格一致
+    AARW=$W/out.zip
+    NEW_AAR_HASH=$(sha256sum "$AARW" | cut -d' ' -f1)
+    CJ_IN=$(unzip -p "$AARW" classes.jar | sha256sum | cut -d' ' -f1)
+    SO_AFTER=$(unzip -p "$AARW" jni/arm64-v8a/libjingle_peerconnection_so.so | sha256sum | cut -d' ' -f1)
+    ENTRIES_AFTER=$(unzip -Z1 "$AARW" | LC_ALL=C sort | tr '\n' ' ')
     log "   AAR 内 classes.jar sha256 = $CJ_IN（须 = $JARHASH）"
     log "   AAR 内 .so   sha256 = $SO_AFTER（同步前 $SO_BEFORE）"
     log "   AAR 条目 = $ENTRIES_AFTER"
     if [ "$CJ_IN" != "$JARHASH" ]; then log "   ⚠️ AAR classes.jar 与交付 jar 不一致，**拒绝写回 AAR**"; else
       if [ "$SO_AFTER" != "$SO_BEFORE" ]; then log "   ⚠️ AAR 内 .so 被改动，**拒绝写回 AAR**"; else
         if [ "$ENTRIES_AFTER" != "$ENTRIES_BEFORE" ]; then log "   ⚠️ AAR 条目集合变化，**拒绝写回 AAR**"; else
-          cp -f "$W/aar" "$AAR"; chown 1000:1000 "$AAR" 2>/dev/null || true
+          cp -f "$AARW" "$AAR"; chown 1000:1000 "$AAR" 2>/dev/null || true
           log "   已同步 AAR：$AAR"
           log "   AAR sha256 = $NEW_AAR_HASH（大小 $(stat -c%s "$AAR") B）"
           log "   ✅ AAR 与 jar 一致性 + .so 字节不变 + 条目集合不变 三项自证通过"

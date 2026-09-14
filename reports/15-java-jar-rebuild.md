@@ -1,7 +1,7 @@
 # 15 — 原生重编 libwebrtc Java SDK（t16/t17，**Java 17 / major 61**；t23 补 `*Jni` 后为现行交付）
 
 > **现行交付已更新（t23）**：本报告 §1–§9 记录的 `d98939bb…`（453 类，v61）自 t23 起**降级为内容基线**；
-> **现行交付 jar = `7dbe840049e239fbbd18d7f921b3d3cfc6ea6c1b61026bd8d75261c0551c98d1`（1 187 970 B，508 类，含 48 个 jni_zero `*Jni` 绑定类）**，AAR = `4878509a…`。见本报告 **§10** 与 `reports/05 §10`。
+> **现行交付 jar = `dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915`（1 187 970 B，508 类，含 48 个 jni_zero `*Jni` 绑定类）**，AAR = `e066e456…`。见本报告 **§10** 与 `reports/05 §10`。
 
 - 任务：t16（work，依赖 t5）— 消除 `libwebrtc-java.jar` 内 class 的 `major version 69`，产出可被 AGP 8.5.2 / D8 8.2.2 消费的 jar
 - 执行人：webrtc-builder（attempt 1，attempt_id `69ac8bb4-cf40-48a1-ba46-335e946d9097`）
@@ -110,21 +110,21 @@ ninja -C out/Release-arm64 -j2 sdk/android:libwebrtc
 |---|---|
 | **路径** | `third_party/libwebrtc/java/libwebrtc-java.jar`（容器 `/data/dsh/home/workspace/...` ≙ 宿主 `/opt/dsh-workspaces/...`） |
 | **字节数** | 基线 **1 048 264 B**（t5 原 build 产物 1 051 957 B；t10 patch 版 555 728 B — **该 patch 版系 re-zip 产物，其字节已不可得**，见 §8 的 provenance 说明）<br>**现行（t23）= 1 187 970 B** |
-| **sha256** | 基线 **`d98939bbf0c0cd071baff19004a4dc2f602997b70e33e0fc3669c5fccb5f6543`**<br>**现行（t23）= `7dbe840049e239fbbd18d7f921b3d3cfc6ea6c1b61026bd8d75261c0551c98d1`** |
+| **sha256** | 基线 **`d98939bbf0c0cd071baff19004a4dc2f602997b70e33e0fc3669c5fccb5f6543`**<br>**现行（t23）= `dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915`** |
 | **class 版本** | 基线 **453/453 = major 61（Java 17）**；**现行 508 个 = 51× major 55 + 457× major 61，全部 ≤ 61** ✅ |
-| 生产端同源 | `out/Release-arm64/lib.java/sdk/android/libwebrtc.jar`：**仅与基线同哈希 `d98939bb…`**；t23 的合并发生在 `out/` 之外 ⇒ **该文件 ≠ 现行 jar**（已知且已登记，见 §10.7） |
-| AAR 内 `classes.jar` | 已同步更新（见 §5），**t23 后与现行 jar 全 64 位同哈希 `7dbe8400…`**；AAR 本身 = `4878509a9a0bce254d71f728fb1ff6635b7fea8e310342216b454672f8dfe028`（6 489 348 B） |
+| 生产端同源 | `out/Release-arm64/lib.java/sdk/android/libwebrtc.jar`：**实测为 `ee792522…`（1 048 264 B，453 类全 major 55，`*Jni`=0，时间 2026-09-13 19:55:01 —— v55 那一轮的遗留产物）**，既 ≠ 基线 `d98939bb…` 也 ≠ 现行 jar；t23 的合并发生在 `out/` 之外 ⇒ **该文件 ≠ 现行 jar**（已知且已登记，见 §10.7） |
+| AAR 内 `classes.jar` | 已同步更新（见 §5），**t23 后与现行 jar 全 64 位同哈希 `dc5f8919…`**；AAR 本身 = `e066e456f5d62a015433db949a7cd1b1c13acaf432c93aa06f3544cea71b9e53`（6 489 244 B） |
 | 备查 | `libwebrtc-java.jar.v55-java11`（**中途 Java 11 版本，已归档作废**）、`libwebrtc-java.jar.orig-jdk25`（t5 原始 v69）、`libwebrtc-java.jar.v61-java17`（**t23 前基线副本**，t23 的守恒比对基准） |
 
-**AAR（t23 重打包后）**：`third_party/libwebrtc/java/libwebrtc-arm64.aar` = 6 489 348 B，sha256 `4878509a9a0bce254d71f728fb1ff6635b7fea8e310342216b454672f8dfe028`；其 **内部 `.so` 逐字节未变**（sha256 `757cef81…`，见证据 4）。t23 前的 AAR 备份为 `libwebrtc-arm64.aar.pre-t23`（`456e3f2f…`）。
+**AAR（t23 重打包后）**：`third_party/libwebrtc/java/libwebrtc-arm64.aar` = 6 489 244 B，sha256 `e066e456f5d62a015433db949a7cd1b1c13acaf432c93aa06f3544cea71b9e53`；其 **内部 `.so` 逐字节未变**（sha256 `757cef81…`，见证据 4）。t23 前的 AAR 备份为 `libwebrtc-arm64.aar.pre-t23`（`456e3f2f…`）。
 > 注：不能以文件大小判断 AAR/jar 版本（各版本大小接近）；**判据是内含 `classes.jar` 的 sha256**。
 
 **产物哈希一览（现行，t23 后）**：
 | 产物 | sha256 | 大小 |
 |---|---|---|
-| `libwebrtc-java.jar`（交付） | **`7dbe840049e239fbbd18d7f921b3d3cfc6ea6c1b61026bd8d75261c0551c98d1`** | 1 187 970 |
+| `libwebrtc-java.jar`（交付） | **`dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915`** | 1 187 970 |
 | AAR 内 `classes.jar` | **同左（全 64 位相同）** | 1 187 970 |
-| `libwebrtc-arm64.aar` | **`4878509a9a0bce254d71f728fb1ff6635b7fea8e310342216b454672f8dfe028`** | 6 489 348 |
+| `libwebrtc-arm64.aar` | **`e066e456f5d62a015433db949a7cd1b1c13acaf432c93aa06f3544cea71b9e53`** | 6 489 244 |
 | `jni/arm64-v8a/libjingle_peerconnection_so.so` | `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e` | 12 946 912 |
 | `libvpx/lib/libvpx.a` | `e280b11bcc9eff8c5be20f35023c79319eeb374a5277d1972c0eb310fe3215f7` | 1 929 142 |
 
@@ -191,12 +191,12 @@ android-sdk/build-tools/34.0.0/d8 --min-api 21 --output . libwebrtc-java.jar
 
 | 文件 | 字节 | 含义 |
 |---|---|---|
-| `libwebrtc-java.jar` | 1 187 970 | **现行交付（t23）**：508 class，含 48 个 `*Jni`，sha256 `7dbe840049e239fb…`（t16/t17 基线为 1 048 264 B / `d98939bb…` / 453 class major 61） |
+| `libwebrtc-java.jar` | 1 187 970 | **现行交付（t23）**：508 class，含 48 个 `*Jni`，sha256 `dc5f89193d55c971…`（t16/t17 基线为 1 048 264 B / `d98939bb…` / 453 class major 61） |
 | `libwebrtc-java.jar.v55-java11` | 1 048 264 | 中途 v55 的归档副本（**已作废**，非现行） |
 | `libwebrtc-java.jar.v61-java17` | 1 048 264 | t16/t17 的 v61 **内容基线副本**（major 61，**t23 的守恒比对基准**） |
 | `libwebrtc-java.jar.orig-jdk25` | 1 051 957 | **t5 原始产物**（major 69，sha256 `ad54a0a209ecfd6e…`） |
 | `libwebrtc-java.jar.orig-build` | 1 051 957 | 同上另一副本（内容与 `.orig-jdk25` 一致） |
-| `libwebrtc-arm64.aar` | 6 489 348 | 现行 AAR（t23 重打包），内含与现行 jar 同哈希的 `classes.jar`（`7dbe8400…`） |
+| `libwebrtc-arm64.aar` | 6 489 244 | 现行 AAR（t23 重打包），内含与现行 jar 同哈希的 `classes.jar`（`dc5f8919…`） |
 | `libwebrtc-arm64.aar.pre-t23` | 6 456 926 | t23 前的 AAR（`456e3f2f…`，内含 `d98939bb…` 的 `classes.jar`） |
 | `libwebrtc-arm64.aar.orig` | 6 457 598 | **t5 原始 AAR**（内含 major 69 的 `classes.jar`，sha256 `fe26d97f…`） |
 | `build/android/gyp/{compile_java,turbine}.py.t5orig` | — | 我改动的两个源文件的原版（**已入库补丁化**，见 §9） |
@@ -282,7 +282,7 @@ A′ 相对 B 多出的常量池条目：
 ### 8.4 给 verifier / 后续工作的检查清单（可直接复用；已按 t23 现行交付更新）
 1. `unzip -oq <jar> -d X && find X -name '*.class' | while read c; do xxd -p -s6 -l2 $c; done | sort | uniq -c` → 现行应为 **51 × `0037` + 457 × `003d`**（即 508 类，**全 ≤ major 61**，无 major 69 残留）；
 2. `javap -v` 抽 3 个类 → `major version: 61`；`javap -p org.webrtc.PeerConnectionFactoryJni` → 有 `public static ... get()`；
-3. jar sha256 应为 **`7dbe840049e239fbbd18d7f921b3d3cfc6ea6c1b61026bd8d75261c0551c98d1`**，1 187 970 B、508 类、**48 个 `*Jni`**；且与 **AAR 内 `classes.jar` 全 64 位同哈希**；AAR = `4878509a…`，6 489 348 B；
+3. jar sha256 应为 **`dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915`**，1 187 970 B、508 类、**48 个 `*Jni`**；且与 **AAR 内 `classes.jar` 全 64 位同哈希**；AAR = `e066e456…`，6 489 244 B；
 4. `.so` sha256 必须仍为 `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e`、12 946 912 B、stripped；`libvpx.a` = 1 929 142 B（`e280b11b…`）；**AAR 内 `.so` 与目录 `.so` 同哈希**；
 5. **Java 产物必须验证字节码目标版本**（这是 t5 的核验盲区：当时只验了"jar 内有 `org.webrtc` 类"，未验 major version）；**t23 追加：必须验证 `*Jni` 绑定类齐全**（`unzip -l | grep -c 'Jni.class'` 应 = `*Jni.java` 源数），并跑 `scripts/check_jar_link_integrity.py`（严格缺失须 = 0、rc = 0）；
 6. **补丁可复现性**：重跑 `scripts/t5-libwebrtc-libvpx-build.sh gn|build` 时，日志应出现 `t17: 已是 17 -> **跳过**应用补丁（幂等）`（目标值由 `JAVA_RELEASE_TARGET=17` 参数化）;
@@ -359,33 +359,41 @@ t16/t17 交付的 jar 内 **`*Jni.class` 数量 = 0**，而构建树里 jni_zero
 `scripts/build_java_sdk_with_jni.sh --apply`（幂等；默认只演算不写回）：
 
 1. **step 0 前置断言**：`compile_java.py` 与 `turbine.py` 的 `--release` **实测必须为 `17`**（非 17 ⇒ FATAL 拒绝合并，避免基线漂移）；
-2. 从 t17 基线 jar 提取原始 **453 类**；
+2. 从**固定基线** `libwebrtc-java.jar.v61-java17`（453 类）提取原始 **453 类**（不取交付 jar，否则重跑时守恒校验退化为"自比自"）；
 3. 从 14 个非空 `generated_*_jni_java.javac.jar` 取 **45 个 `*Jni.class`**，以 `unzip -oq -n`（**永不覆盖**）并入；
 4. 单独编译 3 个缺失类：`LoggingJni`（`obj/rtc_base/base_java_jni_java.compliment.jar`）、`CommonApisJni`/`JniZeroJni`（`obj/third_party/jni_zero/generate_jni_java.compliment.jar`）；
 5. 从所有 `*.compliment.jar` 以 `-n` 补其余缺失 `org/*` 类（**排除** `org/jni_zero/GEN_JNI.class`）；
 6. **合成并集 `GEN_JNI`**（194 个 native），python3 生成器补 `argN` 形参名；
-7. `zip -q -X -0` 打包（**STORED**，与官方 `--no-compress` 一致）；
-8. **step 6b 守恒断言**：原始 453 类**逐字节未变**；最后跑 `scripts/check_jar_link_integrity.py`。
+7. **归一 mtime**（`SOURCE_DATE_EPOCH`）后 `TZ=UTC zip -q -X -0` 打包（**STORED**，与官方 `--no-compress` 一致）⇒ 逐字节可复现；
+8. **step 6b 守恒断言**：基线 453 类**逐字节未变**；最后跑 `scripts/check_jar_link_integrity.py`；
+9. `--apply` 时写回 jar + **同步 AAR 内 `classes.jar`**（先 `zip -d` 删条再添加），并过三道闸门（classes.jar 同哈希 / `.so` 字节不变 / 条目集合不变）才写回 AAR。
 
-**踩坑与固化（3 处）**：
+**踩坑与固化（5 处）**：
 - **`*Jni` 类自身不声明 native**（jni_zero 设计：native 都在 `GEN_JNI`）⇒ 不能用"有没有 native"判真伪；检查器据此把断言写成「`*Jni` 有 `get()` 且调用 `GEN_JNI`」。
 - **native 声明必须带形参名**：合成并集 `GEN_JNI` 时若不补 `argN`，javac 报 **632 处 `error: <identifier> expected`**；另有一轮因 awk 误剥返回类型而报 438 处——两处均已修。
 - **`unzip -n` 而非覆盖式解包**：早期版本用覆盖式，**改写了 453 个原始类中的 174 个**；已改为 `-n` 并加 step 6b 守恒断言兜底。
+- **打包时间戳必须归一**：首版未归一，重跑**内容 508/508 逐字节相同、但 sha256 不同**，差异**仅 4 条 zip 时间戳**（`LoggingJni`/`CommonApisJni`/`JniZeroJni`/`GEN_JNI`）。归一后两次独立重跑 sha256 完全一致（`dc5f8919…` ×2）✅
+- **Info-ZIP 两个静默陷阱（真实命中，均被闸门拦下、交付物未被污染）**：
+  (a) **newer-than 跳过**——`zip <aar> classes.jar` 不替换"时间戳更新"的既有条目，归一后的 mtime 更旧 ⇒ 必须先 `zip -d` 删条；
+  (b) **无扩展名归档被改名**——`zip aar ...` 实际写的是 `aar.zip`（实测报 `aar.zip not found or empty` 并**新建**），`aar` 纹丝不动 ⇒ 工作副本须显式命名为 `*.zip`，最后 `cp` 回 `.aar`。
+  > 脚本的 AAR 一致性闸门在两次尝试中都输出「⚠️ AAR classes.jar 与交付 jar 不一致，**拒绝写回 AAR**」，因此**没有任何脏 AAR 落盘**。
 
 ### 10.4 现行交付值（t23 后，**取代 §4 的基线值**）
 
 | 项 | 值 |
 |---|---|
-| **jar sha256** | **`7dbe840049e239fbbd18d7f921b3d3cfc6ea6c1b61026bd8d75261c0551c98d1`** |
+| **jar sha256** | **`dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915`** |
 | **大小 / class 数** | **1 187 970 B** / **508**（453 基线 + 55 新增） |
 | **`*Jni.class`** | **48** = `input_srcjars` 下 `*Jni.java` 的 **48**（**差集为空**，无未补齐项） |
 | **`*Natives.class`** | **48** |
 | **class 版本分布** | **`0x0037`(55) × 51 + `0x003d`(61) × 457** ⇒ **全部 ≤ 61** ✅ |
 | **原始 453 类守恒** | **相同 453 / 不同 0 / 缺失 0** ✅ |
-| AAR | `4878509a9a0bce254d71f728fb1ff6635b7fea8e310342216b454672f8dfe028`，6 489 348 B；内 `classes.jar` = 现行 jar（**同哈希**，48 `*Jni`） |
+| AAR | `e066e456f5d62a015433db949a7cd1b1c13acaf432c93aa06f3544cea71b9e53`，6 489 244 B；内 `classes.jar` = 现行 jar（**同哈希**，48 `*Jni`） |
 | `.so` / `libvpx.a` | `757cef81…` / `e280b11b…` 1 929 142 B —— **均逐字节未变** |
 
 ### 10.5 验收命令与原始输出
+
+> 📄 **完整原始输出另存**：`reports/05-t23-verify.log`（验收项 1–5 逐条对应输出 + D8 冒烟，均为宿主机实跑）。
 
 ```console
 $ unzip -l third_party/libwebrtc/java/libwebrtc-java.jar | grep -c 'Jni.class'
@@ -417,6 +425,10 @@ $ python3 scripts/check_jar_link_integrity.py third_party/libwebrtc/java/libwebr
 RESULT: PASS （严格缺失=0, 关键类断言=OK, GEN_JNI native=194）
 ==============================================================================
 rc=0
+
+# 追加冒烟：新 jar 可否被 AGP/D8 消费（build-tools/34.0.0）
+$ d8 --min-api 24 --output /tmp/d8out third_party/libwebrtc/java/libwebrtc-java.jar ; echo rc=$?
+rc=0        # 产出 classes.dex 538 532 B ✅（无 "Unsupported class file major version" 报错）
 ```
 
 ### 10.6 链路完整性检查器（新增工具）
@@ -433,15 +445,130 @@ bash scripts/build_java_sdk_with_jni.sh --apply
 python3 scripts/check_jar_link_integrity.py third_party/libwebrtc/java/libwebrtc-java.jar
 ```
 
+**逐字节可复现实测**（输入为固定基线 `libwebrtc-java.jar.v61-java17`，独立跑 2 次，不带 `--apply`）：
+
+```console
+run1 sha256 = dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915
+run2 sha256 = dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915
+  ✅ 两次重跑逐字节相同（byte-reproducible）
+原有类：逐字节相同=453  内容不同=0  缺失=0
+```
+
 | 文件 | 大小 | sha256 |
 |---|---|---|
-| `scripts/build_java_sdk_with_jni.sh` | 13 336 B | `538aae2cd5f63ad7876d5684081595bcb70fa398887fed3738635d05eed7f220` |
+| `scripts/build_java_sdk_with_jni.sh` | 16 678 B | `5e3fb7d5c7e7da89fd91b9101f385fb0659b17f45d452d81835d23a90aaf08c6` |
 | `scripts/check_jar_link_integrity.py` | 11 786 B | `fec0bc43dc196ad97fc10633f13d1cfa3c6822e3fe2fffe456a3c320dcce8228` |
 | `scripts/patches/libwebrtc-java-release17.patch` | 983 B | `a51236ac4b869f1b62b9872c522afee9545dd60c38bd02c9f4d3851405347837` |
 
 **未改动（逐项确认）**：
-1. **`out/` 未被改动** ⇒ `out/Release-arm64/lib.java/sdk/android/libwebrtc.jar` 仍为 `d98939bb…`（453 类），**与现行 jar 不同哈希**（已知并登记）；修复在 `out/` 之外完成。
+1. **`out/` 未被改动**（t23 只用 `javac`/`zip`/`python3`，**未跑 ninja**）⇒ `out/Release-arm64/lib.java/sdk/android/libwebrtc.jar` **实测 = `ee792522…`**（1 048 264 B，453 类全 major 55，`*Jni`=0，时间 2026-09-13 19:55:01，**v55 那一轮遗留**），**与现行 jar（以及 v61 基线）都不同哈希**（已知并登记）；修复在 `out/` 之外完成。
 2. **`is_debug` 仍为 `false`**；未改 `is_debug=true`，未增删 GN 参数（日志能力维持 t5 登记的 `rtc_dlog_always_on=true`，C29/R10）。
 3. **`.so`（目录内 / AAR 内）与 `libvpx.a` 逐字节未变**（sha256 + 字节数双重确认）；未触碰 `app/**`、`doc/**`、`third_party/libvpx/**`。
 4. **遗留观察（超出 t23 范围）**：交付 `.so` 含 **193 个 `Java_J_N_M*` + 156 个 `Java_J_N_*` 混淆 JNI 符号、0 个可读 `org_webrtc_*`/`Java_org_webrtc_*` 符号**，而 Java 侧 codegen 用**可读名**（`GEN_JNI.org_webrtc_Logging_log`），Java 侧亦无混淆 `J_N_*` 类 ⇒ 存在 jni_zero 混淆名不匹配之可能；**本次未做运行期链接验证**，建议 app 首次联调优先验证（若命中，属独立缺陷，需单独排期）。
 
+
+---
+
+## 11. t23 追加核查：`.so` ↔ Java 配对（captain 指定）
+
+> 完整证据链见 **`reports/05-libwebrtc-build.md` §11**。此处仅记与 jar 直接相关的结论。
+>
+> ⚠️ **本节"可能不同代际"的推论已被 §12 更正**：真实机制是 jni_zero short/proxy 模式（native 在类 `J.N`、方法名为哈希名）⇒ **同代际、静态符号绑定**；实际缺口是**交付 jar 缺 `J.N` 类**。请以 **§12** 为准。
+
+- **`.so` 的 JNI 入口点不是 `*Jni` 也不是 `*Natives`**：交付 `.so` 内 **193/193** 个 `Java_*` 动态符号全部是 jni_zero 哈希边界名 `Java_J_N_M<hash>`；`*Jni`/`*Natives` **0**，可读 `org_webrtc*` **0**，`GEN_JNI` **0**，`org/jni_zero` **0**。
+- jni_zero 的绑定机制（其 golden 佐证）：Java 侧声明**可读名**（`GEN_JNI.org_jni_1zero_..._bar`），C++ 侧为**哈希名**，由生成的 `JNINativeMethod kMethods[]` 注册表绑定，**表内 name = 可读名** ⇒ 能服务 `GEN_JNI` 的 `.so` 必须内含这些名字串；我们的 `.so` 内为 **0**。
+- 全树 `kMethods` = **0**；`.so` 链接段不含 registration 对象；`JNI_OnLoad`（WebRTC `jni_onload.cc`）**不注册** native。⇒ 上游的 `*__jni_registration` 代码生成（`build.ninja` 内确有该 phony 目标，**从未被构建**）正是缺失的一环；根因是绕开 `build_aar.py` 后只构建了 `sdk/android:libjingle_peerconnection_so`。
+- **对 jar 的影响**：若注册表最终落在 `.so` 内，则**本次交付的 jar（可读名 `GEN_JNI`，194 native 与 gen 源 194/194 完全一致）就是正确配对件，jar 无需改动**；反之若改为哈希名方案，则 48 个 `*Jni.java` 包装类亦须重生成（不推荐）。
+- **阻塞点**：Java 层与 `.so` 当前**不可绑定** ⇒ 首次 native 调用预期 `UnsatisfiedLinkError`；**t25 的 JVM 单测无法发现**（不加载 arm64 `.so`）。
+- **未跑真机**；按 captain 指令**先回报、未重编 `.so`**。本节未改动任何产物。
+
+---
+
+## 12. t23 追加核查（二）：194 vs 193 精确对齐 + 对 §11 的更正
+
+> 完整推导与脚本见 `reports/05-libwebrtc-build.md` §12。此处记与 jar 直接相关的结论。
+
+- **194 vs 193 精确答案**：用 jni_zero 源码里的确切哈希式（`proxy.py:73`：`('M'+base64(md5(name),altchars='$_')).rstrip('=')[:8]`，再按 JNI 规则转义 `_`→`_1`、`$`→`_00024`）对 194 条 Java 名逐一复算，与 `.so` 的 193 个符号比对：**交集 = 193、`.so` 独有 = 0、Java 独有 = 1**。
+  - **唯一缺失 = `org_webrtc_LibaomAv1Encoder_create`（`Java_J_N_M0vTiIkf`）** —— AV1 软件编码器的创建入口，**不在 `initialize()` 路径**，本 Demo 走 VP9 ⇒ 不影响启动；jni_zero 对缺失 native 会生成**抛异常桩**，属**设计内行为**。
+  - ⇒ 该差值**不是缺陷**，且逐条命中恰好**证明 `.so` 与 Java 侧同代际**。
+- **对 §11 的更正**：§11 的事实（`.so` 无可读名、无 `kMethods`/`RegisterNatives`、`JNI_OnLoad` 不注册）**仍成立**；但由它推出"可能不同代际"**是错的**。正解是 jni_zero 的 **short/proxy 模式**：native 声明在类 **`J.N`**（`proxy.py get_gen_jni_class(short=True)` → `package='J', name='N'`），方法名即哈希名 ⇒ 与 `.so` **静态绑定**。**native-dev 的"同代际、符号绑定式"判断正确。**
+- **真正的缺口（jar 侧）**：交付 jar 内**非 `org/` 类 = 0**、**无 `J/N.class`**（APK dex 内 `J/N` 描述符 = 0），只有 **placeholder 版 `GEN_JNI`**（native 直接声明为可读名，而 `.so` 内不存在这些可读名）⇒ 调用即失败。`J.N` + 转发版 `GEN_JNI` 由 **`*__jni_registration__java_sources`** 生成，该目标**从未被构建**。
+- **修复方向（Java 侧，不需重编 `.so`）**：构建 `sdk/android:libjingle_peerconnection_so__jni_registration__java_sources` 取 `J.N` + 转发 `GEN_JNI` 并入 jar（替换 placeholder `GEN_JNI`）；或由我用已复算的哈希式生成 `J/N.java`（193 条，已逐条对齐）。**两种都需 captain 批准**（属产物形态变更）。
+- **既有验收不受影响**：t23 的 5 项验收（计数/守恒/链路/版本/可复现）仍然成立。
+- **澄清「42 个 `*Jni`」**：42 = t22 审计的「被引用且缺失」子集；实测**已编译 45** + **单独编译 3**（`LoggingJni`/`CommonApisJni`/`JniZeroJni`）= **48** = `*Jni.java` 源数 = 交付 jar 内 `*Jni.class` 数 ⇒ **t23 交付 48 正确，42 不是应补总数**。
+
+---
+
+## 13. 生效路径 vs 历史归档件（**给 t26 / t27 的门禁用**；由一次真实误判促成）
+
+**事件**：t26 开工前 env-installer 的只读门禁预检报「jar mtime `2026-09-13 20:00:41`、`*Jni.class`=0、`GEN_JNI.class`=0、`PeerConnectionFactoryJni.class`=0 ⇒ t23 未落位，不得启动构建」。**实测为误判**：该组数字与**归档件**逐字一致，命中的是历史备查副本而非生效路径。
+
+**同一个目录下并存 5 个 jar（4 个是备查副本，极易被 glob 误命中）**：
+
+| 文件 | mtime | sha256(前16) | 大小 | class | `*Jni` | 角色 |
+|---|---|---|---|---|---|---|
+| **`libwebrtc-java.jar`** | **2026-09-14 11:05:10** | **`dc5f89193d55c971`** | 1 187 970 | **508** | **48** | **✅ 唯一生效路径** |
+| `libwebrtc-java.jar.v61-java17` | 2026-09-13 20:00:41 | `d98939bbf0c0cd07` | 1 048 264 | 453 | 0 | t16/t17 内容基线 |
+| `libwebrtc-java.jar.v55-java11` | 2026-09-13 20:00:14 | `ee792522c35cb8ca` | 1 048 264 | 453 | 0 | 中途 v55（作废） |
+| `libwebrtc-java.jar.orig-jdk25` | 2026-09-13 17:03:00 | `ad54a0a209ecfd6e` | 1 051 957 | 453 | 0 | t5 原始 v69 |
+| `libwebrtc-java.jar.orig-build` | 2026-09-13 18:58:47 | `ad54a0a209ecfd6e` | 1 051 957 | 453 | 0 | 同上副本 |
+
+**门禁正确写法**：用**精确路径**，或显式排除 `*.orig*`、`*.orig-build`、`*.orig-jdk25`、`*.v55-java11`、`*.v61-java17`。
+（`libwebrtc-java.jar*` 这类 glob 会命中归档件——env-installer 报的 mtime/计数正是 `.v61-java17` 那一行。）
+
+**四项门禁现值（可直接照抄为判据）**：
+```
+*Jni.class > 0                         : 48
+org/jni_zero/GEN_JNI.class 存在        : 1（唯一一份，native = 194）
+org/webrtc/PeerConnectionFactoryJni    : 1
+d8 --min-api 24 (build-tools 34.0.0)    : rc=0，classes.dex 538 532 B
+jar sha256 / mtime                     : dc5f89193d55c971… / 2026-09-14 11:05:10
+AAR                                    : e066e456f5d62a015433db949a7cd1b1c13acaf432c93aa06f3544cea71b9e53（6 489 244 B，内 classes.jar 同哈希）
+```
+
+**class 版本口径（避免误判）**：**无 major 69**；分布 **major 61 × 457 + major 55 × 51**，其中 **55 的 51 个里 45 个就是 `*Jni`**（来自构建树 `generated_*_jni_java.javac.jar`，工件时间 09-13 19:49 = v55 那一轮的编译产物，**源码与本次同一份**）。captain 已明确「混用可接受，但请在报告里给出分布」⇒ **不得据此判失败**；D8 已实测可消费（≤61 即可）。
+
+---
+
+## 14. t23 收口：哈希更正 + 194/193 定性 + 48/45/42 对账 + t29 结论
+
+> 完整推导见 `reports/05-libwebrtc-build.md` §14；此处记与 jar 直接相关的要点。
+
+### 14.1 ⚠️ 哈希更正：captain 复核的是**中间版**
+| | 中间版（captain 复核） | **现行 live** |
+|---|---|---|
+| jar | `7dbe840049e239fb…`（mtime 10:53:11） | **`dc5f89193d55c971…`（mtime 11:05:10，1 187 970 B，508 类）** |
+| AAR | `4878509a9a0bce25…` | **`e066e456f5d62a01…`（6 489 244 B）** |
+
+差异原因：复核后我按「逐字节可复现」做**打包时间戳归一**并重新落位（§10.6/§12）。**内容等价**：解压后 **508/508 逐字节相同**，仅 4 条 zip 时间戳不同；AAR 内 `classes.jar` 已同步同哈希。captain 复核的所有不变式在现行版**同样成立**。⇒ **建议保持现行版并更新记录**（回退会失去可复现性，且 t26 正基于现行版构建）。
+
+### 14.2 194 vs 193：唯一缺失 `org_webrtc_LibaomAv1Encoder_create`（`Java_J_N_M0vTiIkf`）
+- **被** `LibaomAv1EncoderJni.java:38` **调用**（`GEN_JNI.org_webrtc_LibaomAv1Encoder_create(...)`），仅 AV1 软件编码器路径；**本 Demo 走 VP9（A1 路线）⇒ 不在 initialize/通话路径**。
+- libaom **本体已链接**（未剥离 `.so` 内 `aom_*` 685 个），但**其 JNI 壳未链接**（`M0vTiIkf` 在符号表出现 **0** 次）⇒ 生成器仍产出声明，是因为 **Java 侧目标存在**；jni_zero 对缺失 native 生成**抛异常桩**（设计内）。
+- ⇒ **该条无阻塞性运行期风险**；⚠️ 它与 §12 的 **`J.N` 缺失**是**两件事**（后者影响全部 193 条）。
+
+### 14.3 48 / 45 / 42 对账
+- **45** = 构建系统已编译（14 个非空 javac.jar 去重）；**+3** = 全树无 `.class` 须单独编译（`LoggingJni`/`CommonApisJni`/`JniZeroJni`）；**= 48** = 源数（验收不变式）。
+- **47** = 被基线 453 类**常量池引用**的 distinct 数（子包感知实测）；**42** = t22 审计口径较窄（未覆盖 `org/webrtc/audio/*`、`org/jni_zero/*`）⇒ 低于实测 47。
+- **48 − 47 = 1**：唯一未被基线引用的是 **`org.webrtc.Dav1dDecoderJni`**（AV1 dav1d 解码）。仍并入的理由：① 验收口径要求「计数 == 源数 48」；② 同代际生成物，未被引用即惰性加载、无冲突（原 453 类逐字节未变、无覆盖）；③ 常量池分析可能低估可达性。⇒ **48 正确且安全，42 不是应补总数。**
+
+### 14.4 t29 核查结论：缺口是 **`J.N`**，不是 `kMethods` 注册表
+- 观察到的「全树 `kMethods`=0、`.so` 无注册表、`JNI_OnLoad` 不注册」**属实**，但本 build **不需要**注册表 —— jni_zero 用 **short/proxy 静态符号绑定**（§12）。真正缺口：jar **不含 `J.N`**，只有 placeholder `GEN_JNI`（可读名 native）⇒ 193 条 native 无解析路径。
+- **修复就绪度（已干跑，未落地）**：`ninja -n sdk/android:libjingle_peerconnection_so__jni_registration__java_sources` → **160 个 ACTION 步骤，全部 Java 侧（dex/errorprone/validate_deps），无 CXX/CC/SOLINK** ⇒ 中等成本可行；CLI 入口 `jni_zero.py generate-final`（含 `--use-proxy-hash`）。
+- **未落地原因**：captain 明确「不要再改动 jar（t26 正基于它构建）」⇒ 我遵守，仅完成核查与就绪度评估，**建议 t26 完成后放行**。
+- **风险提示**：t26 的 `testDebugUnitTest`（JVM，不加载 arm64 `.so`）很可能仍全绿；真机首次 native 调用会失败。建议 t26/t27 判据显式核对 `J.N`。
+
+---
+
+## 15. ⚠️ **更正**：`LoggingJni`/`CommonApisJni`/`JniZeroJni` 在构建树里**有**已编译副本（我说"全树无 `.class`"是错的）
+
+> **本节优先于 §10.3 / §12 / §14.3 中相应表述**（t23 的 output 终态不可变，其中含该错误表述；t27/verifier 请以本节为准）。完整复核见 `reports/05-libwebrtc-build.md` **§17**。
+
+- native-dev 指出并复核确认：这 3 个类的已编译副本分别在
+  `out/Release-arm64/obj/rtc_base/base_java_jni_java.javac.jar`（`LoggingJni`）与
+  `out/Release-arm64/obj/third_party/jni_zero/generate_jni_java.javac.jar`（`CommonApisJni`/`JniZeroJni`）。
+  **全 `obj` 树（145 个 jar）扫描：48 个 `*Jni.class` 全部存在**，交付 jar 内 48 个**无一缺副本**。
+- **我的错误根因**：脚本 step 3 的 glob 只覆盖 `obj/sdk/android/generated_*_jni_java.javac.jar`，**漏了上述两个 target** ⇒ 错判为"未编译"并自行编译。属**"glob 范围不覆盖目标集合"**类错误（与 env-installer 的 `*.jar*` 命中归档件同源）。
+- **对交付物无影响**：这 3 个由我以**同一份 jni_zero codegen 源**、`--release 17` 编译，与构建副本**成员签名逐条一致**（类名/接口/方法/字段相同），**唯一差异是 class 文件版本**（我 major 61 / 构建副本 major 55 —— 后者是 **v55 那一轮 `--release 11`** 的遗留件）。故功能等价，且与当前 `--release 17` 更一致。
+- **不改动**：改成"全取自 javac.jar"会把这 3 个变回 major 55、**改变 jar 哈希**，而 jar 已被 captain 复核、**t26 已基于它产出 APK（`6653fddf…`）** ⇒ 捕获期保持现状；脚本也**保持原样**（其行为确定性已实测：两次重跑逐字节一致，改 glob 反而会破坏已验证的可复现哈希）。
+- 另更正一处数字：**`reports/07-native-dev-jnizio-mapping.tsv` 实测 194 行**（含 AV1 那条），非 193；"被引用数"实测 **47**（42 为废弃的历史窄口径）。

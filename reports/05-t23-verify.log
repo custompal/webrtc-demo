@@ -1,0 +1,82 @@
+======================================================================
+ t23 验收原始输出（webrtc-builder / 2026-09-14，宿主机 root@172.21.0.219:5766）
+ 契约验收项 1-5 逐条对应输出；全部命令均在宿主机实跑
+======================================================================
+
+### 验收① jar 内 *Jni.class 数 == gen 下 *Jni.java 数 ###
+$ unzip -l third_party/libwebrtc/java/libwebrtc-java.jar | grep -c 'Jni.class'
+48
+$ find $SRC/out/Release-arm64/gen -name '*Jni.java' -path '*input_srcjars*' | wc -l
+48
+
+$ javap -p -cp third_party/libwebrtc/java/libwebrtc-java.jar org.webrtc.PeerConnectionFactoryJni
+Compiled from "PeerConnectionFactoryJni.java"
+class org.webrtc.PeerConnectionFactoryJni implements org.webrtc.PeerConnectionFactory$Natives {
+  private static org.jni_zero.JniTestInstanceHolder sOverride;
+  org.webrtc.PeerConnectionFactoryJni();
+  public static org.webrtc.PeerConnectionFactory$Natives get();
+  public static void setInstanceForTesting(org.webrtc.PeerConnectionFactory$Natives);
+  public long createAudioSource(long, org.webrtc.MediaConstraints);
+  public long createAudioTrack(long, java.lang.String, long);
+  public long createLocalMediaStream(long, java.lang.String);
+  public long createPeerConnection(long, org.webrtc.PeerConnection$RTCConfiguration, org.webrtc.MediaConstraints, long, org.webrtc.SSLCertificateVerifier);
+  public org.webrtc.PeerConnectionFactory createPeerConnectionFactory(android.content.Context, org.webrtc.PeerConnectionFactory$Options, long, long, long, long, org.webrtc.VideoEncoderFactory, org.webrtc.VideoDecoderFactory, long, long, long, long, long, long);
+  public long createVideoSource(long, boolean, boolean);
+  ...（共 25 个方法；get() 命中数 = 1）
+
+### 验收② 链路完整性（脚本 + 原始输出）###
+$ python3 scripts/check_jar_link_integrity.py third_party/libwebrtc/java/libwebrtc-java.jar
+==============================================================================
+jar: third_party/libwebrtc/java/libwebrtc-java.jar
+class 总数: 508
+==============================================================================
+[STRICT] org/webrtc/*Jni + org/jni_zero/*Jni 引用检查
+  被引用的 *Jni 类数: 48
+  缺失（引用了但 jar 内无定义）: 0
+[INFO]   全部 org/webrtc/** 与 org/jni_zero/** 引用（仅报告，不判定）
+  缺失（非平台类）: 0
+[ASSERT] org/webrtc/PeerConnectionFactoryJni
+  存在: YES
+  方法数: 25
+  get() [static]: YES
+  该类自身 native 方法数: 0 （jni_zero 设计中 *Jni 不自带 native，通常为 0）
+  该类是否调用 org/jni_zero/GEN_JNI: YES
+[ASSERT] org/jni_zero/GEN_JNI: 存在 YES, native 声明数 = 194
+==============================================================================
+RESULT: PASS （严格缺失=0, 关键类断言=OK, GEN_JNI native=194）
+==============================================================================
+rc=0
+
+### 验收③ class 版本分布 / 基线 453 类守恒 ###
+  class 总数 = 508
+  版本分布   = {55: 51, 61: 457}  全部 <= 61: True
+  *Jni       = 48
+  *Natives   = 48
+  基线 453 类: 相同=453 不同=0 缺失=0 -> PASS
+
+### 验收④ AAR 同步一致性 / 未改动项 ###
+  jar                        dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915  1187970 B
+  AAR 内 classes.jar         dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915
+  AAR 内 classes.jar *Jni 数 48
+  AAR                        e066e456f5d62a015433db949a7cd1b1c13acaf432c93aa06f3544cea71b9e53  6489244 B
+  AAR 内 .so                 757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+  jniLibs 目录 .so           757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+  libvpx/lib/libvpx.a        e280b11bcc9eff8c5be20f35023c79319eeb374a5277d1972c0eb310fe3215f7  1929142 B
+  AAR 条目                   jni/ jni/arm64-v8a/ jni/arm64-v8a/libjingle_peerconnection_so.so AndroidManifest.xml classes.jar 
+  AAR zip 完整性             OK
+
+### 验收⑤ 可复现性（两次独立重跑，输入=固定基线）###
+  run1 sha256 = dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915
+  run2 sha256 = dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915
+  cmp run1 run2 -> 逐字节相同 ✅
+  [run2] [2026-09-14T03:03:16Z]    原类数 = 453
+  [run2] [2026-09-14T03:03:16Z] == 步骤 3/7：收集构建系统已编译的 *Jni 绑定类（-n：绝不覆盖原有类） ==
+  [run2] [2026-09-14T03:03:21Z] == 步骤 4b/7：补齐 compliment.jar 中其它缺失的 org/** 类（-n：绝不覆盖原有类；排除 android/** 平台桩） ==
+  [run2] [2026-09-14T03:03:29Z]    class 总数 = 508 ；大小 = 1187970 B
+  [run2] [2026-09-14T03:03:29Z]    sha256 = dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915
+  [run2] [2026-09-14T03:03:30Z]    原有类：逐字节相同=453  内容不同=0  缺失=0
+  [run2] class 总数: 508
+  [run2] [2026-09-14T03:03:31Z]    checker 退出码 = 0（0=通过；完整输出见 /opt/dsh-workspaces/tmp/jni-merge/integrity.txt）
+
+### 附加：D8 消费性冒烟 ###
+  d8 rc=0 ; classes.dex = 538532 B

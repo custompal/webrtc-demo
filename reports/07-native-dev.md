@@ -524,6 +524,7 @@ ssh -i ~/.ssh/id_ed25519 root@172.21.0.219 -p 5766 \
 | v1.8 | 2026-09-14 | 新增 **§15 t24：16 KB 页兼容性**。① 现状表：APK 内 4 个 `.so`，`libandroidx.graphics.path`/`libjingle_peerconnection_so` = **0x4000**，`libwebrtcdemo_native`/`libc++_shared` = **0x1000**；**关键：`libjingle` 不依赖 `libc++_shared`**（其唯一使用者是自有库）。② 最小修复已实施：`CMakeLists.txt` 增补 `-Wl,-z,max-page-size=16384`，AGP 重编后自有库 `p_align=0x4000`（sha256 `115aa211…`）。③ `libc++_shared`（r26=4KB）给出 (a) `c++_static` / (b) 用 r26 静态库自链接 16 KB 同名库（导出符号 2358 = 官方、缺失 0）/ (c) 升级 NDK 三方案与成本，**未实施，待 captain 选择**。④ 结论：当前配置**整包不达标**；(a)/(b) 任一落地后**达标**且**无需升级 NDK** | t24 任务（16 KB 页兼容） |
 | v1.9 | 2026-09-14 | captain 裁定 **方案 (b)** 并授权后完成实施，新增 **§15.5 实施记录**：① 新增入库脚本 `scripts/make-libcxx-shared-16k.sh`（NDK 版本 + 输入/输出 sha256 自校验 + `p_align/SONAME/导出 2358/相对官方缺失 0` 自校验）；② 落位 `app/src/main/jniLibs/arm64-v8a/libc++_shared.so`（1,356,968 B / sha256 `c9dbf4ec…`）；③ `packaging.jniLibs.pickFirsts` **原已存在**，本次仅改注释标为**承重行**（无逻辑 diff）；④ 核查 `build_app.sh` stage 5 **不会清空 jniLibs**；⑤ 预验证 `merged_native_libs` 选中我们的件、`stripped_native_libs` 中**四个 .so 全 0x4000**（APK 级复核交 t26） | captain 裁定方案 (b) + 授权触碰 `app/**` |
 | v1.10 | 2026-09-14 | 新增 **§16 t23 支撑：jni_zero 映射规则与 194/193 对账**（只读取证）：验证 `hashed_name`+`jni_mangle` 规则（Environment 3 条 boundary 逐一复算命中）；16 个 `GEN_JNI` 分片并集 = **194**、`.so` 边界 = **193**、交集 **193/193**、**唯一未命中 = `org_webrtc_LibaomAv1Encoder_create`**（AV1 未编入本 `.so`）；新增附件 `reports/07-native-dev-jnizio-mapping.tsv`（193 行现成映射表）与可复现命令 | captain 要求把映射规则/符号清单直接交给 webrtc-builder（t23） |
+| v1.11 | 2026-09-14 | **新增 §16.5 更正与更新记录**：① **主动更正本层两个错数字** —— "被引用但缺失 `*Jni` = 42" → **47**（旧正则限定 `org/webrtc/<Class>Jni`，漏子包/其它包共 5 个）、"已编译 `*Jni.class` = 45" → **48**（旧统计只扫 14 个 `generated_*` jar，漏 `base_java_jni_java` 与 `third_party/jni_zero/generate_jni_java`），并写入"常量池类内部名"正确扫法与"必须全扫 16 分片"的防重犯说明；② 复核 t23 修复结果：jar `7dbe8400…` 内 `*Jni.class`=48、`GEN_JNI`=1、被引用 `*Jni` 缺失 0、合并 `GEN_JNI` native=**194**（与 16 分片并集逐名一致）、`.so` 所需 193 条**全覆盖**；③ 附件升级为 **194 行 4 列**（新增 `generated_header` 与 `so_exported` 列，AV1 行标 `no`） | captain 采纳 194/193 定性并要求更正 §16 + 我们的自查发现旧值有误 |
 
 > 代码未因 v1.1–v1.7 变更（本层始终按契约 §9.2 输出 `native.log`、按 §6.6 返回状态码数值）。改动仅限本报告文件。
 
@@ -539,8 +540,8 @@ ssh -i ~/.ssh/id_ed25519 root@172.21.0.219 -p 5766 \
 | 层 | 事实（实测） |
 |---|---|
 | 生成源码 | `webrtc-build/src/out/Release-arm64/gen/**/input_srcjars/org/webrtc/*Jni.java` 共 **48** 个（含 `PeerConnectionFactoryJni.java`） |
-| 已编译类 | 14 个 `obj/sdk/android/generated_*_jni_java.javac.jar` 共 **45** 个 `*Jni.class`；`generated_peerconnection_jni_java.javac.jar` 含 **14** 个（**含 `PeerConnectionFactoryJni.class`**） |
-| `GEN_JNI` | 仅存在于 **14 个 `*.compliment.jar`**，且每模块一份（`javap -p` 实测 native 数：peerconnection=121、video=25、base=12…，**合计 187**；14 份 md5 各不相同） |
+| 已编译类 | **48** 个 `*Jni.class`（全量扫 `obj/**/*.jar`；**旧稿写"14 个 `generated_*` jar 共 45 个"是错的，更正见 §16.5**）；`generated_peerconnection_jni_java.javac.jar` 含 **14** 个（**含 `PeerConnectionFactoryJni.class`**） |
+| `GEN_JNI` | 仅存在于 **16 个 `*.compliment.jar`**（须全扫 `obj/**/*.jar`，只扫 `generated_*` 会漏 `base_java_jni_java` 与 `generate_jni_java`；**旧稿写 14 个/合计 187，更正见 §16.5**），且每模块一份（`javap -p` 实测 native 数：peerconnection=121、video=25、base=12…；**16 分片并集 = 194**） |
 | 最终 jar | `lib.java/sdk/android/libwebrtc.jar`（sha256 `ee792522…`）、`aar-stage/classes.jar`（`ad54a0a2…`）、部署 `third_party/libwebrtc/java/libwebrtc-java.jar`（`d98939bb…`，**与 AAR 内 `classes.jar` 同 sha256**）：**`*Jni.class` = 0、`GEN_JNI.class` = 0**，仅 47 个 `$Natives` 接口 |
 
 `libwebrtc.jar` 的 mtime（19:55）晚于 `.so`（16:55）却仍为 0 ⇒ **系统性打包漏类**，非陈旧缓存。
@@ -560,7 +561,7 @@ ssh -i ~/.ssh/id_ed25519 root@172.21.0.219 -p 5766 \
 
 1. **不是跨代际不匹配**：`src` HEAD `5c25072bda9b8c8d9acab443acef5b330b1588b7`；生成 Java 实现的 `$Natives` 接口就在 jar 内；
    部署 jar 与 AAR 内 `classes.jar` 同 sha256；`.so` 与 jar 的 mtime 差异只是 t5 分阶段重跑。⇒ **jar 与 .so 同代，缺的是"没打包进去"**。
-2. **最小修复**：把 14 个模块的 `*Jni.class`（45 个类）与**合并后的** `org/jni_zero/GEN_JNI.class` 并入 `classes.jar` / AAR 后重打 APK；
+2. **最小修复**：把 14 个模块的 `*Jni.class`（**48 个类**；原写 45，见 §16.5 更正）与**合并后的** `org/jni_zero/GEN_JNI.class` 并入 `classes.jar` / AAR 后重打 APK；
    **`libjingle_peerconnection_so.so` 无需重编**（其 193 个边界符号完整）。
 3. 更稳的做法：让 jar 目标本身带上生成 srcjars，或用官方 `tools_webrtc/android/build_aar.py` 复核其 `classes.jar` 是否含这些类。
 4. **待 t5 核实**：本层观察到"分包 GEN_JNI native 合计 **187**"与".so 边界 **193**"相差 6；按 jni_zero 设计最终须为**一份合并**的 `GEN_JNI`，
@@ -705,14 +706,15 @@ symbol = 'Java_J_N_' + jni_mangle(hashed)      # '_'→'_1'，'/'→'_'，'$'→
 | 量 | 值 | 来源/命令 |
 |---|---|---|
 | 生成 `*Jni.java` | **48** | `find gen -name '*Jni.java'` |
-| 模块 javac jar 编译出的 `*Jni.class`（去重） | **45** | 14 个 `obj/sdk/android/generated_*jni_java.javac.jar` |
-| jar 内"被引用但缺失"的 `*Jni` | **42** | Node inflate 每个 `.class` 扫常量池（与 android-dev 的 42 清单 `SET_EQUAL`） |
-| `GEN_JNI` 分片（`*.compliment.jar`） | **16** | `find obj -name '*.jar'` 中含 `org/jni_zero/GEN_JNI.class` 者 |
+| 已编译 `*Jni.class`（全部 jar，去重） | **48** | 全量扫 `obj/**/*.jar`（见 §16.5 更正：旧值 45 只统计了 14 个 `generated_*jni_java` jar） |
+| 修复前 jar（`classes.jar` `d98939bb…`）"被引用但缺失"的 `*Jni` | **47**（47/47 全缺） | 常量池**类内部名**扫描（任意包；见 §16.5 更正：旧值 42 因正则限定 `org/webrtc/<Class>Jni` 而少算 5 个） |
+| `GEN_JNI` 分片（`*.compliment.jar`） | **16** | 必须**全扫** `obj/**/*.jar` 中含 `org/jni_zero/GEN_JNI.class` 者；只扫 `generated_*` 会漏 `base_java_jni_java` 与 `generate_jni_java` 两个分片（共 7 条 native） |
 | 16 分片 native **并集** | **194** | `javap -p … org.jni_zero.GEN_JNI \| grep native`，逐分片取并集（与 captain 的 194 一致） |
 | 按 §16.1 规则复算出的符号数 | **194**（无碰撞） | 见 §16.4 附件 |
 | `.so` 导出的 `Java_J_N_*` | **193** | `llvm-nm -D --defined-only libjingle_peerconnection_so.so` |
-| **交集（184 中命中）** | **193 / 193** ✅ | 每个导出符号都能映射到某条 Java native |
+| **交集（194 中命中）** | **193 / 193** ✅ | 每个导出符号都能映射到某条 Java native |
 | **唯一未命中** | **1 条**：`org_webrtc_LibaomAv1Encoder_create` → `Java_J_N_M0vTiIkf` | 该 boundary **不在本 `.so` 中** |
+| **修复后实测（t23 落盘 jar `7dbe8400…`，508 条目）** | `*Jni.class` = **48**、`GEN_JNI` = **1**、被引用 `*Jni` **缺失 0**；合并 `GEN_JNI` native = **194**（与 16 分片并集逐名一致）；`.so` 所需 193 条**全覆盖（缺失 0）** | 见 §16.5 |
 
 **结论（给 t23/t26）**：
 1. 合并后的 `GEN_JNI` 必须声明 **194** 条 native（16 分片并集），而 `.so` 只导出 **193** 条 ⇒ **差值恰为 1 条，且可精确指出是 `org_webrtc_LibaomAv1Encoder_create`**（AV1 编码器边界未编进本 `.so`；本项目只用 VP9，运行期不会创建 AV1 编码器）。
@@ -742,9 +744,40 @@ node <仓库>/scripts/… 或见附件 TSV（已给出 193 条现成映射）
 
 ### 16.4 附件
 
-- `reports/07-native-dev-jnizio-mapping.tsv`：**193 行**（`symbol \t java_native_method`），即 `.so` 全部边界的现成映射表；
-  文件头注释含规则、出处与用途。t23 可直接用它对账合并后的 `GEN_JNI`。
-- 未交付 194 的完整表（第 194 条即 AV1 那条，已单列在 §16.2）。
+- `reports/07-native-dev-jnizio-mapping.tsv`：**194 行数据**（4 列：`symbol \t java_native_method \t generated_header \t so_exported`），
+  即"194 条 native ↔ `Java_J_N_*` ↔ 生成头"的完整对照；`so_exported=yes` 193 条、`no` **1 条**（AV1，见 §16.2）。
+  文件头 11 行注释含规则、出处、更正说明与用途。t23/t27 可直接 `join`/`comm` 对账。
+
+### 16.5 更正与更新记录（v1.11，2026-09-14）
+
+**A. 更正我自己的两个错数字（主动披露，影响面已通知 t23/t25/t27）**
+
+| 量 | 旧值（错） | **真值** | 错因 |
+|---|---|---|---|
+| 修复前"被引用但缺失"的 `*Jni` | 42 | **47**（47/47 全缺） | 旧扫描的正则写死 `org/webrtc/<Class>Jni`，**漏掉子包与其它包**：少算 `org/webrtc/audio/WebRtcAudioRecordJni`、`org/webrtc/audio/WebRtcAudioTrackJni`、`org/webrtc/audio/JavaAudioDeviceModuleJni`、`org/jni_zero/JniZeroJni`、`org/jni_zero/CommonApisJni` 共 5 个 |
+| 已编译 `*Jni.class`（去重） | 45 | **48** | 旧统计只扫了 14 个 `obj/sdk/android/generated_*jni_java.javac.jar`；漏 `base_java_jni_java.javac.jar`（`LoggingJni`）与 `third_party/jni_zero/generate_jni_java.javac.jar`（`CommonApisJni`/`JniZeroJni`） |
+
+- **正确扫描方法（防后人重犯）**：不要按包名限定，直接在每个 `.class` 的常量池里抓**类内部名**
+  （小写包路径 + 大写类名且以 `Jni` 结尾），例如正则 `/([a-z][a-z0-9_$]*(?:\/[a-z0-9_$]+)*\/[A-Z][A-Za-z0-9_$]*Jni)\b/`；
+  按包名限定（`org/webrtc/`）会漏子包。
+- **集合对账（真值）**：生成 48 = 编译 48（A−B = ∅、B−A = ∅）；修复前被引用 47（全缺）；
+  编译但修复前未被引用的仅 **1** 个 = `Dav1dDecoderJni`（同代际生成件，修复后 jar 亦引用之）。
+  ⇒ **建议并全部 48 个 `*Jni.class`**（多包 1 个死代码，无外来类），而不是"只并 42/45"。
+- 另更正一处他人自述：webrtc-builder 在 t23 小结中称"另 3 个（`LoggingJni`/`CommonApisJni`/`JniZeroJni`）全树未编译"
+  —— 实测**不成立**，它们分别位于上述两个未被其扫到的 jar 中。
+
+**B. t23 修复结果的本层复核（部署 jar `7dbe8400…`，508 条目，2026-09-14 10:53）**
+
+| 检查 | 结果 |
+|---|---|
+| `*Jni.class` / `org/jni_zero/GEN_JNI` | **48 / 1** |
+| 被引用的 `*Jni` 是否缺失 | **缺失 0**（对比修复前 47/47 全缺） |
+| 合并 `GEN_JNI` 的 `native` 数（`javap -p \| grep native`） | **194**，与 16 分片并集**逐名一致（comm -3 无差异）** |
+| `.so` 所需 193 条是否覆盖 | **缺失 0**（全覆盖） |
+| `GEN_JNI` 比 `.so` 多出 | **1 条 = `org_webrtc_LibaomAv1Encoder_create`**（AV1，潜在） |
+
+> ⚠️ 该 jar/AAR 是 t23 在飞行中落盘的；**最终记录以 t26 重编产物为准**（t27 复核时请用最终哈希）。
+
 
 
 
