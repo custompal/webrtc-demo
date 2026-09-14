@@ -1568,7 +1568,16 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 
 #### (h) webrtc-builder 建议的"名字级形态判据"在锚点上**已成立**（我 20:12 实测）
 - dex 内 `grep -a -o` 计数（`classes.dex` / `classes13.dex` / `classes14.dex`）：`LJ/N;` = **2 / 1 / 0**（合计 3）；`Lorg/jni_zero/GEN_JNI;` = **0 / 2 / 1**（合计 3）；**`org_webrtc_LibaomAv1Encoder_create` = 1 / 1 / 1（合计 3）**；GEN_JNI 可读转发名样例 `org_jni_1zero_CommonApis_releaseRawPtr` 在 `classes13.dex` = **1**。
-- 意义：**B 形态**在 dex 层同时具备 ① `LJ/N;` 存在 ② 可读 AV1 名（GEN_JNI 的**抛异常桩** + `J/N` 的非 native 声明）③ GEN_JNI 可读转发名；**A 形态**（无 AV1 桩）缺 ②。⇒ 该建议判据**已在交付锚点 `30c41ac9…` 上通过**，宜纳入 P-11 后续断言（脚本改由持写权者做，我不改）。
+- 意义：**B 形态**在 dex 层同时具备 ① `LJ/N;` 存在 ② 可读 AV1 名（GEN_JNI 的**抛异常桩** + `J/N` 的非 native 声明）③ GEN_JNI 可读转发名。⇒ 该建议判据**已在交付锚点 `30c41ac9…` 上通过**，宜纳入 P-11 后续断言（脚本改由持写权者做，我不改）。
+- **⚠️ 本条于 20:51 被我自我精化（F-9）：上述"②可读 AV1 名" 不具 B 排他性！** 实测（`[读盘 20:51:00]`）：
+  | 对象 | 含 `org_webrtc_LibaomAv1Encoder_create` 的 class/dex 数 | 含 **`Native method not present`** 的 class/dex 数 |
+  |---|---|---|
+  | **A jar**（`c289b4df…`）| **1**（`LibaomAv1EncoderJni` 常量池引用该名）| **0** |
+  | **B jar**（`0c776934…`，交付）| **3** | **2**（`org/jni_zero/GEN_JNI.class` + `J/N.class`）|
+  | **旧 APK `721df1c8…`**（落位前形态）| **2** | **0** |
+  | **交付 APK `30c41ac9…`** | **3** | **2**（`classes.dex` + `classes13.dex`）|
+  ⇒ **A 形态同样出现可读 AV1 名**（故它只证"调用点/绑定类已入包"，**不证** `GEN_JNI` 是 B 形态）；**B 排他标记 = 桩字面量 `Native method not present`**。**APK 层形态判据应写合取**：**`LJ/N;` > 0 ∧ `stub_msg` > 0**（A 形态下 `LJ/N;` > 0 而 `stub_msg` = 0，可区分）。
+  **使用注意（webrtc-builder 提醒，我已核）**：该字面量在 `app/src` 内**只出现在单测** `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt:60`，**`app/src/main/**` = 0 处** ⇒ 不污染 APK 判据，但**不得**据此说"主代码也发这条消息"。
 - **⚠️ D-13 类过期口径提示**：webrtc-builder 本条消息的③仍以 `721df1c8…`（33 293 061 B / 11:28:34）为"现行 APK"、K-15"仍开放"、t33"in_progress" —— 三项**均已被取代**：现行锚点 = **`30c41ac9…`**、dex `LJ/N;` = **3（非 0）**、t33 已 completed（captain 接管 attempt 3）、t34 已 completed（→ native-dev）⇒ 其"APK 侧仍开放、待 t33 关闭"的结论**过期，不采纳**（其"重编后 dex 应出现 `LJ/N;`"的预期**已实现**）。
 
 #### (i) `7dbe8400…` ↔ `dc5f8919…`"同内容、异时间戳"：**半侧我可复算、半侧不可**（读盘 20:12）
@@ -1628,7 +1637,7 @@ python3 scripts/check_jar_link_integrity.py <jar>
 
 - **F-1（低危 · 记载更正）**：captain 信里"**classes13 J.N=1 / classes14 J.N=2** ⇒ 合计 3"**不可复现** —— 我两法（`grep -a -o` 逐 dex + `dexdump` 类型引用）一致得到 **`classes.dex` 2 / `classes13` 1 / `classes14` 0**；合计同为 **3**，故**判据本身成立**。看起来是把 **`PCFJni` 列（`classes14` = 2）**串到了 `J.N` 列。**更正建议**：`LJ/N;` = `classes.dex` 2 + `classes13.dex` 1。
   - **第三方独立复算（webrtc-builder，同一快照 `30c41ac9…`，只读内存解析）**：其全 14 dex 扫描结果同样为 **`classes.dex` 2 / `classes13.dex` 1 / 其余 0 = 3**，且 `org_webrtc_LibaomAv1Encoder_create` 可读名 **1/1/1**、桩消息 `Native method not present` **`classes.dex` 1 / `classes13.dex` 1** —— 与我的测量**逐项一致** ⇒ **captain 信的"1+2"为孤例，应以 2/1/0 为准**（三处独立测量：我、webrtc-builder、t34 附录 §2）。
-- **名字级补充（webrtc-builder 建议，我已在锚点实测通过，§13.25(h)）**：AV1 可读名 1/1/1 ⇒ B 形态（可读桩）而非 A 形态；`J/N` 侧为可读名 + 非 native 抛异常桩。
+- **名字级补充（webrtc-builder 建议；**已由我 20:51 修正，见 F-9**）**：AV1 可读名 **1/1/1** 只证"调用点/绑定类入包"（**A 形态同样出现**：A jar 1 个 class、旧 APK `721df1c8…` 2 处）⇒ **不得**据此判"是 B"；**B 排他标记 = `Native method not present`**（B jar 2 个 class、交付 APK 2 处；A jar 与旧 APK 均 **0**）。**APK 层形态判据 = 合取**：`LJ/N;` > 0 ∧ `stub_msg` > 0。`J/N` 侧为可读名 + 非 native 抛异常桩。
 
 **§3.3 四 `.so` 护栏 —— ✅ 全部通过**
 ```
@@ -1685,6 +1694,7 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - **F-6（low，作用域）**：native-dev 的"`grep -c 'org_'`：落位件 = 194 / A = 193（`191+3` / `190+3`）"**只对 `GEN_JNI` 成立**；对 `J/N` 实测为 **1 / 0**（B 仅 AV1 可读名 `org_webrtc_LibaomAv1Encoder_create`，其余 native 名均为哈希 `M$…`）⇒ 该类断言**必须写明目标类**（详见 §13.22(f) 追加表）。**同时该表给出一个新的精确定量**：A↔B 在 `GEN_JNI` 侧**仅差 1 条**（AV1），其余前缀计数逐项相同 —— 与"差异只在 AV1 absent-proxy 桩"的结论自洽。
 - **F-7（low，**本报告自身错误**，由 webrtc-builder 19:02 提醒后我复核确认）**：§13.22(f) 原写"dex 内 `LJ/N;` = **1**（v2 期望值）"**是错的** —— `= 1` 属 **jar 条目前缀**口径（`jar tf | grep -c '^J/'`，v2 差异点①），而 **APK dex 内 `LJ/N;` 串计数 = 3**（`classes.dex` 2 + `classes13.dex` 1）。**两者是两把尺子**（与 P-14 同族），已就地改为对照表 + 断言写法（jar `^J/` = 1；dex "存在/≥1"，实测 3）。**教训**：把"期望值"从一个对象（jar 条目）搬到另一个对象（dex 串）时，必须**重述命令**，否则会出现"看起来有据、实则假红"的断言。
 - **F-8（medium，结论性误读）**：他方报"两次构建同 sha `30c41ac9…` ⇒ 打包可复现"——**与盘相反**（第二次构建日志 `…190227.log:80` 明记 `ef29e00c…`、mtime 19:04:43；`artifacts/app-debug-ef29e00c.apk` 与之同刻同哈希；仓内路径 19:05:19 是 `cp` 拷回、mtime 即拷贝时刻）。**正确结论 = APK 整包 byte-reproducibility = false**（详见 §13.23 反例登记）。**教训**：先钉"对象性质（build 产物 / copy / 快照）"再谈可复现性。
+- **F-9（low，判据精化）**："AV1 可读名 ⇒ B 形态"**不成立**（A jar 亦含该名 1 个 class、旧 APK `721df1c8…` 含 2 处）⇒ 它只证"调用点/绑定类已入包"；**B 排他标记 = 桩字面量 `Native method not present`**（A jar 0 / 旧 APK 0 / B jar 2 class / 交付 APK 2 处）⇒ **APK 层形态判据改为合取 `LJ/N;` > 0 ∧ `stub_msg` > 0**；该字面量在 `app/src` 仅见于单测（`app/src/test/.../JniBindingClasspathTest.kt:60`，`main` 0 处），不影响判据（详见 §13.25(h) 表格）。
 - **不写成通过（仍未验证）**：真机安装/首次 native 调用/`JNI_OnLoad` 运行期注册/Camera2 采集/首帧渲染/日志导出；宿主 `/opt/apk-http/served/app-debug.apk`（容器不可见，仅他人报告同哈希）。
 - **附带事实（不改变 verdict）**：APK **整包 byte-reproducibility = false** —— 同一 jar、同一 `--no-build-cache clean` 命令的两次构建分别产出锚点 `30c41ac9…`（18:39–18:42 日志 `6f02e949…`）与 `ef29e00c…`（19:02–19:04 日志 `reports/10-t33-nocache-assembleDebug-20260914-190227.log`）；两者**六载荷逐件相同、类集合 26 195/26 195 相同**（§13.25(b)），故稳定判据落在载荷而非整包 sha。
 
