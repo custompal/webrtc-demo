@@ -878,6 +878,37 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 ⇒ **落位验收时请先确认取的是哪一形态**：`javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '`（A=193 / B=194）。
 
 
+### 13.9 t30 `evidence/` 原样输出的独立复算 + 源码行号自核
+
+对象：`webrtc-build/t30/evidence/`（native-dev 导出，声称"不经加工、不含结论"）。我**只读 `cat`/`sha256sum` 并用自己的脚本复算**，未采信其结论。
+
+| 文件 | 我的 `sha256sum` | 与自述 |
+|---|---|---|
+| `J.N.javap-p.txt` | `520ea42dbd0b2557426a07bbfae50615729a90ec211b465520d64accfb3e45f6` | ✅ 一致 |
+| `GEN_JNI.javap-p.txt` | `3c064897510d950b9dacc5d4234027c0300a98070c583d3444ea49967e0541c3` | ✅ 一致 |
+| `so.llvm-nm-D-defined-only.txt` | `66e061c3c6af07228e79e0bdf0ae12a0b59b69aa185b60c78147994eb35729d3` | ✅ 一致 |
+| `so.Java_J_N_.txt` | `1279d83cb4f3996baaa03d2b9155c956cb8e69475f3f2becfcfb40af61262a77` | ✅ 一致 |
+| `J.N.native-names.txt` | `9c237e6aa84992da95dee70b9f785edc555fa9a8e991247431aa78563f80b11f` | ✅ 一致 |
+| `README.md` | `e5d052e3dd67066b9f6ef66d2b5227dbbf13ffc66e58c538f544ecb25f98e159` | ✅ 一致 |
+
+**我从原样输出复算（非其结论）**：
+- `J.N.native-names.txt` = **193** 行、`so.Java_J_N_.txt` = **193** 行；`jni_mangle(名)`（`_`→`_1`、`$`→`_00024`）后**双向差集 = 0 / 0（精确相等）** ✅；其中**含 `_`/`$` 的名字 = 37 个** ✅；实证样本：`names[181] = MzznQVi_` ↔ `syms[192] = Java_J_N_MzznQVi_1`（即 `_`→`_1`）。
+- `so.llvm-nm-D-defined-only.txt` = **194 行** = **193 个 `Java_J_N_*` + 1 个 `JNI_OnLoad`**，**无 `JNI_OnUnload`** ⇒ 再次独立印证 §13.1 与 `reports/07:551` 的勘误方向（libjingle 不含 `JNI_OnUnload`）✅
+- `javap -p` 口径陷阱（native-dev 提示，我实测成立）：两份 `.txt` 各 **195** 行含 `(`，其中 **1 行是默认构造器** ⇒ **方法数 = 194**、native 数 = **193（J.N）/ 0（GEN_JNI）**。
+
+**源码行号自核**（我 `grep -n`/`sed -n` 原文核对；文件真身为 **`webrtc-build/src/third_party/jni_zero/codegen/gen_jni_java.py`**，仓库内无此源码，引用时须带 checkout 前缀）：
+| 位置 | 实测 |
+|---|---|
+| `_stub_for_missing_native` | `def` 在 **`:10`**，函数体 `:10-15`，`throw new RuntimeException("Native method not present");` 在 **`:15`** |
+| `_forwarding_method` / `_native_method` | `:18` / `:36` |
+| `generate_forwarding` | `def` **`:55`**；`present_proxy_natives` 循环 **`:74`**、转发调用 **`:75`**；`absent_proxy_natives` 循环 **`:77`**、桩 **`:78`** |
+| `generate_impl` | `def` **`:82`**；`boundary_proxy_natives` 循环 **`:111`**、`_native_method` 调用 **`:112`**；`absent_proxy_natives` 循环 **`:113`**、桩 **`:114`** |
+| 开关 | `jni_registration_generator.py` `:280` / `:511`（**与 §12.2(5) 引用一致**） |
+> **更正说明**：native-dev 提醒的"`:65-68` 应为 `:74`""`:75-78` 起点偏 2 行"——**本报告从未引用这两个行号**（`grep gen_jni_java.py` 全文仅 §12.2(5) 一处，引的是 `:10-15`，实测准确）；其提醒对**其他材料**（或我早期消息）有效，此处不构成报告缺陷。
+
+**落位后可复用的同一条命令（我据此预演）**：t30 的两个 `.class` 即落位字节本身（`J/N.class 1ff8d3ff…`、`GEN_JNI.class a6e7edcf…`）⇒ t29 落位后从 jar 抽同名条目（本容器用 `jar xf`，**无 `unzip`**）再跑**完全相同的 `javap -p`**，两份文本与两个 class 的 sha256 应逐字节相同；若不同即说明落位未取 B/handoff 那份（与 §13.8 的 A/B 判别式互为交叉校验）。
+
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
