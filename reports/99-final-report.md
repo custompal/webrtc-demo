@@ -1444,6 +1444,13 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 > | `artifacts/app-debug-ef29e00c.apk` | `ef29e00c…` | 33 309 445 B | **19:04:43** | 与日志同刻 ⇒ **第二次构建的真实产物** |
 > | 仓内路径 `app-debug.apk` | `30c41ac9…` | 33 309 445 B | **19:05:19** | **拷贝时刻**（`cp` 冻结件，非构建）|
 > ⇒ **正确结论：APK 整包 byte-reproducibility = false**（同一 jar/同一命令两次构建得 `30c41ac9…` 与 `ef29e00c…`）；19:05:19 只是 **copy**（`mtime` 即拷贝时刻，与构建产物 #2 的 `19:04:43` 明显不同）。**"两次同 sha"是把 copy 当 build 的误读**（与 P-16/P-14 同族：对象性质必须先钉）。
+>
+> **可复现性结论的"口径分列"（webrtc-builder 建议 + 我复核采纳）** —— 报告写在**何种构建方式下**：
+> | 对比 | 两个哈希 | 是否逐字节一致 | 说明 |
+> |---|---|---|---|
+> | **同为完整执行**（两次 `--no-build-cache clean assembleDebug`，同 jar `0c776934…`）| `30c41ac9…`（18:39 日志）/ `ef29e00c…`（19:02 日志）| **否** | 均为 `42 executed`、`FROM-CACHE=0` ⇒ **同法亦不可逐字节复现**；差异被定量到 7 个次级 dex（含 D8 的不稳定令牌，§13.25(b)/t39） |
+> | **缓存辅助 vs 完整执行**（env-installer 早期对比）| `c72d3667…`（cache-assisted `clean assembleDebug`）/ `b0cddd86…`（完全执行）| **否** | **不同构建方式**，不用于"同法可复现性"论证 |
+> ⇒ **判据一律落在载荷**（`classes.dex` + `classes13.dex` + 四 `.so`：两轮逐件相同；类集合 26 195/26 195 同）。
 
 **事实（我 19:1x 只读实测）**：
 | 工件 | sha256 | 大小 (B) | mtime | 说明 |
@@ -1713,6 +1720,8 @@ APK libc++_shared  == app/src/main/jniLibs/arm64-v8a/libc++_shared.so           
 - **相关提交存在性**：`5b0781d`（18:49:29，t33 门禁证据入库）✅、`6e260e9`（18:50:05，我的 `JNI_OnLoad` 区间更正）✅ —— 均为当前 HEAD 祖先。
 - **K-17 归因更新（不点名、只归因"机制"）**：**两名成员自述在 root 侧跑过 git** —— env-installer（`t18/t26/c6fcfcd/3acc1d2` 等提交）与 **webrtc-builder（约 18:31–18:55 的 `git status/diff/log/show`）**；其自述的**首条 git 命令 ≈18:31 晚于 18:25/18:27 两次抢占** ⇒ 那两次不能归到它头上；其**自述 18:54 那次 = root `git diff --stat`**，正对应本报告 §13.21(d) 记录的 **18:54:11** 事件 ⇒ 时间线归因：**18:25/18:27 非其；18:31:18 · 18:46:11 · 18:54:11 落在其窗口内**。**结论不变**：根因 = **root 侧 git 会重写 `.git/index`（root:root 0644）**，属机制问题而非个人过失；**护栏 = 仓库内禁止 root 侧 git（必要时仅 `git --no-optional-locks`，该选项不写 index）**，叠加 captain 的 `chown -R 1000:1000` 与"uid-1000-only"规则。
 - **K-17 现场复核（`[读盘 20:31:37]`，webrtc-builder 所报 18:54 快照的后续）**：`.git/index` = **`node:node 644`**（mtime `20:31:15` = 我最近一次提交）、**`find .git ! -user node` = 0**、无 `index.lock`、无 git 进程；我 **20:24–20:31 的 8 次提交（`806988b`→`c5c1418`）均以 uid 1000 成功** ⇒ **写侧已恢复且可用**，其 18:54 快照**已被其后修复取代**（无需再 chown）。
+- **`app/build` 属主复核（`[读盘 20:40:57]`，对 webrtc-builder 19:06:40 快照）**：现盘 `app/build` = **`node:node 755`**（mtime 19:07:02）、**非 node 项 = 0** ⇒ 其报的"`app/build` = `root:root`、root-owned 条目 **1047**"**已被 19:07:02 的 uid-1000 构建取代**，**无需 `chown -R app/build`**。
+  **K-17 读侧最终口径（我实测）**：**仓库内** `mode 600 ∧ uid≠1000` = **0**；**残余仅 12 个 `root:root 644`**（全在 `app/.cxx/**` 的构建产物 `.o`，**uid 1000 可读**，且所属目录均 `node:node` ⇒ **不阻塞 uid 1000 的 clean/覆盖**）；**仓外工作区**不可读文件 = **3**（`artifacts/pre-deploy-7dbe8400.jar` 600、`tmp/jn-fix/backup-B-before-A-incident-20260914-183224.jar` 600、`QUARANTINE-A/repro-c289b4df.jar` 400，均 `root` 属主）。
 - **审计提示（身份口径）**：本轮 §13.26 的 8 次提交在 `git log --format='%cn'` 下显示为 **`env-installer`** —— 因仓内 `.git/config` 现为 `user.name=env-installer`（我**未改**该配置）；此前 verifier 名下的 65 次提交系以 `-c user.name=verifier` 提交。⇒ 审计归属请以**提交 hash + 提交内容**为准，勿仅看 `%cn`（本节后续提交已改回 `-c user.name=verifier`）。
 - **报告文件漂移续证（我 `[读盘 20:32:16]`）**：`reports/05-libwebrtc-build.md` = **995 行 / `bccea2ff…`**（与 §13.22(e) 现值一致）；`reports/15-java-jar-rebuild.md` = **828 行 / `3da734f8c19ba9f13b58572a490b886a3ef2e6031934877c2794164bc6ee90b6`**（mtime **18:57:27**）—— **晚于** native-dev 18:56:46 引用的"827 行 / `65cd51f4…`" **仅 1 分钟**即再次变更 ⇒ **"引用他人报告哈希前必须当场重取"**（P-13 ③）在本次会话内被**再次实证**；`git status --porcelain` 现已 **空**（此前在途的 `M` 已入库）。
 - **顺带更正一处他方假设**：**"容器内无 `python3`"不成立** —— 我用**交付树自带**的 `webrtc-build/src/third_party/cpython3/host/bin/python3`（3.11.9）在容器内**真实执行**了 `check_jn_binding.py`（§3.1 的 PASS/EXIT=0 即容器内读数；另需显式 `--javap/--nm`，见 F-2）。
