@@ -90,8 +90,13 @@ android {
         jniLibs {
             // 冻结（doc/14 §4.1）
             useLegacyPackaging = false
-            // 附加保险（超出 §4.1 原文）：若 AAR 也自带 libc++_shared.so，避免重复打包直接失败。
-            // t10 验证 APK 后若确认无重复，可删除本行以恢复严格校验。
+            // 【必须保留，t24 起为“承重行”】NDK r26 自带的 libc++_shared.so 是 4 KB 页对齐
+            // （p_align=0x1000），在 16 KB 页设备（Android 15+）上会 dlopen 失败。
+            // 我们用 scripts/make-libcxx-shared-16k.sh 以**同一冻结 NDK** 的静态库自链接了
+            // 一个 16 KB 对齐（0x4000）的同名库，落位 app/src/main/jniLibs/arm64-v8a/；
+            // 本行保证合并时**优先采用 jniLibs 的那份**（实测 merged_native_libs 得到
+            // 我们的 c9dbf4ec…，而非 NDK 的 4 KB 版 69e517e6…）。详见 reports/07-native-dev.md §15。
+            // 删除本行会让 APK 退回 4 KB 版（16 KB 设备不可用）。
             pickFirsts += setOf("**/libc++_shared.so")
         }
         resources {

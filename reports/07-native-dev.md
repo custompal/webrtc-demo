@@ -520,8 +520,235 @@ ssh -i ~/.ssh/id_ed25519 root@172.21.0.219 -p 5766 \
 | v1.4 | 2026-09-13 | 新增 **§9.1.1 AGP 真实构建链路**（t10 实跑 `:app:externalNativeBuildDebug` BUILD SUCCESSFUL；本层独立复核产物：2,206,528 B / ELF64 AArch64 / 仅导出 `JNI_OnLoad`+`JNI_OnUnload` / NEEDED 无 libwebrtc·libjingle / 未定义符号含 webrtc\|jingle = 0），把契约 §4.2 的二进制层证据补齐到**正式 AGP 路径** | env-installer（t10）实测通报 |
 | v1.5 | 2026-09-13 | ① **§2.7 改为按事件名引用**（行号易碎）：记录 t8 新增失败分支导致的行号位移快照（`encoded_plane_rejected` 178→**183**、不变量注释 238→**243**、`setrates_failed` 255→**260**，内容未变）；② 新增 t8 的两个可诊断事件 `to_i420_failed` / `frame_convert_failed` 入配对表；③ 记录本层对 26 处 Kotlin API 修复的**域隔离复核**（`nativebridge/**` 与 `app/src/main/cpp/**` 0 文件被触碰、`external fun` 仍 15、`SPATIAL_LAYERS=1`/`TEMPORAL_LAYERS=3`、9 处 JNI 调用形状与状态码映射未变、`createNative` 改名只在其自有类内） | android-dev 的边界交代 + 锚点位移通报 |
 | v1.6 | 2026-09-13 | 新增 **§9.1.2 APK 内实体证据**：本层用 Node 解析 ZIP 独立从终版 `app-debug.apk`（33,260,234 B / sha256 `c72d3667…`）抽出 `libwebrtcdemo_native.so`（1,231,512 B / sha256 `e9b66cc9…`）与 `libjingle_peerconnection_so.so`（12,946,912 B / sha256 `757cef81…`），三者与 t10 登记值**逐字节一致**；APK 内库仅导出 `JNI_OnLoad`/`JNI_OnUnload`、NEEDED 无 libwebrtc·libjingle、未定义符号含 webrtc\|jingle = 0 → 契约 §4.2 证据升级为**三层**（手工 Release / AGP 中间产物 / APK 内实体）；**§8 N5（jar/so 未产出）标为已闭合** | env-installer（t10）终版 APK 通报 |
+| v1.7 | 2026-09-13 | 新增 **§14 跨层协同：t22 真机缺陷的 JNI 侧证据**（本层只读取证）。给出 ① 生成类**已产出且已编译**（48 个 `*Jni.java`、14 个模块 javac jar 共 45 个 `*Jni.class`、`GEN_JNI.class` 仅在各 `*.compliment.jar`），但官方 jar/AAR/部署 jar **均为 0** ⇒ 打包漏类；② `.so` 走 **jni_zero 符号绑定**（194 动态符号 = `JNI_OnLoad`+`JNI_OnUnload`+**193 个 `Java_J_N_*`**，`RegisterNatives`/`*Jni`/`$Natives` 字符串各 0）⇒ 必须由 Java 侧提供 `*Jni`+合并 `GEN_JNI`；③ 同代际同构建（`src` HEAD `5c25072b…`、jar==AAR classes.jar）。**本层二进制无缺陷，无需改动** | android-dev 的 t22 协同请求 |
+| v1.8 | 2026-09-14 | 新增 **§15 t24：16 KB 页兼容性**。① 现状表：APK 内 4 个 `.so`，`libandroidx.graphics.path`/`libjingle_peerconnection_so` = **0x4000**，`libwebrtcdemo_native`/`libc++_shared` = **0x1000**；**关键：`libjingle` 不依赖 `libc++_shared`**（其唯一使用者是自有库）。② 最小修复已实施：`CMakeLists.txt` 增补 `-Wl,-z,max-page-size=16384`，AGP 重编后自有库 `p_align=0x4000`（sha256 `115aa211…`）。③ `libc++_shared`（r26=4KB）给出 (a) `c++_static` / (b) 用 r26 静态库自链接 16 KB 同名库（导出符号 2358 = 官方、缺失 0）/ (c) 升级 NDK 三方案与成本，**未实施，待 captain 选择**。④ 结论：当前配置**整包不达标**；(a)/(b) 任一落地后**达标**且**无需升级 NDK** | t24 任务（16 KB 页兼容） |
+| v1.9 | 2026-09-14 | captain 裁定 **方案 (b)** 并授权后完成实施，新增 **§15.5 实施记录**：① 新增入库脚本 `scripts/make-libcxx-shared-16k.sh`（NDK 版本 + 输入/输出 sha256 自校验 + `p_align/SONAME/导出 2358/相对官方缺失 0` 自校验）；② 落位 `app/src/main/jniLibs/arm64-v8a/libc++_shared.so`（1,356,968 B / sha256 `c9dbf4ec…`）；③ `packaging.jniLibs.pickFirsts` **原已存在**，本次仅改注释标为**承重行**（无逻辑 diff）；④ 核查 `build_app.sh` stage 5 **不会清空 jniLibs**；⑤ 预验证 `merged_native_libs` 选中我们的件、`stripped_native_libs` 中**四个 .so 全 0x4000**（APK 级复核交 t26） | captain 裁定方案 (b) + 授权触碰 `app/**` |
+| v1.10 | 2026-09-14 | 新增 **§16 t23 支撑：jni_zero 映射规则与 194/193 对账**（只读取证）：验证 `hashed_name`+`jni_mangle` 规则（Environment 3 条 boundary 逐一复算命中）；16 个 `GEN_JNI` 分片并集 = **194**、`.so` 边界 = **193**、交集 **193/193**、**唯一未命中 = `org_webrtc_LibaomAv1Encoder_create`**（AV1 未编入本 `.so`）；新增附件 `reports/07-native-dev-jnizio-mapping.tsv`（193 行现成映射表）与可复现命令 | captain 要求把映射规则/符号清单直接交给 webrtc-builder（t23） |
 
-> 代码未因 v1.1–v1.6 变更（本层始终按契约 §9.2 输出 `native.log`、按 §6.6 返回状态码数值）。改动仅限本报告文件。
+> 代码未因 v1.1–v1.7 变更（本层始终按契约 §9.2 输出 `native.log`、按 §6.6 返回状态码数值）。改动仅限本报告文件。
+
+---
+
+## 14. 跨层协同：t22 真机缺陷的 JNI 侧证据（本层只读取证，2026-09-13）
+
+> 归属：缺陷根因与修复归 **t8（Java 侧）/ t5（产物打包）/ t10（APK 重打）**；本节仅提供本层可验证的 **JNI/.so 侧事实**，
+> 供 t22 汇报与 verifier 交叉引用。**本层交付物无缺陷，未改动任何代码。**
+
+### 14.1 生成类确实产出并已编译，但未进最终 jar
+
+| 层 | 事实（实测） |
+|---|---|
+| 生成源码 | `webrtc-build/src/out/Release-arm64/gen/**/input_srcjars/org/webrtc/*Jni.java` 共 **48** 个（含 `PeerConnectionFactoryJni.java`） |
+| 已编译类 | 14 个 `obj/sdk/android/generated_*_jni_java.javac.jar` 共 **45** 个 `*Jni.class`；`generated_peerconnection_jni_java.javac.jar` 含 **14** 个（**含 `PeerConnectionFactoryJni.class`**） |
+| `GEN_JNI` | 仅存在于 **14 个 `*.compliment.jar`**，且每模块一份（`javap -p` 实测 native 数：peerconnection=121、video=25、base=12…，**合计 187**；14 份 md5 各不相同） |
+| 最终 jar | `lib.java/sdk/android/libwebrtc.jar`（sha256 `ee792522…`）、`aar-stage/classes.jar`（`ad54a0a2…`）、部署 `third_party/libwebrtc/java/libwebrtc-java.jar`（`d98939bb…`，**与 AAR 内 `classes.jar` 同 sha256**）：**`*Jni.class` = 0、`GEN_JNI.class` = 0**，仅 47 个 `$Natives` 接口 |
+
+`libwebrtc.jar` 的 mtime（19:55）晚于 `.so`（16:55）却仍为 0 ⇒ **系统性打包漏类**，非陈旧缓存。
+
+### 14.2 本层 .so 的绑定方式（jni_zero 符号绑定，非 RegisterNatives）
+
+- `llvm-nm -D --defined-only libjingle_peerconnection_so.so`：**194** 个动态符号 = `JNI_OnLoad` + `JNI_OnUnLoad` + **193 个 `Java_J_N_<hash>`**
+  （生成头可见来源：`JNI_ZERO_BOUNDARY_EXPORT int64_t Java_J_N_M0vTiIkf(JNIEnv*, jclass)`）。
+- 该 .so 内字符串：`RegisterNatives` = **0**、`org/webrtc/*Jni` = **0**、`Natives` = **0**（仅有 `org.webrtc.JniHelper` 等 95 个 dot 形态名，供 `class_loader` 使用）
+  ⇒ **类名不出现在 .so 中**，Java 侧必须提供声明这些 native 的类。
+- 生成 Java 形态（M129 jni_zero）：`class PeerConnectionFactoryJni implements PeerConnectionFactory.Natives { public static Natives get() {...} ... }`，
+  每个方法**委托** `GEN_JNI.org_webrtc_PeerConnectionFactory_*(...)`，而 `GEN_JNI` 内是 `public static native`。
+  ⇒ 缺 `*Jni` + `GEN_JNI` 时，`PeerConnectionFactory.initialize(...)` 的 `invokestatic PeerConnectionFactoryJni.get()` 必抛
+  `NoClassDefFoundError`，与 t8 的真机现象一致。
+
+### 14.3 结论与修复方向（供 t5/t8/t10 决策，本层不擅自改产物）
+
+1. **不是跨代际不匹配**：`src` HEAD `5c25072bda9b8c8d9acab443acef5b330b1588b7`；生成 Java 实现的 `$Natives` 接口就在 jar 内；
+   部署 jar 与 AAR 内 `classes.jar` 同 sha256；`.so` 与 jar 的 mtime 差异只是 t5 分阶段重跑。⇒ **jar 与 .so 同代，缺的是"没打包进去"**。
+2. **最小修复**：把 14 个模块的 `*Jni.class`（45 个类）与**合并后的** `org/jni_zero/GEN_JNI.class` 并入 `classes.jar` / AAR 后重打 APK；
+   **`libjingle_peerconnection_so.so` 无需重编**（其 193 个边界符号完整）。
+3. 更稳的做法：让 jar 目标本身带上生成 srcjars，或用官方 `tools_webrtc/android/build_aar.py` 复核其 `classes.jar` 是否含这些类。
+4. **待 t5 核实**：本层观察到"分包 GEN_JNI native 合计 **187**"与".so 边界 **193**"相差 6；按 jni_zero 设计最终须为**一份合并**的 `GEN_JNI`，
+   因此不宜只塞某一模块的 GEN_JNI。本层只保证 ".so 侧 193 个符号清单完整"。
+5. 真机 10 秒定案：logcat 搜 `NoClassDefFoundError` + `PeerConnectionFactoryJni`。
+
+> 本层交付物（自有 `.so`/CMake/JNI 表）与上述缺陷无关：APK 内自有库仍为 §9.1.2 记录的 1,231,512 B / sha256 `e9b66cc9…`，仅导出两个符号、无 libwebrtc 依赖。
+
+---
+
+## 15. t24：16 KB 页兼容性（ELF `p_align`）——现状、最小修复与 libc++_shared 方案
+
+> 目标：让 APK 内**全部** `.so` 具备 16 KB 页兼容（`p_align = 0x4000`）。Android 15+（16 KB 页内核）上，
+> 任何 4 KB 对齐的 `.so` 都会 `dlopen` 失败，进而触发 Kotlin 的 `native_lib_load_failed` / `engine_init_skipped`。
+> **本次只做"自有库最小修复"**；`libc++_shared.so` 的处理方案见 §15.3，**已按任务要求先回报 captain 等待选择，未实施**。
+
+### 15.1 现状表（APK `app-debug.apk`（33,260,234 B / sha256 `b0cddd86…`）内 `lib/arm64-v8a/*.so`，实测）
+
+| `.so` | 大小 (B) | `p_align` | NEEDED | 16 KB 达标 |
+|---|---|---|---|---|
+| `libandroidx.graphics.path.so` | 10,096 | **0x4000** | libm, libdl, libc | ✅ |
+| `libjingle_peerconnection_so.so` | 12,946,912 | **0x4000** | libEGL, libdl, libm, liblog, libc | ✅ |
+| `libwebrtcdemo_native.so` | 1,231,512 | **0x1000** ❌ | liblog, libandroid, libm, **libc++_shared**, libdl, libc | ❌ |
+| `libc++_shared.so` | 1,330,832 | **0x1000** ❌ | libc, libm, libdl | ❌ |
+
+**关键事实（决定方案空间）**：`libjingle_peerconnection_so.so` **不依赖** `libc++_shared.so`
+（它自静态链接 Chromium 的 libc++，与契约 §5.1 的 ABI 墙分析一致）；`libandroidx.graphics.path.so` 也不依赖。
+⇒ **APK 内 `libc++_shared.so` 的唯一使用者就是本层自有库**。因此"去掉 `libc++_shared` 依赖"就等于"整包不再需要该库"。
+
+- 4 KB 来源：NDK **26.1.10909125** 的 aarch64 链接器默认 `max-page-size = 0x1000`（工具链无任何 `max-page-size` 预设；
+  实测 `aarch64-linux-android26-clang` 默认 → `0x1000`，加 `-Wl,-z,max-page-size=16384` → `0x4000`），
+  NDK 自带的 sysroot `libc++_shared.so` 也是 `0x1000`（sha256 `4e843755…`；APK 内为 AGP strip 后副本 sha256 `69e517e6…`）。
+- 环境内**只有** NDK r26 一个版本（`android-sdk/ndk/` 下仅 `26.1.10909125`）。
+
+### 15.2 最小修复（已实施并验证）：自有库加 `max-page-size`
+
+`app/src/main/cpp/CMakeLists.txt` 的 `target_link_options` 增补：
+
+```cmake
+-Wl,-z,max-page-size=16384
+```
+
+重编（AGP 正式路径，宿主机）：`./gradlew --no-daemon :app:externalNativeBuildDebug` → `BUILD SUCCESSFUL in 29s`，
+产物 `app/build/intermediates/cmake/debug/obj/arm64-v8a/libwebrtcdemo_native.so`（2,206,528 B，sha256 `115aa211…`）：
+
+```
+  LOAD  0x000000 0x0000000000000000 0x0000000000000000 0x129d40 0x129d40 R E 0x4000
+  LOAD  0x129d40 0x000000000012dd40 0x000000000012dd40 0x0024f0 0x0024f0 RW  0x4000
+  LOAD  0x12c230 0x000000000012e230 0x000000000012e230 0x000068 0x002c58 RW  0x4000
+```
+
+导出符号仍仅 `JNI_OnLoad`/`JNI_OnUnload`，`NEEDED` 不变（仍含 `libc++_shared.so`）。
+> 契约关系：这是对契约 §4.2 冻结片段的一行**增补**（由 t24 任务指令授权）；建议 architect 折入 §4.2。
+
+### 15.3 `libc++_shared.so`（r26 = 4 KB）三方案（**未实施，待 captain 选择**）
+
+| 方案 | 做法 | 实测结果 | 契约影响 | 成本/风险 |
+|---|---|---|---|---|
+| **(a) 改 `c++_static`** | 自有库静态链接 libc++（`-DANDROID_STL=c++_static`），APK 随之不再打包 `libc++_shared.so` | 试构建（Release，含 16384 选项）：2,443,920 B（+328,752 B）；`NEEDED` **不含** `libc++_shared`；`p_align=0x4000`；导出仍只 2 个符号。**净 APK 体积 −1,002,080 B**（我的库 +0.33 MB、`libc++_shared` −1.33 MB） | **需改 §3.1/§4.1 的 STL 冻结值**（`c++_shared → c++_static`）+ 改 `app/build.gradle.kts` 的 `-DANDROID_STL`（**不在本层 scope**） | 最干净：少一个库、体积变小、无手搓产物；风险：契约级变更需批准；与 SDK 的 ABI 边界仍安全（JNI 面只用 POD/jstring/ByteBuffer，C++ 类型不跨 `.so`） |
+| **(b) 换 16 KB 版 `libc++_shared.so`** ✅ **已实施（captain 裁定）** | 用**冻结的 r26 自带静态库**自链接一个 16 KB 对齐的同名库（完全离线可复现）：<br>`aarch64-linux-android26-clang++ -shared -fuse-ld=lld -nostdlib++ -Wl,-soname,libc++_shared.so -Wl,-z,max-page-size=16384 -Wl,--whole-archive $SYS/libc++_static.a $SYS/libc++abi.a -Wl,--no-whole-archive -lc -lm -ldl -o libc++_shared.so` | 产物：`p_align=0x4000`(4 LOAD 段)、SONAME 正确、**导出符号 2358 = 官方完全一致**（"官方有而候选缺失" = **0**）；strip 后 1,356,968 B（官方 strip 后 1,330,832 B，+26,136 B）；sha256（未 strip）`32cb92c2…`、(strip) `c9dbf4ec…`。**落地细节见 §15.5** | **不改契约**（仍 r26、仍 `c++_shared`） | 已固化为 `scripts/make-libcxx-shared-16k.sh`（含输入/输出 sha256 自校验）；`pickFirsts` 承重行保留 |
+| **(c) 升级 NDK r27+** | r27 默认 16 KB 对齐且自带对齐版 `libc++_shared` | 本环境无 r27，未验证 | **契约级**（§3.1 NDK 冻结） | 最重：需装新 NDK + **用新 NDK 重编 libvpx**（t5 产物）+ 全量重验；不建议为单个 demo 承担 |
+
+> 被否决的"取巧"做法：用 objcopy/手工改 `p_align` 或往 ELF 里塞填充——不可靠、不可复现，不采用。
+
+### 15.4 结论（16 KB 页设备上整包是否可达标）
+
+- **当前配置：不达标**。自有库（已修）达标，但 `libc++_shared.so` 仍为 `0x1000`，且被自有库 `NEEDED` ⇒ 16 KB 设备上
+  `System.loadLibrary("webrtcdemo_native")` 会因依赖库无法映射而失败（走 Kotlin 的 `native_lib_load_failed` 分支）。
+- **落地 (a) 或 (b) 任一后：可达标**。APK 内 4 个 `.so` 将全部为 `0x4000`
+  （(a)：`libc++_shared` 直接消失；(b)：其被替换为 `0x4000` 版本）。
+- **不需要 NDK 升级**（(c) 非必要）。(b) **不需要任何契约变更**，只需一处打包规则 + t10 的构建脚本动作；
+  (a) 需要把 §3.1/§4.1 的 STL 冻结值改为 `c++_static`（**契约变更请求**）。
+- **最小契约变更请求（若选 (a)）**：`doc/14` §3.1「STL = `c++_shared`」与 §4.1 的 `-DANDROID_STL=c++_shared`
+  → `c++_static`；影响：APK 少一个库、净体积 −1.0 MB；风险：与 SDK 无 ABI 交叉（JNI 面仅 POD），构建脚本同步改一行。
+- **本层推荐**：**(b)** 作为"零契约变更、可完全从 r26 复现"的交付路径（配脚本 + sha256 记录）；
+  若 captain 愿意接受契约微调，**(a)** 是更干净的长效方案。**两者都需 captain 决策后由 t10/构建 owner 落地**，
+  本层未擅自动打包与 Gradle 文件。
+
+**待办（owner）**：① ~~captain 选 (a)/(b)/(c)~~ → **captain 裁定 = (b)**；
+② ~~若 (b)：把自链接命令固化为脚本、产物入 `jniLibs`、加 `pickFirsts`~~ → **已完成，见 §15.5**；
+③ 之后重打 APK 并复核"APK 内全量 `p_align` 表"（t26）；④ 真机（16 KB 页设备）验证 `System.loadLibrary` 成功。
+
+### 15.5 方案 (b) 实施记录（2026-09-14，captain 授权触碰 `app/**` 两处 + `scripts/`）
+
+**变更清单**
+
+| # | 路径 | 内容 |
+|---|---|---|
+| 1 | `app/src/main/cpp/CMakeLists.txt` | `target_link_options` 增补 `-Wl,-z,max-page-size=16384`（§15.2） |
+| 2 | `scripts/make-libcxx-shared-16k.sh`（**新增，入库**） | 自链接 16 KB `libc++_shared.so`；校验 NDK revision=26.1.10909125、三个输入 sha256、输出 sha256，并自校验 `p_align`/`SONAME`/导出数/相对官方缺失数 |
+| 3 | `app/src/main/jniLibs/arm64-v8a/libc++_shared.so`（**新增，被 `.gitignore` 的 `*.so` 忽略，不入库**） | 1,356,968 B / sha256 `c9dbf4ec…` |
+| 4 | `app/build.gradle.kts`（`packaging.jniLibs`） | `pickFirsts += setOf("**/libc++_shared.so")` **原本已存在**（t8/t10 时期的"附加保险"），本次**仅改注释**把它标为**承重行**并说明原因；逻辑未变（无逻辑 diff） |
+
+**stage 5 是否会清空 `jniLibs` 的核查（captain 指定的"坑"）**：`scripts/build_app.sh` 只在开头 `mkdir -p "$JNILIBS"`，
+stage 5 用 `cp -f "$SO_TP" "$JNILIBS/"` 复制 libjingle，**全脚本对 `JNILIBS` 无任何 `rm`/`git clean`**（`rm -rf` 仅作用于 mktemp 临时目录与 dex 临时目录）
+⇒ **不会清掉我们的 `libc++_shared.so`**，无需改 stage 5。
+
+**构建链路预验证（无需等 t26，已实测）**：跑 `:app:mergeDebugNativeLibs` + `:app:stripDebugDebugSymbols` 后检查中间产物：
+
+| 中间产物（arm64-v8a） | sha256 | p_align |
+|---|---|---|
+| `merged_native_libs/.../libc++_shared.so` | `c9dbf4ec…`（**我们的**，非 NDK 的 `69e517e6…`） | — |
+| `stripped_native_libs/.../libandroidx.graphics.path.so` | `41e9a793…` | **0x4000** |
+| `stripped_native_libs/.../libc++_shared.so` | `c9dbf4ec…`（= 脚本产物，AGP strip 为幂等） | **0x4000** |
+| `stripped_native_libs/.../libjingle_peerconnection_so.so` | `757cef81…`（未变） | **0x4000** |
+| `stripped_native_libs/.../libwebrtcdemo_native.so` | `95c44e5a…` | **0x4000** |
+
+⇒ **四个 `.so` 在打包前的最终中间产物上已全部 0x4000**；`pickFirsts` 也确实选中了 `jniLibs` 里的那份（而不是 NDK sysroot 的 4 KB 版）。
+`libc++_shared.so` 导出数仍 2358。**APK 级复核由 t26（重编 APK）完成**。
+
+**不变量（本次未改变）**：自有库 `NEEDED` 仍含 `libc++_shared.so`；自有库导出仍**仅** `JNI_OnLoad`+`JNI_OnUnload`；
+未改 `doc/14`、`app/src/main/kotlin/**`、jar/AAR、libvpx；`libjingle`/androidx 的 `.so` 原样未动。
+
+---
+
+## 16. t23 支撑：jni_zero 边界符号 ↔ Java native 的映射规则与 194/193 对账（2026-09-14）
+
+> 目的：t23 要"合并 `GEN_JNI`"并与 `.so` 的 193 个 `Java_J_N_*` 逐条对齐；本节给出**已验证的映射规则**、
+> **精确对账结果**与**可复现命令**，使 t23 一次做对。**本节只读取证，未改任何产物**（新增附件见 §16.4）。
+
+### 16.1 映射规则（源码级，已验证）
+
+`jni_zero` 的 native 方法名 → JNI 符号名的两步（出处：`third_party/jni_zero/proxy.py::hashed_name()`、`common.py::jni_mangle()`）：
+
+```
+hashed = ('M' + base64.b64encode(md5(java_native_method_name).digest(), altchars=b'$_')).rstrip('=')[:8]
+symbol = 'Java_J_N_' + jni_mangle(hashed)      # '_'→'_1'，'/'→'_'，'$'→'_00024'
+```
+> 注意 `_MAX_CHARS_FOR_HASHED_NATIVE_METHODS = 8`；`jni_mangle` 会把 hashed 里的 `_` 转义成 `_1`，
+> 所以**表象上**是 9 个字符（如 `M_1YMMZf6`）。
+
+**验证**（生成头 `gen/jni_headers/sdk/android/generated_environment_jni/Environment_jni.h` 里的 3 个 boundary 与复算完全一致）：
+
+| Java native 方法（`GEN_JNI` 内声明名） | 复算符号 | 生成头实际符号 |
+|---|---|---|
+| `org_webrtc_Environment_create` | `Java_J_N_M4R0A5nM` | `Java_J_N_M4R0A5nM` ✅ |
+| `org_webrtc_Environment_currentTimeNanos` | `Java_J_N_M_1YMMZf6` | `Java_J_N_M_1YMMZf6` ✅ |
+| `org_webrtc_Environment_free` | `Java_J_N_MlqxOSjz` | `Java_J_N_MlqxOSjz` ✅ |
+
+### 16.2 194 ↔ 193 精确对账（回答 captain 的"1 条差值"）
+
+| 量 | 值 | 来源/命令 |
+|---|---|---|
+| 生成 `*Jni.java` | **48** | `find gen -name '*Jni.java'` |
+| 模块 javac jar 编译出的 `*Jni.class`（去重） | **45** | 14 个 `obj/sdk/android/generated_*jni_java.javac.jar` |
+| jar 内"被引用但缺失"的 `*Jni` | **42** | Node inflate 每个 `.class` 扫常量池（与 android-dev 的 42 清单 `SET_EQUAL`） |
+| `GEN_JNI` 分片（`*.compliment.jar`） | **16** | `find obj -name '*.jar'` 中含 `org/jni_zero/GEN_JNI.class` 者 |
+| 16 分片 native **并集** | **194** | `javap -p … org.jni_zero.GEN_JNI \| grep native`，逐分片取并集（与 captain 的 194 一致） |
+| 按 §16.1 规则复算出的符号数 | **194**（无碰撞） | 见 §16.4 附件 |
+| `.so` 导出的 `Java_J_N_*` | **193** | `llvm-nm -D --defined-only libjingle_peerconnection_so.so` |
+| **交集（184 中命中）** | **193 / 193** ✅ | 每个导出符号都能映射到某条 Java native |
+| **唯一未命中** | **1 条**：`org_webrtc_LibaomAv1Encoder_create` → `Java_J_N_M0vTiIkf` | 该 boundary **不在本 `.so` 中** |
+
+**结论（给 t23/t26）**：
+1. 合并后的 `GEN_JNI` 必须声明 **194** 条 native（16 分片并集），而 `.so` 只导出 **193** 条 ⇒ **差值恰为 1 条，且可精确指出是 `org_webrtc_LibaomAv1Encoder_create`**（AV1 编码器边界未编进本 `.so`；本项目只用 VP9，运行期不会创建 AV1 编码器）。
+2. 因此跨产物核对的判据应是：**193 个 `Java_J_N_*` 全部能在合并 `GEN_JNI` 中找到对应方法**（§16.4 附件即该映射表），
+   且合并 `GEN_JNI` 的 native 数 = **194**；若构建方确认 AV1 未编入，可在测试中把该条目列为**已知豁免**并要求**书面理由**（而不是把期望值改成 193 了事）。
+3. **`.so` 不需要重编**：其 193 个边界完整，缺陷在 Java 侧打包（缺 `*Jni` + 缺 `GEN_JNI`）。
+
+### 16.3 可复现命令（t23/t26 可直接用）
+
+```bash
+# (1) 导出 .so 的 193 个边界符号
+$NDK/bin/llvm-nm -D --defined-only <apk 内 lib/arm64-v8a/libjingle_peerconnection_so.so> \
+  | awk '$3 ~ /^Java_J_N_/ {print $3}' | sort > /tmp/so_boundaries.txt ; wc -l < /tmp/so_boundaries.txt   # 193
+
+# (2) 收集 16 个分片的 GEN_JNI native 并集（需 JDK 的 javap + unzip）
+for c in $(find <webrtc-build>/src/out/Release-arm64/obj -name '*.jar'); do
+  unzip -l $c | grep -q 'org/jni_zero/GEN_JNI.class' || continue
+  d=$(mktemp -d); (cd $d && unzip -o -q $c 'org/jni_zero/GEN_JNI.class')
+  $JDK/bin/javap -p -classpath $d org.jni_zero.GEN_JNI | grep native \
+    | grep -oE '[A-Za-z0-9_]+\(.*\)' | sed 's/(.*//'
+  rm -rf $d
+done | sort -u > /tmp/gj_all.txt ; wc -l < /tmp/gj_all.txt   # 194
+
+# (3) 用 §16.1 规则把 (2) 映射成符号，与 (1) 求交 → 应为 193/193，仅 1 条未命中（AV1）
+node <仓库>/scripts/… 或见附件 TSV（已给出 193 条现成映射）
+```
+
+### 16.4 附件
+
+- `reports/07-native-dev-jnizio-mapping.tsv`：**193 行**（`symbol \t java_native_method`），即 `.so` 全部边界的现成映射表；
+  文件头注释含规则、出处与用途。t23 可直接用它对账合并后的 `GEN_JNI`。
+- 未交付 194 的完整表（第 194 条即 AV1 那条，已单列在 §16.2）。
+
+
+
+
 
 
 

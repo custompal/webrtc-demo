@@ -1025,6 +1025,135 @@ CallScreen.kt:98   pool.createRenderer(context, mirror = false) { viewModel.onRe
 该标志只影响 UI 状态（"等待远端画面"指示）。故即便它失灵，也属"UI 状态不准"而非"画面不显示" —— 我们的链路是完整的，此处仅如实陈述其影响面。
 **新增的两个本端日志事件**：`local_preview_first_frame` / `local_preview_resolution_changed`（仅本端预览；**远端事件名 `remote_first_frame` / `remote_resolution_changed` 保持不变**）。
 
+### 8.15 t25：引擎初始化失败**可诊断化** + 绑定类存在性 JVM 回归测试
+
+**动机**：真机"WebRTC 引擎初始化失败"的根因是交付 jar 缺 jni_zero 绑定类，但**真实异常被吞掉**（`engine_init_failed` 原先记 `emptyMap()`；UI 只有笼统一句），排障成本极高。本项把"可诊断"做成默认行为，并把这类缺陷**固化为自动化测试**。**执行期内 t23 的修复产物落位，因此本项拿到了完整的"修复前失败 / 修复后通过"对照（§8.15.1 / §8.15.5）。**
+
+**改动清单（仅 3 个源文件 + 1 个新测试；行号为改动后）**
+
+| 文件 | 位置 | 内容 |
+|---|---|---|
+| `webrtc/WebRtcEngine.kt` | `:56` | 新增 `@Volatile private var lastFailure: String?`（失败详情，成功时清空） |
+| 同上 | `:68-76` | 新增 `missingBindingClass()`：`Class.forName(name, initialize=false, loader)` 探测（**不触发类初始化**，避免探测本身触碰 native） |
+| 同上 | `:101-111` | **启动自检**：A 分支写入 `lastFailure`；新增自检命中 → **新事件 `jni_binding_missing`（字段 `cls`）** + `lastFailure="NoClassDefFoundError: <类名>"` + 快速失败 |
+| 同上 | `:163-173` | `catch(t: Throwable)`：**保留事件名 `engine_init_failed`**，**新增字段 `ex`（异常类名）、`msg`（message，截断 300）、`cause`（cause 类名，若有）** |
+| 同上 | `:182-189` | 新增 `lastFailureDetail()` / `describe(t)`（`异常类名: message` 单行口径，UI 与日志共用） |
+| 同上 | `:197-207` | 新增 `BINDING_CLASSES`（**5 项**：`org.jni_zero.GEN_JNI`、`PeerConnectionFactoryJni`、`PeerConnectionJni`、`VideoTrackJni`、`JniCommonJni`） |
+| `ui/call/CallViewModel.kt` | `:149-160` | 失败文案改为 **`WebRTC 引擎初始化失败（<异常类名>: <message>）`**；无详情时保留原兜底文案 |
+| `diag/DiagnosticsScreen.kt` | `:302-310` | 诊断页"WebRTC 引擎"行在未就绪时追加 **`（失败原因: <详情>）`**（可复制，便于远程排障） |
+| `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt` | 新文件（2 用例，断言在 `:53` 前后） | ① `referencedJniBindingClassesAreResolvable`：断言 **5 个**绑定类可在 classpath 解析（**一次性列出全部缺失**）；② `coreWebrtcApiClassesAreResolvable`：**正向对照**，证明 classpath 接线正常、失败确由"jar 缺绑定类"引起 |
+
+**新增事件/字段一览（未改名、未删除任何既有事件）**：新增事件 `jni_binding_missing`（字段 `cls`）；既有 `engine_init_failed` 新增字段 `ex` / `msg` / `cause`；`engine_init_skipped` 不变（仅补 `lastFailure`）。
+
+#### 8.15.1 「修复前必然失败」的原始输出（t25 要求留证）
+
+**第一次（3 个绑定类版本）** 宿主机 `./gradlew --no-daemon :app:testDebugUnitTest`：
+```
+> Task :app:compileDebugKotlin
+> Task :app:compileDebugUnitTestKotlin
+> Task :app:testDebugUnitTest
+com.example.webrtcdemo.webrtc.JniBindingClasspathTest > referencedJniBindingClassesAreResolvable FAILED
+    java.lang.AssertionError at JniBindingClasspathTest.kt:53
+> Task :app:testDebugUnitTest FAILED
+BUILD FAILED in 2m 10s
+EXIT=1
+38 tests completed, 1 failed
+```
+断言原文（`TEST-...JniBindingClasspathTest.xml`）：
+```
+java.lang.AssertionError: classpath 缺少 libwebrtc jni_zero 绑定类:
+[org.webrtc.PeerConnectionFactoryJni, org.webrtc.PeerConnectionJni, org.webrtc.VideoTrackJni]
+—— 交付 jar 不完整（真机将抛 NoClassDefFoundError；需重新产出含 *Jni 的 libwebrtc-java.jar）
+```
+逐类汇总：`AppConfigUrlTest 8/0`、`SignalingErrorPolicyTest 17/0`、`SignalingIdentityTest 11/0`、**`JniBindingClasspathTest 2/1`（正向对照用例通过 ⇒ 失败确由缺类引起，不是 classpath 接线问题）**。
+
+**第二次（按 native-dev 实测补强：加入 `org.jni_zero.GEN_JNI` 等 5 项后）**：
+```
+com.example.webrtcdemo.webrtc.JniBindingClasspathTest > referencedJniBindingClassesAreResolvable FAILED
+38 tests completed, 1 failed
+> Task :app:testDebugUnitTest FAILED
+BUILD FAILED in 1m 52s
+EXIT=1
+```
+断言原文（单类 XML `tests="2" skipped="0" failures="1" errors="0"`）：
+```
+java.lang.AssertionError: classpath 缺少 libwebrtc jni_zero 绑定类:
+[org.jni_zero.GEN_JNI, org.webrtc.PeerConnectionFactoryJni, org.webrtc.PeerConnectionJni,
+ org.webrtc.VideoTrackJni, org.webrtc.JniCommonJni] —— 交付 jar 不完整（真机将抛 NoClassDefFoundError；
+需重新产出含 *Jni 的 libwebrtc-java.jar）
+```
+
+#### 8.15.2 「存在即通过」的翻转演示（**合成 stub，非真实修复**）
+
+真实修复（t23 产出含 `*Jni` 的 jar）**尚未落位**，故用宿主机 JDK 做等价的类解析探针（stub 仅演示断言会翻转，**不代表交付物已修复**）：
+```
+--- ① 真实 classpath（= 当前交付 jar）
+RESULT=缺失 org.webrtc.PeerConnectionFactoryJni org.webrtc.PeerConnectionJni org.webrtc.VideoTrackJni (测试应失败)
+--- ② 合成 stub（3 个空类）加入 classpath
+RESULT=全部可解析(测试应通过)
+```
+⇒ 断言语义正确：**绑定类存在即可转绿**；`t23` 落位后请在 `t26` 复跑 `./gradlew --no-daemon :app:testDebugUnitTest`，预期 **38/38 全绿**。
+
+#### 8.15.3 参考：缺失绑定类的**完整台账**与跨产物修复要点（native-dev 一手实测 + 本层复算）
+
+**本层复算（只读，扫 `libwebrtc-java.jar` 常量池）**：jar 内**被引用但缺失的 `*Jni` = 42 个**（另 `org/jni_zero/GEN_JNI` 亦缺失；该包内只有 `JniZero`/`CommonApis`/注解等）：
+```
+org.webrtc.AudioTrackJni / BuiltinAudioDecoderFactoryFactoryJni / BuiltinAudioEncoderFactoryFactoryJni /
+CallSessionFileRotatingLogSinkJni / DataChannelJni / DtmfSenderJni / EglBase10ImplJni / EnvironmentJni /
+H264UtilsJni / HistogramJni / JavaI420BufferJni / JniCommonJni / LibaomAv1EncoderJni /
+LibvpxVp8DecoderJni / LibvpxVp8EncoderJni / LibvpxVp9DecoderJni / LibvpxVp9EncoderJni / LoggingJni /
+MediaSourceJni / MediaStreamJni / MediaStreamTrackJni / MetricsJni / NV12BufferJni / NV21BufferJni /
+NativeAndroidVideoTrackSourceJni / NetworkMonitorJni / PeerConnectionFactoryJni / PeerConnectionJni /
+RtcCertificatePemJni / RtpReceiverJni / RtpSenderJni / RtpTransceiverJni /
+SoftwareVideoDecoderFactoryJni / SoftwareVideoEncoderFactoryJni / TimestampAlignerJni / TurnCustomizerJni /
+VideoDecoderFallbackJni / VideoDecoderWrapperJni / VideoEncoderFallbackJni / VideoEncoderWrapperJni /
+VideoTrackJni / YuvHelperJni
+```
+> 该清单与 t23 的范围（"42/42 全缺"）**完全一致**；本层测试只硬钉其中 **5 个关键入口**（含 `GEN_JNI`），
+> **完整 42 个作为台账**供 t26 做构建级核对，避免测试清单随构建演进产生误报。
+
+**native-dev 于宿主机反编译得到的关键事实（2026-09-14，供 t23/t26 参考）**
+1. **生成类"编译好了但没进包"**：`gen/**/input_srcjars` 有 48 个 `*Jni.java`；14 个模块的 `*.javac.jar` 共编译出 45 个 `*Jni.class`（含 `PeerConnectionFactoryJni.class`）；但**三份进包 jar 全是 0**（`libwebrtc.jar`、AAR `classes.jar`、部署 jar），且 `libwebrtc.jar` mtime(19:55) 晚于 `.so`(16:55) ⇒ **系统性打包缺口、非陈旧缓存**。
+2. **`.so` 走 jni_zero 符号绑定**：动态符号 194 个 = `JNI_OnLoad`/`JNI_OnUnLoad` + **193 个 `Java_J_N_<hash>`**；`.so` 内 `RegisterNatives` 字符串 = 0、`org/webrtc/*Jni` = 0 ⇒ **类名不出现在 .so 中，必须由 Java 侧提供**。
+3. **`*Jni` 是中间层**：`class PeerConnectionFactoryJni implements PeerConnectionFactory.Natives { … return GEN_JNI.org_webrtc_…(…); }` ⇒ **真正声明 `public static native` 的是 `GEN_JNI`**（故本层自检与测试都把它列为首项）。
+4. **同代际**：`src` HEAD `5c25072b`；部署 jar == AAR `classes.jar`（同 sha256）；⇒ 修复 = **只并入类、不必重编 `.so`**。
+5. ⚠️ **量化缺口**：14 份**分包** `GEN_JNI` 的 native 合计 **187**，而 `.so` 边界 **193**（差 6）⇒ 必须用**合并后的单一 `GEN_JNI`**；"合并产物是否存在"native-dev 未在构建树见到，**留 t5/构建方确认**。
+6. **建议 t26 增做一项跨产物核对**（单测挡不住"存在但不完整"）：`llvm-nm -D` 取 `.so` 的 193 个 `Java_J_N_*`，与合并 `GEN_JNI` 的 native 数量/名字逐一对齐。
+
+#### 8.15.4 冻结面确认（未触碰 JNI 契约与既有事件名）
+
+- `nativebridge/**` **本轮零改动**（`NativeCallbacks/NativeLoader/NativeLog/NativeNatDetector/NativeVp9Encoder` 全部 mtime 早于本轮）；15 个 `external fun` **逐名在位**（`NativeLog` 4 + `NativeVp9Encoder` 9 + `NativeNatDetector` 2），全部 `@JvmStatic`；
+- 既有事件名保留：`engine_init_failed`、`encoded_plane_rejected`、`setrates_failed`（含 `total_bps` 等字段）、`len == S*T` 不变量注释、`SPATIAL_LAYERS=1`/`TEMPORAL_LAYERS=3`；
+- ⚠️ **会话本地检查器 `t7iface.sh` 已被清理**（`/tmp` 重置），故本轮按同口径**重新逐条推导**：**23 条断言通过**（15 个方法名 + `@JvmStatic` 计数 + 编码器锚点/分层常量等）；另 1 条是**我自己把期望写错**（误按 `public object` 字面匹配，而 Kotlin 默认 public、声明形态是 `object X {`；已更正为按"3 个含 `external fun` 的类 + `NativeCallbacks` 未改动"核对，`passed`）。**因此不能声称"复跑原脚本 19/19"** —— 实质保证由"nativebridge 零改动 + 15 个方法名逐条在位"给出。
+- 另注（**非本层改动**）：`app/src/main/cpp/CMakeLists.txt` 存在**他人未提交改动**（t24 的 16KB `-Wl,-z,max-page-size=16384`，见 diff 注释），与本项无关，供 t26 参考。
+
+**⚠️ 未满足项（须在 t26 复跑后闭合）**：验收第 5 条"`testDebugUnitTest` 通过"目前**不成立**（38 用例 1 失败）——该失败**正是本任务设计要求的"修复前状态"**，其解除依赖 **t23 落位修复后的 jar**。`compileDebugKotlin` 已通过 ⇒ 新增代码本身无编译问题。
+
+#### 8.15.5 ✅ 「修复后通过」的原始输出（**真实修复已在执行期落位**）
+
+**执行期观察**：本项进行中交付 jar 被替换为修复版 —— `libwebrtc-java.jar` 由 **453 类 / `*Jni`=0 / 无 `GEN_JNI`** 变为 **508 类 / `*Jni`=48 / 有 `GEN_JNI`**（mtime `09-14 10:53`）；关键 5 项全部命中（`GEN_JNI` ✓、`PeerConnectionFactoryJni` ✓、`PeerConnectionJni` ✓、`VideoTrackJni` ✓、`JniCommonJni` ✓）。**测试代码一字未改**，于是自然形成"同一测试的修复前/后对照"：
+
+```
+$ ./gradlew --no-daemon :app:testDebugUnitTest      # 修复后
+BUILD SUCCESSFUL in 3m 42s
+EXIT=0
+```
+逐类汇总（`app/build/test-results/testDebugUnitTest/*.xml`，**38 用例 / 0 失败**）：
+```
+AppConfigUrlTest            tests="8"  failures="0" errors="0"
+SignalingErrorPolicyTest    tests="17" failures="0" errors="0"
+SignalingIdentityTest       tests="11" failures="0" errors="0"
+JniBindingClasspathTest     tests="2"  failures="0" errors="0"   ← 修复前该项为 failures="1"
+```
+⇒ **验收第 5 条由此闭合**：绑定类回归测试**在缺类时失败、在补类后通过**，且两段原始输出均已留档（§8.15.1 / 本节）。
+**修复前后对照（同一测试代码）**：
+| 时点 | jar 状态 | `JniBindingClasspathTest` | 全量 |
+|---|---|---|---|
+| 修复前 | 453 类 / `*Jni`=0 / 无 `GEN_JNI` | **1 失败**（列出 5 个缺失类） | BUILD FAILED / 38 用例 1 失败 |
+| 修复后 | 508 类 / `*Jni`=48 / 有 `GEN_JNI` | **2 通过** | **BUILD SUCCESSFUL / 38 用例 0 失败** |
+
+> 残余（非本层可测）：本次只验证了"**类存在即可解析**"；"`GEN_JNI` 存在但不完整（native-dev 实测分包合计 187 ↔ `.so` 边界 193）"**单测挡不住**，仍需 t26 的跨产物核对（见 §8.15.3 第 6 条）。
+
 ---
 
 ## 9. 未决问题 / 后续动作

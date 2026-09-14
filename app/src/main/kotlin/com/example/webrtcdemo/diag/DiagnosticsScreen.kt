@@ -299,7 +299,14 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                 appendLine("日志文件: ${FileLogger.FILE_NAME}")
                 appendLine("native 层级别: ${AppLog.nativeLevel(context).label}（已持久化 level_native）")
                 appendLine("webrtc 层级别: ${AppLog.webrtcLevel(context).ifEmpty { "未记录" }}（启动时确定，需重启生效）")
-                appendLine("WebRTC 引擎: ${if (WebRtcEngine.isReady()) "就绪" else "未初始化"}")
+                // t25：失败时把**真实异常**一并显示（可复制），便于真机远程排障。
+                appendLine(
+                    "WebRTC 引擎: " + if (WebRtcEngine.isReady()) {
+                        "就绪"
+                    } else {
+                        "未初始化" + (WebRtcEngine.lastFailureDetail()?.let { "（失败原因: $it）" } ?: "")
+                    }
+                )
                 appendLine("本端 peerId: ${SignalingIdentity.selfPeerId.value.ifEmpty { "—" }} / 对端 peerId: ${SignalingIdentity.remotePeerId.value.ifEmpty { "—" }}")
                 appendLine("单文件上限: ${FileLogger.MAX_FILE_BYTES} B × ${FileLogger.MAX_FILES}")
                 appendLine("native 库: ${if (NativeLoader.isLoaded()) "已加载" else "未加载"}")

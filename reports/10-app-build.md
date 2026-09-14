@@ -331,3 +331,71 @@ sha256sum /opt/dsh-workspaces/code/webrtc-demo/third_party/libwebrtc/java/libweb
 # 完整复跑（含所有自检）
 bash /opt/dsh-workspaces/code/webrtc-demo/scripts/build_app.sh
 ```
+
+---
+
+# 9. t26：真机缺陷修复后的重编与交付（2026-09-14 10:53–11:00）
+
+> 本轮起因：真机暴露「WebRTC 引擎初始化失败」等缺陷，由 t23（补 jar 的 jni_zero 绑定类）、t24/t28（16 KB 页对齐）、t25（引擎失败可诊断化 + 绑定类回归测试）修复；t26 = 用修复后的产物**完全执行**重编 APK、取实体证据并提交全部修复改动。
+
+## 9.1 开工门禁（captain 硬门禁，5 项全部满足）
+
+| # | 门禁项 | 实测 |
+|---|---|---|
+| 1 | `libwebrtc-java.jar` 内 `*Jni.class`>0 且 `org/jni_zero/GEN_JNI.class` 存在、mtime > 09-14 | **`*Jni.class = 48`**、**`GEN_JNI = 1`**、class 总数 **508**（原 453）、mtime **2026-09-14 10:53:11**、size 1,187,970 B、sha256 **`7dbe840049e239fbbd18d7f921b3d3cfc6ea6c1b61026bd8d75261c0551c98d1`** ✅ |
+| 2 | `app/src/main/jniLibs/arm64-v8a/libc++_shared.so` 存在且 `p_align=0x4000` | 存在（1,356,968 B），align **0x4000**，sha256 **`c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36`** ✅ |
+| 3 | `app/build.gradle.kts` 含 `jniLibs.pickFirsts` | `:100 pickFirsts += setOf("**/libc++_shared.so")` ✅ |
+| 4 | `app/src/main/cpp/CMakeLists.txt` 含 `-Wl,-z,max-page-size=16384` | `:68` ✅ |
+| 5 | t25 新测试在位 | `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt` ✅ |
+
+## 9.2 构建（完全执行，`--no-build-cache`）
+
+```bash
+./gradlew --no-daemon --no-build-cache clean assembleDebug
+```
+- T0 **2026-09-14 10:55:28** → T1 **10:59:40**；**BUILD SUCCESSFUL in 4m 11s**，EXIT=0
+- **`FROM-CACHE` 次数 = 0** ✅（captain 硬要求）；`:app:clean` 出现 1 次
+- `43 actionable tasks: 41 executed, 2 up-to-date`
+- 关键任务**实际执行**：`packageDebugResources`、`buildCMakeDebug[arm64-v8a]`、`desugarDebugFileDependencies`、`compileDebugKotlin`、`mergeExtDexDebug`、`dexBuilderDebug`、`packageDebug`
+- jar 前后采样一致：`7dbe8400…` / `stat "%Y %s"` = `(1789354391, 1187970)`，**两次完全相同** ✅（我只读，未写 third_party）
+- 日志：`reports/logs/t26-nocache-assembleDebug-20260914-105528.log`
+
+## 9.3 单元测试
+
+```bash
+./gradlew --no-daemon :app:testDebugUnitTest     # BUILD SUCCESSFUL in 36s, EXIT=0
+```
+JUnit 汇总（`app/build/test-results/testDebugUnitTest/*.xml`，4 个文件）：**tests=38 / skipped=0 / failures=0 / errors=0** ✅（含 t25 的绑定类存在性回归测试；t23 落位后由红转绿）
+日志：`reports/logs/t26-testDebugUnitTest-20260914-105956.log`
+
+## 9.4 交付 APK 与实体证据（**本轮新交付**）
+
+```
+path   : /opt/dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk
+mtime  : 2026-09-14 10:59:39.810
+size   : 33,293,061 B        （前一版 b0cddd86… 为 33,260,234 B；增大来自新增 Jni 绑定类 dex）
+sha256 : 6653fddfb396c38cd69df6b263c2ef8200923f604851cb21d0503d5dce8b690c
+```
+**APK 内全部 `.so`：sha256 + LOAD `p_align`（期望四个全 0x4000）**
+
+| .so | size | p_align | sha256 |
+|---|---|---|---|
+| `lib/arm64-v8a/libandroidx.graphics.path.so` | 10,096 | **0x4000** | `41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6` |
+| `lib/arm64-v8a/libc++_shared.so` | 1,356,968 | **0x4000** | **`c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36`**（= captain 期望，自链接 16 KB 版） |
+| `lib/arm64-v8a/libjingle_peerconnection_so.so` | 12,946,912 | **0x4000** | `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e` |
+| `lib/arm64-v8a/libwebrtcdemo_native.so` | 1,231,512 | **0x4000** | `95c44e5ab9ff6f851e5e1de26b9d28810c09017264909424e64985b57f821bc0` |
+
+**四项解包核验 + 新增不变式**：
+- (a) dex：**14 个**（原 13；+1 来自绑定类），`com.example.webrtcdemo` 条目 **4435**；
+  **`Lorg/webrtc/PeerConnectionFactoryJni;` 命中 50 ✅**、**`Lorg/jni_zero/GEN_JNI;` 命中 197 ✅**（后者为 t26 新增不变式）、`Lorg/webrtc/PeerConnectionFactory;` 86
+- (b) `lib/arm64-v8a/`：上述四个 so 就位
+- (c) Manifest：权限 6 条（INTERNET/CAMERA/RECORD_AUDIO/ACCESS_NETWORK_STATE/MODIFY_AUDIO_SETTINGS + AndroidX 动态接收器权限）；组件 5 项
+- (d) `resources.arsc` 存在且 `aapt2 dump resources` 解析成功（`Package name=com.example.webrtcdemo id=7f`）
+
+> **交付口径更新**：本轮交付 APK = **`6653fddf…8b690c`**（完全执行构建、绑定类与 16 KB 对齐齐备）。前一版 **`b0cddd86…b12b`（t18/t26 之前的产物）在本轮 `clean` 中被覆盖，仅存哈希与当时验证记录**，不再是交付物。
+
+## 9.5 提交（本轮修复的全部已跟踪改动，显式路径）
+
+见提交 `fix(android): 补齐 libwebrtc jni_zero 绑定类 + 16KB 页对齐 + 引擎失败可诊断化`；范围：
+`app/build.gradle.kts`、`app/src/main/cpp/CMakeLists.txt`、`app/src/main/kotlin/**`（3 个文件）、`app/src/test/kotlin/**`（t25 新测试）、`scripts/build_java_sdk_with_jni.sh`、`scripts/check_jar_link_integrity.py`、`scripts/make-libcxx-shared-16k.sh`、`reports/07`、`reports/08`、`reports/10`。
+**不含**：`doc/**`（契约零改动）、`third_party/**` 产物、`app/build/**`、`reports/logs/*`、`signaling` 二进制；`app/src/main/jniLibs/**` 的 `.so` 由 `.gitignore` 排除（未用 `-f`）。

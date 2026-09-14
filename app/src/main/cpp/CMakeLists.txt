@@ -58,7 +58,14 @@ target_compile_options(webrtcdemo_native PRIVATE
 
 target_link_options(webrtcdemo_native PRIVATE
   -Wl,--gc-sections
-  -Wl,--exclude-libs,ALL)
+  -Wl,--exclude-libs,ALL
+  # 16 KB 页兼容（t24 / doc-16KB）：NDK r26 的 aarch64 链接器默认
+  # max-page-size=0x1000(4 KB)，而 Android 15+ 的 16 KB 页设备要求
+  # ELF LOAD 段 p_align=0x4000，否则 dlopen 直接失败。
+  # 实测（NDK 26.1.10909125）：不加 → p_align=0x1000；加 → p_align=0x4000。
+  # 注意：本选项只解决**本库**；同目录打包的 libc++_shared.so（NDK r26 预编译
+  # 件）仍是 0x1000，整包达标方案见 reports/07-native-dev.md §15。
+  -Wl,-z,max-page-size=16384)
 
 # log = __android_log_print（D6 要求同时落 logcat）；android = NDK 基础库
 target_link_libraries(webrtcdemo_native vpx log android)

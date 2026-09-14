@@ -147,7 +147,15 @@ class CallViewModel(application: Application) :
         client = connection
 
         if (!WebRtcEngine.initialize(app)) {
-            fail("WebRTC 引擎初始化失败（native 库缺失或初始化异常）")
+            // t25：把**真实异常类名/message**带进用户可见文案（原先只有笼统一句，真机排障极难）。
+            val detail = WebRtcEngine.lastFailureDetail()
+            fail(
+                if (detail.isNullOrBlank()) {
+                    "WebRTC 引擎初始化失败（native 库缺失或初始化异常）"
+                } else {
+                    "WebRTC 引擎初始化失败（$detail）"
+                }
+            )
             return
         }
         val factory = WebRtcEngine.factory()

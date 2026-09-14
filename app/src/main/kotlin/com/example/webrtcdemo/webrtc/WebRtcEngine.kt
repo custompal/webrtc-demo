@@ -45,6 +45,36 @@ object WebRtcEngine {
     @Volatile
     private var initialized = false
 
+    /**
+     * 最近一次初始化失败的**可诊断详情**（形如 `NoClassDefFoundError: org.webrtc.PeerConnectionFactoryJni`）。
+     *
+     * 用途：`initialize()` 只返回 Boolean，调用方（`CallViewModel` / 诊断页）需要把**真实异常**呈现给用户与日志，
+     * 否则只剩一句笼统文案（真机排障成本极高 —— 见 t22/t25 的缺陷记录）。
+     * 成功时清空；仅在失败路径写入。
+     */
+    @Volatile
+    private var lastFailure: String? = null
+
+    /**
+     * 启动自检：libwebrtc Java 绑定类是否可用（t25 新增，防御性）。
+     *
+     * 背景：交付 jar 曾缺失 42 个 jni_zero 生成的 `*Jni` 类（`NoClassDefFoundError`），
+     * 但报错发生在 `PeerConnectionFactory.initialize(...)` 深处、且被我们吞掉，现象是笼统的"引擎初始化失败"。
+     * 这里在调用前**主动**探测一次，命中即打**专属事件** `jni_binding_missing` 并快速失败。
+     *
+     * 注意：用 `Class.forName(name, initialize = false, loader)` —— **不触发类初始化**
+     * （初始化这些类会调 `get()` 工厂 → 进而触碰 native，探测本身不应产生副作用）。
+     */
+    private fun missingBindingClass(): String? =
+        BINDING_CLASSES.firstOrNull { name ->
+            try {
+                Class.forName(name, false, WebRtcEngine::class.java.classLoader)
+                false
+            } catch (t: Throwable) {
+                true
+            }
+        }
+
     private var egl: EglBase? = null
 
     private var peerConnectionFactory: PeerConnectionFactory? = null
@@ -70,6 +100,14 @@ object WebRtcEngine {
         val nativeOk = NativeLoader.ensureLoaded()
         if (!nativeOk) {
             AppLog.e(TAG, "engine_init_skipped", mapOf("reason" to "native_lib_missing"))
+            lastFailure = "UnsatisfiedLinkError: libwebrtcdemo_native.so（native 库加载失败，详见 native_lib_load_failed）"
+            return false
+        }
+        // t25 新增自检：绑定类缺失时给出**专属事件 + 确切类名**，而不是让它在 initialize() 深处变成笼统报错。
+        val missing = missingBindingClass()
+        if (missing != null) {
+            AppLog.e(TAG, "jni_binding_missing", mapOf("cls" to missing))
+            lastFailure = "NoClassDefFoundError: $missing"
             return false
         }
         // §9.4 时序闸口：本方法是「创建 factory → 用 NativeVp9Encoder」与「NAT 探测」的唯一上游，
@@ -122,11 +160,52 @@ object WebRtcEngine {
             )
             true
         } catch (t: Throwable) {
-            AppLog.e(TAG, "engine_init_failed", emptyMap(), t)
+            // t25：**只新增字段**（事件名 `engine_init_failed` 不变）—— 让真机日志一眼区分
+            // NoClassDefFoundError / UnsatisfiedLinkError / IllegalStateException / GLException 等。
+            val detail = describe(t)
+            lastFailure = detail
+            val fields = LinkedHashMap<String, String>(4)
+            fields["ex"] = t.javaClass.name
+            fields["msg"] = t.message?.take(300) ?: "-"
+            t.cause?.let { fields["cause"] = it.javaClass.name }
+            AppLog.e(TAG, "engine_init_failed", fields, t)
             cleanupAfterFailure()
             false
         }
     }
+
+    /**
+     * 最近一次初始化失败的可诊断详情（`异常类名: message`；无 cause 链首行）。
+     *
+     * @return 失败详情；从未失败或已成功时为 `null`。
+     */
+    fun lastFailureDetail(): String? = lastFailure
+
+    /** 把 Throwable 压成一行可读文本（UI/日志共用口径）。 */
+    private fun describe(t: Throwable): String {
+        val msg = t.message?.replace('\n', ' ')?.take(300)
+        return if (msg.isNullOrBlank()) t.javaClass.name else "${t.javaClass.name}: $msg"
+    }
+
+    /**
+     * libwebrtc Java 绑定类清单（t25 自检用）。
+     *
+     * 这些类由 jni_zero **在 libwebrtc 构建期生成**，必须先被引用它们的 API 类解析到；
+     * 缺失即 `NoClassDefFoundError`（t22 已确证的交付缺陷）。
+     *
+     * **为何必须包含 `org.jni_zero.GEN_JNI`**（native-dev 于宿主机反编译实测，2026-09-14）：
+     * 生成的 `*Jni` 类只是**中间层**（`class PeerConnectionFactoryJni implements PeerConnectionFactory.Natives`，
+     * 方法体把调用**委托**给 `GEN_JNI.org_webrtc_...(...)`），**真正声明 `public static native` 的是 `GEN_JNI`**。
+     * 因此只补 `*Jni` 而漏 `GEN_JNI` 仍会崩 —— 自检必须把两者都覆盖，否则会给出"半修复通过"的假绿。
+     * 列表保持短（O(5)），覆盖初始化链与首个 JNI 调用链的关键入口。
+     */
+    private val BINDING_CLASSES = listOf(
+        "org.jni_zero.GEN_JNI",                  // 真正的 native 声明持有者（所有 *Jni 的委托目标）
+        "org.webrtc.PeerConnectionFactoryJni",   // PeerConnectionFactory.initialize / createAudioSource 的调用目标
+        "org.webrtc.PeerConnectionJni",          // PeerConnection（通话建立后第一条 JNI 链）
+        "org.webrtc.VideoTrackJni",              // 视频轨（渲染/预览绑定）
+        "org.webrtc.JniCommonJni",               // jni_zero 公共入口（refcount 等）
+    )
 
     /** 共享的 PeerConnectionFactory（未初始化时为 null）。 */
     fun factory(): PeerConnectionFactory? = peerConnectionFactory
