@@ -21,6 +21,7 @@ import com.example.webrtcdemo.signaling.SignalingMessage
 import com.example.webrtcdemo.webrtc.CallSession
 import com.example.webrtcdemo.webrtc.IceServerCache
 import com.example.webrtcdemo.webrtc.WebRtcEngine
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -82,6 +83,19 @@ class CallViewModel(application: Application) :
     private var peerJoined = false
 
     private var role = ""
+
+    // ===================== t51：远端消息预队列与"对端无响应"看门狗 =====================
+    // 真机 room 66DZFT 证据：offer(16:18:34.953)/候选(16:18:34.980…)比 pc_starting(16:18:35.244)
+    // 早 0.3–0.5 s 到达，此时 `session` 仍为 null ⇒ 旧实现只打日志就丢弃（候选）或弹错（offer），
+    // host 因此永远停在 HAVE_LOCAL_OFFER。这里改为**先入队**，`start()` 成功后**按到达顺序回放**。
+    private val pendingRemote = PendingRemoteMessages()
+
+    /** 看门狗是否已武装（避免重复计时）。 */
+    private var peerWatchdogArmed = false
+
+    /** 是否已观察到"对端活着"的证据（answer 或远端候选或连接就绪）。 */
+    @Volatile
+    private var peerResponseSeen = false
 
     /**
      * 通话是否已结束（挂断已开始）。
@@ -182,6 +196,8 @@ class CallViewModel(application: Application) :
             return
         }
         _localVideoTrack.value = callSession.currentVideoTrack()
+        // 【t51】会话就绪 ⇒ 把此前排队等待的远端消息（offer/answer/候选）按到达顺序回放
+        flushPendingRemoteQueue(callSession)
         // 若 NAT 探测在进入通话页之前就完成了（常见：host 在等待对端时探测完），这里补发一次
         maybeSendNatType()
         AppLog.i(TAG, "call_init", mapOf("room" to roomId, "role" to role))
@@ -310,20 +326,44 @@ class CallViewModel(application: Application) :
                 // 【t44 修复①】原先写作 `session?.onRemoteOffer(...)`：会话为空时**静默丢弃**
                 // 远端 offer —— 信令侧表现就是"只有 offer_forward、没有 answer_forward"，
                 // 且 App 内没有任何日志/UI 错误（真机缺陷①）。现在必须落盘 + 报错可诊断。
+                // 【t51 修复】再往前一步：offer/候选**早于 `CallSession.start()`（pc_starting）**
+                // 到达时不再丢弃，而是先入预队列，start() 成功后**按到达顺序回放**。
+                // 真机 room 66DZFT：offer 16:18:34.953 < pc_starting 16:18:35.244；候选 16:18:35.105
+                // 当时只打了 `ice_without_session` 就被丢掉。
+                peerResponseSeen = false
                 val current = session
                 if (current == null) {
-                    AppLog.e(TAG, "offer_without_session", mapOf("room" to _uiState.value.roomId))
-                    onError("会话未就绪，收到 Offer 无法回 answer（请导出日志）")
+                    val queued = pendingRemote.enqueueOffer(message.sdp)
+                    AppLog.w(
+                        TAG,
+                        "remote_deferred",
+                        mapOf(
+                            "kind" to "offer",
+                            "queued" to queued.toString(),
+                            "sdp_bytes" to message.sdp.length.toString(),
+                        ),
+                    )
                 } else {
                     current.onRemoteOffer(message.sdp)
                 }
+                // joiner：收到 offer 后开始等待远端候选（20 s 内无 ⇒ UI 明确提示）
+                armPeerResponseWatchdog("offer_received")
             }
 
             is SignalingMessage.Answer -> {
+                peerResponseSeen = true
                 val current = session
                 if (current == null) {
-                    AppLog.e(TAG, "answer_without_session")
-                    onError("会话未就绪，收到 Answer 无法应用")
+                    val queued = pendingRemote.enqueueAnswer(message.sdp)
+                    AppLog.w(
+                        TAG,
+                        "remote_deferred",
+                        mapOf(
+                            "kind" to "answer",
+                            "queued" to queued.toString(),
+                            "sdp_bytes" to message.sdp.length.toString(),
+                        ),
+                    )
                 } else {
                     current.onRemoteAnswer(message.sdp)
                 }
@@ -332,8 +372,20 @@ class CallViewModel(application: Application) :
             is SignalingMessage.Ice -> {
                 val current = session
                 if (current == null) {
-                    AppLog.w(TAG, "ice_without_session", mapOf("mid" to (message.sdpMid ?: "-")))
+                    // 【t51】候选同样入队（旧实现只打 `ice_without_session` 即丢弃）；
+                    // 回放走 start() 成功路径，PC 仍未就绪时由 t44 的 CallSession pending 队列兜底。
+                    val queued = pendingRemote.enqueueIce(message.candidate, message.sdpMid, message.sdpMLineIndex)
+                    AppLog.i(
+                        TAG,
+                        "remote_deferred",
+                        mapOf(
+                            "kind" to "ice",
+                            "queued" to queued.toString(),
+                            "mid" to (message.sdpMid ?: "-"),
+                        ),
+                    )
                 } else {
+                    peerResponseSeen = true
                     current.onRemoteIceCandidate(message.candidate, message.sdpMid, message.sdpMLineIndex)
                 }
             }
@@ -378,6 +430,8 @@ class CallViewModel(application: Application) :
 
     override fun onReady() {
         sessionReady = true
+        // 【t51】媒体链就绪即视为"对端有响应"，解除对端无响应看门狗（避免误报）
+        peerResponseSeen = true
         _uiState.update { it.copy(isConnecting = false) }
         maybeCreateOffer()
     }
@@ -438,6 +492,87 @@ class CallViewModel(application: Application) :
         val current = session ?: return
         if (current.isClosed()) return
         current.createOffer()
+        // 【t51】发出 offer 后等待 answer/远端候选；20 s 无响应 ⇒ UI 明确提示（WARN 落盘）
+        armPeerResponseWatchdog("offer_sent")
+    }
+
+    /**
+     * t51：把 `session == null` 窗口内到达的远端消息**按到达顺序**回放给刚建好的会话。
+     *
+     * 两级队列配合（不回退 t44）：本层负责"会话尚未创建"的窗口；
+     * 会话内的 PC 未就绪窗口仍由 `CallSession` 的 pending 队列（`ice_deferred`/`remote_replay_done`）兜底。
+     */
+    private fun flushPendingRemoteQueue(target: CallSession) {
+        val entries = pendingRemote.drain()
+        if (entries.isEmpty()) {
+            AppLog.i(
+                TAG,
+                "remote_replay_done",
+                mapOf("offer" to "false", "answer" to "false", "candidates" to "0", "source" to "viewmodel"),
+            )
+            return
+        }
+        var offered = false
+        var answered = false
+        var candidates = 0
+        for (entry in entries) {
+            when (entry.kind) {
+                PendingRemoteMessages.Kind.OFFER -> {
+                    target.onRemoteOffer(entry.sdpOrCandidate)
+                    offered = true
+                }
+
+                PendingRemoteMessages.Kind.ANSWER -> {
+                    target.onRemoteAnswer(entry.sdpOrCandidate)
+                    answered = true
+                }
+
+                PendingRemoteMessages.Kind.ICE -> {
+                    target.onRemoteIceCandidate(entry.sdpOrCandidate, entry.sdpMid, entry.sdpMLineIndex)
+                    candidates++
+                }
+            }
+        }
+        AppLog.i(
+            TAG,
+            "remote_replay_done",
+            mapOf(
+                "offer" to offered.toString(),
+                "answer" to answered.toString(),
+                "candidates" to candidates.toString(),
+                "source" to "viewmodel",
+                "order" to entries.joinToString(",") { it.kind.name.lowercase() },
+            ),
+        )
+    }
+
+    /**
+     * t51：**对端无响应看门狗**。
+     *
+     * 触发条件：已发出/收到 offer，20 s（[PEER_RESPONSE_TIMEOUT_MS]）内既未收到 answer、
+     * 未收到任何远端候选、媒体也未就绪（`isConnecting` 仍为 true）且未挂断。
+     * 行为：写 WARN `answer_timeout` + 通过 [onError] 把明确文案透传到通话页
+     * （旧版本用户只能看到"一直正在连接会议…"，无从判断是哪一侧的问题）。
+     */
+    private fun armPeerResponseWatchdog(reason: String) {
+        if (peerWatchdogArmed) return
+        peerWatchdogArmed = true
+        viewModelScope.launch {
+            delay(PEER_RESPONSE_TIMEOUT_MS)
+            val stillWaiting = _uiState.value.isConnecting
+            if (!peerResponseSeen && !callEnded && stillWaiting) {
+                AppLog.w(
+                    TAG,
+                    "answer_timeout",
+                    mapOf(
+                        "reason" to reason,
+                        "waited_ms" to PEER_RESPONSE_TIMEOUT_MS.toString(),
+                        "role" to role,
+                    ),
+                )
+                onError(NO_PEER_RESPONSE_NOTICE)
+            }
+        }
     }
 
     private fun fail(message: String) {
@@ -482,5 +617,16 @@ class CallViewModel(application: Application) :
          * （§11.4 D-7，low，不得判失败）——结束时必须**明确告知**并回首页，不留下半死不活的状态。
          */
         const val NOTICE_CALL_ENDED = "通话已结束，可重新创建"
+
+        /** 【t51】对端无响应看门狗时长（验收要求 20 s）。 */
+        const val PEER_RESPONSE_TIMEOUT_MS = 20_000L
+
+        /**
+         * 【t51】对端无响应提示（用户上一轮无法自行判断"一直正在连接"的原因）。
+         *
+         * 注：本任务 inScope 不含 `res/values/strings.xml`，故与既有 [NOTICE_CALL_ENDED] 同样
+         * 以常量内联；后续若要 i18n 可迁移为字符串资源（已在报告中登记）。
+         */
+        const val NO_PEER_RESPONSE_NOTICE = "对端无响应：可能未加入或版本不一致（20 秒内未收到 answer/远端候选）"
     }
 }
