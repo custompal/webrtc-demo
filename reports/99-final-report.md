@@ -73,7 +73,7 @@
 | 维度 | 结论 |
 |---|---|
 | 交付完整性 | **通过**：仓库、submodule×2、`libvpx.a`+头、libwebrtc jar/so/aar（含 jni_zero 绑定类）、自研 `libwebrtcdemo_native.so`、Go 二进制、部署单元、**t27 终版 APK `721df1c8…`** 均在位且经我复核（§3.8/§12） |
-| 真机缺陷修复（t23–t26） | **类存在性 ✅ / 16 KB 对齐 ✅ / 可诊断化 ✅ / 单测 42/0 ✅**；**运行期可绑定 ✗（未闭合）** —— `J/N.class` 缺失、`GEN_JNI` 仍为 Placeholder 实现 ⇒ 静态预期真机首次 native 调用 `UnsatisfiedLinkError`；按 captain 定向由 **t29/t30（路线 A）** 补齐（§12/§13） |
+| 真机缺陷修复（t23–t26，**18:33 后状态**） | **类存在性 ✅ / 16 KB 对齐 ✅ / 可诊断化 ✅ / 单测 42/0 ✅ / 可绑定性（jar/AAR）✅** —— 18:17:28 已落位 **B**（`J/N.class` `1ff8d3ff…` + `GEN_JNI.class` `a6e7edcf…`、`GEN_JNI` `native=0`、193↔193、194/194，§13.22）。**APK 侧仍待 t33**：现行 `721df1c8…`（33 293 061 B / 11:28:34）由**未落位 jar** 构建、dex 内无 `LJ/N;` ⇒ **标注为"已被取代的历史轮次交付物"** |
 | 可复现性 | **Go：逐字节可复现**（VCS-free 基线两次 `cmp` 相同，§3.9）。**APK：非逐字节可复现** —— 4 次**缓存辅助**构建同哈希 `c72d3667…`，1 次**完全执行**得 `b0cddd86…`（§3.13）；**t27 终版 APK `721df1c8…`** 由 t26 的 `--no-build-cache clean` 完全执行构建产出（FROM-CACHE=0，§12），**其与 `b0cddd86…` 不同属预期**（jar 已更换为 t23 修复版）。结论不变：**APK 不能靠"同哈希"证明干净复现** |
 | 契约一致性（静态/构建级） | **通过**：JNI 15/15 逐字一致、信令 14/14 一致、NAT 枚举 6/6 一致、CMake 路径与实际布局一致、APK 内 arm64 .so 齐备 |
 | 服务端与联调 | **通过**：Go `build`/`vet` 0、e2e 19/19（公网+内网）、coturn V60–V62/V64 通过、systemd active、日志在写 |
@@ -415,9 +415,9 @@
 | K-12 | 中（结构性） | **仓库不含 third_party 编译产物**：`.gitignore:12–13` 排除 `third_party/libwebrtc/`、`third_party/libvpx/` → **仅凭 clone 无法重建 APK**，必须重跑 `scripts/t5-libwebrtc-libvpx-build.sh`（约 49 min + 源码下载）；`--release 25→17` 的修补由 `scripts/patches/libwebrtc-java-release17.patch` 提供，t5 脚本按文件逐项 `patch -p1 --forward` **幂等应用**（实测脚本逻辑含 dry-run 反向校验） | 结构性限制，非可修复缺陷；终报如实标注 |
 | K-13 | ~~medium~~ **已闭合** | `scripts/fix_jar_class_version.sh` 曾被 `198d514` 误入库，**已由 `14ef053` 执行 `git rm`**（复核：`git ls-files scripts/` = 0 命中） | 无需动作；残留 `reports/07-native-dev.md` 为 captain 授权在途 |
 | K-14 | 信息 | 基线口径差异见 §5.2 CD-5（dist 二进制 vs 部署件） | 以"部署件 `c298235a…`（vcs.revision=1a9d3ff）为交付证据"记录 |
-| **K-15** | **高（未闭合，已定方向）** | **运行期绑定缺口**：jar 内 `org.jni_zero.GEN_JNI` 仍是 **Placeholder 实现**（194 个 `public static native <可读名>`、非 native static = 0），`.so` 侧是 **hashing/short-proxy** 模式（193 个 `Java_J_N_<hash>`；`.rodata` 无 `org/jni_zero/GEN_JNI` 类名串、无可读方法名、无 `kMethods`）⇒ **两条绑定路径都不成立**，静态预期真机首次 native 调用 **`UnsatisfiedLinkError`** | 按 captain 定向走**路线 A**（Java 侧补 `J.N` + 转发 `GEN_JNI`，`.so` 不重链），由 **t29/t30** 实施，判据见 §13.3；**最终可用性以修复后重编的 APK 为准** |
+| **K-15** | ~~高（未闭合）~~ **已分层：jar/AAR ✅ ／ APK 待 t33** | **原缺口（已修复）**：jar 内 `GEN_JNI` 曾为 Placeholder（194 可读名 `static native`、0 转发），`.so` 为 hashing/short-proxy（193 `Java_J_N_<hash>`、无注册表）⇒ 两条绑定路径均不成立。**现行（18:17:28 落位、18:33:42 复核）**：交付 jar/AAR 为 **B 形态** —— `J/N.class` = `1ff8d3ff…`、`GEN_JNI.class` = `a6e7edcf…`、`GEN_JNI` `static native` = **0**、`J.N` native **193**、`jni_mangle` 双向差集 **0/0**、方法数 **194/194** ⇒ **jar/AAR 侧可绑定成立** | **交付 APK 侧仍未闭合**：现行 `721df1c8…`（11:28:34）由**未落位 jar** 构建、dex 内无 `LJ/N;` ⇒ **标注为"已被取代的历史轮次交付物"**；待 **t33** 重编后由 **t34** 按 §13.22 三值门禁在新 APK 实体上复验（并附 §13.15/§13.20 护栏） |
 | **K-16** | **中** | **t25 回归测试只证明"类存在性"**：`JniBindingClasspathTest` 仅断言 `Class.forName` 可解析（43 条 = 1 `GEN_JNI` + 42 `*Jni`），**对 `J.N`/转发形态/native-ness 零断言** ⇒ 在当前 jar 上**会绿灯而绑定仍是断的**（假绿）；清单另漏 5 项（`org/webrtc/audio/*Jni` ×3、`org/jni_zero/*Jni` ×2；真值 47） | 建议 android-dev 加固（补 `J.N`/转发断言 + 清单 42→47）；**存在性回归不得替代可绑定判据**（§13.4） |
-| **K-17** | **高（环境/流程；已规避）** | **`.git/objects` 属主混用使 node 身份无法提交**：`.git/objects/{33,56,ac,c6}` 为 **`root:root 755`**（由 root 身份成员提交时创建）。git 写散落对象需在该扇出目录 `O_CREAT`，uid 1000 直接得 **EACCES** ⇒ `git write-tree` / `git commit` 报 `error: insufficient permission for adding an object to repository database .git/objects` + `fatal: git-write-tree: error building trees`。**已定位到具体对象**：待写 root tree = `c6796ce1ae8d0f580a78ef86a01efd54f63bef51`，其扇出目录正是 `.git/objects/c6`（root 755） | 影响**任何以 node 身份提交的成员**（只要新 root tree 哈希落在这些目录即失败；实测同刻 root 身份提交正常写入，故只是属主混用而非仓库损坏）。**修复（需 root）**：`chown -R node:node /data/dsh/home/workspace/code/webrtc-demo/.git/objects`（或约定统一提交身份）。verifier 的**规避手段**（不改他人文件、不改 `.git/config`）：沙箱对象库（`GIT_OBJECT_DIRECTORY` + `GIT_ALTERNATE_OBJECT_DIRECTORIES`）生成对象 → `git pack-objects` 写入 `.git/objects/pack/`（node 可写，属**标准对象存储**、他人可正常读取）→ `git update-ref` **带旧值保护**推进分支；命令见 §10.11 |
+| **K-17** | ~~高（环境/流程）~~ **已闭合（captain 修复 + verifier 复验）** | **`.git` 属主混用**：`.git/objects/{33,56,ac,c6}` 曾为 `root:root 755` ⇒ uid 1000 的 `git commit` 报 `error: insufficient permission for adding an object to repository database .git/objects`（实测待写对象 `c6796ce1…` 落于 `.git/objects/c6`）；此后 `.git/index` 又 3 次被置为 `root:root`（18:25 / 18:27 / 18:31:18）⇒ 提交卡在索引同步 | **已修复**：宿主机 uid 1000 = `admin`（无 `node` 用户名），执行 `chown -R 1000:1000 /opt-dsh-workspaces/code/webrtc-demo/.git`（非 1000 归属 12 项 → **0** 项）；**我独立复验**：`find .git ! -user node` = **0**、以 uid 1000 `git hash-object -w` **成功** ⇒ 后续 uid 1000 提交不再踩坑。副作用：对象库多一个不可达 blob `9daeafb9864cf43055ae93beb0afd6c7d144bfa4`（`git gc` 可回收，不影响 ref/tree）。过程留痕见 §10.11 / §13.15(d) |
 
 ---
 
@@ -702,7 +702,7 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 - 结论（已登记为流程留痕 **P-8**）：**凡"运行期才解析的依赖"，必须有交付物级（jar/dex/APK）存在性断言**，不能依赖编译器/打包器默认行为。
 
 ### 12.5 未闭合项（**必须带走，不得当成已修好**）
-**K-15 运行期绑定缺口**：jar 内 `GEN_JNI` 仍是 **Placeholder 实现**（194 native 可读名、0 转发），`.so` 侧为 **hashing/short-proxy** 模式（193 `Java_J_N_<hash>`、无 `kMethods`）⇒ 静态预期真机首次 native 调用 **`UnsatisfiedLinkError`**。按 captain 定向由 **t29/t30 路线 A** 修复（§13.3），**修复后须重编 APK 并复跑本节全部检查**。
+> **历史快照（18:17 落位前）**：K-15 运行期绑定缺口：jar 内 `GEN_JNI` 仍是 **Placeholder 实现**（194 native 可读名、0 转发），`.so` 侧为 **hashing/short-proxy** 模式（193 `Java_J_N_<hash>`、无 `kMethods`）⇒ 静态预期真机首次 native 调用 **`UnsatisfiedLinkError`**。按 captain 定向由 **t29/t30 路线 A** 修复（§13.3），**修复后须重编 APK 并复跑本节全部检查**。 **⇒ 现状见 §13.22（jar/AAR 侧已闭合为 B 形态；APK 侧待 t33）。**
 
 ---
 
@@ -812,7 +812,7 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 
 ### 13.3 "修好"判据必须**按路线分支**（我先前给出的四条只适用路线 B）
 - **我此前的四条**（`.rodata` 出现 `org/jni_zero/GEN_JNI` + ≈194 条可读名；`JNI_OnLoad` 出现 `blr`；导出仍 193）**只描述路线 B**（把 RegisterNatives 注册表链进 `.so`）。**用在路线 A 上会假阴性**（`.so` 字节不变 ⇒ 四项仍全为 0/0/0/193）。
-- **路线 A（captain 已定、t30 在做；`.so` 不变）= jar 侧判据**：
+- **路线 A（captain 已定、t30 在做；`.so` 不变）= jar 侧判据**： **（§13.22 更新：B 已落位；A 分支自此仅作对照）**
   1. `unzip -Z1 $J | grep -c '^J/N\.class$'` = **1**（当前 **0**）；
   2. `jni_mangle(J.N 的 native 名)` 集合 == `.so` 的 `Java_J_N_` 后缀集合，**双向差集为空（各 193）**（映射方向须为 mangle(Java 名)：`_`→`_1`、`$`→`_00024`；**不要**对符号做朴素反转义，连续 `_1x` 有歧义）；
   3. `javap -p org.jni_zero.GEN_JNI | grep -c ' native '` = **0**（转发层；当前 **194**）；
@@ -837,7 +837,7 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 | **路线 A 判据 3** | `handoff/src/org/jni_zero/GEN_JNI.java`：`static native` = **0**、转发 `J.N.` 调用 = **193**、抛异常桩 = **1** | ✅ 转发层已替换 Placeholder |
 | AV1 处置 | `J/N.java:576-577` 与 `GEN_JNI.java:1035-1036` 均为**非 native 抛异常桩**（`throw new RuntimeException("Native method not present")`）；`out/A` 的 `J/N.java` **无**该桩 | 设计内豁免；集合相等按 **193↔193**（AV1 不计入） |
 | 编译产物（我已 `javap`，未复跑 `javac`） | `handoff/classes/J/N.class` = `1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932`、`handoff/classes/org/jni_zero/GEN_JNI.class` = `a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08`；两者 **major 61**；`J/N.class` **native = 193** + 非 native AV1 桩 1；`GEN_JNI.class` **native = 0**；`javap -classpath handoff/classes:<jar> J.N` 可解析 | 与源文件计数一致 |
-| **是否已落位** | 现行 `libwebrtc-java.jar` 与现行 APK `721df1c8…` 内 `J/N.class` 均 = **0**（判别命令：对 jar 与 APK 分别 `jar tf … &#124; grep -c '^J/N\.class$'`，两者均得 0）⇒ **K-15 在本轮仍未闭合，本轮交付 APK 仍不可运行** | 需 t29/后续重建 APK 后按 §13.3 四条复验 |
+| **是否已落位** | 现行 `libwebrtc-java.jar` 与现行 APK `721df1c8…` 内 `J/N.class` 均 = **0**（判别命令：对 jar 与 APK 分别 `jar tf … &#124; grep -c '^J/N\.class$'`，两者均得 0）⇒ **K-15 在本轮仍未闭合，本轮交付 APK 仍不可运行** | 需 t29/后续重建 APK 后按 §13.3 四条复验 | **(§13.22 更新：B 已于 18:17:28 落位、18:33:42 复核，本行"未落位"结论作废)**
 
 
 ### 13.6 路线 A 的**变体选择**与交叉核对（对象 = t30 handoff 在盘产物；新增于 t27 收尾后）
@@ -1267,6 +1267,33 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 3. **K-17 已闭合（captain 修复 + 我复验）**：`find .git ! -user node` = **0 项**（含深层）；`.git/objects/{33,56,ac,c6}` 与 `.git/index` 均为 `node:node`；以 **uid 1000** 执行 `git hash-object -w --stdin` **成功** ⇒ "后续以 uid 1000 提交不再踩坑"成立。（注：我此前删除的测试 blob `9daeafb9864cf43055ae93beb0afd6c7d144bfa4` 与 captain 复验写入的是同一内容，现存在、不可达、`git gc` 可回收，不影响 ref/tree。）
 4. **第三方复现声明：由"未验证"升级为"已验证"**（§13.16(b) 的遗留项）：构建树内 `webrtc-build/src/out/Release-arm64/gen/sdk/android/libjingle_peerconnection_so__jni_registration.srcjar` 现**可读**（owner=node，0600），其 `sha256 = 2e352096714d63de52cfc37fa98602313b9f310ab726879134fc25495fc22113` **与 `t30/out/A` 的 srcjar 逐字节相同**，两份源 `J/N.java`(`6bd817a6…`)/`GEN_JNI.java`(`e0ff02a7…`) 亦逐字节相同 ⇒ **"同一生成器、两处独立落盘、产物逐字节一致"成立**（该 srcjar 只对应 **A** 输入集；B 的 194 口径仍如 §13.19 所述）。
 5. **`.git/index` 今日 3 次被 root 抢占（18:25 / 18:27 / 18:31:18）为 chown 之前的窗口**；chown 后未再复现。**我按就地修复完成提交（未改任何他人内容）**。
+
+### 13.22 落位收口（captain 裁定 (i) = **B**）：K-15 分层、K-17 闭合、语义身份三值、历史轮次标注
+
+#### (a) 裁定与落位事实（我以只读实测复核）
+- captain 裁定 **(i) 落 B**（采纳 §13.6/§13.9 证据）：落位两件 = `t30/handoff`（= `out/B`）的内容，`J/N.class` = `1ff8d3ff…`、`GEN_JNI.class` = `a6e7edcf…`；staging 的 A 形态（`c289b4df…`）**未被采纳**。
+- 交付件现况（我实测）：jar = **`0c776934c1452b7b…`**、**1 206 602 B**、**509 类**、**mtime 18:33:42**（首落 18:17:28；其间 18:32:24–18:33:42 曾短暂为 A，见 §13.21）；AAR = **`8e8f2baf…`**（6 492 067 B，内 `classes.jar` == jar、内 `.so` == 目录 `.so` == `757cef81…`）；`jniLibs/libc++_shared.so`、`libvpx.a`、`doc/14`（`b3b67438…`/1337 行）**均未变**。
+- **新增的可复算事实（我实测）**：落位件 **509 个条目全部 STORED（method 0；DEFLATED = 0）** ⇒ 逐条保真；而 jar **容器 sha 仍会随时间戳/条目序变化** ⇒ 语义身份必须钉三值（下条）。
+
+#### (b) 语义身份三值（t34 门禁基准）
+```
+jar            = 0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757   (1 206 602 B, 509 类, 全 STORED)
+J/N.class      = 1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932   (6 924 B, major 61)
+GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08   (24 910 B, major 61)
+```
+
+#### (c) 两项 checker（captain 报告 + 我的等价复跑）
+- `scripts/check_jn_binding.py`（**须宿主运行**：容器无 `python3`）：E1 `J.N` native 193 ↔ `.so` 193 **双向差集 0/0**、E2 `GEN_JNI` `native=0`/方法 194、E3 调用点 194/194、**豁免 0 与真缺失 0**，EXIT=0。
+  **我无法在容器执行该脚本**，改以 `jar`+`javap`+自写 `jni_mangle` 双向差集**等价复跑**，结论相同；且 **B 落位后"未被覆盖 = 0" ⇒ 其 `KNOWN_EXEMPT` 白名单已无触发场景**（此前"白名单使 A/B 都 PASS、故不能证 AV1 安全"的限定随之失效，§13.8）。
+- `scripts/check_jar_link_integrity.py`：509 类、严格缺失 0、`J/N` native 193（captain 报告）；我以**常量池扫描**等价复核：`*Jni` **48 存在 / 47 被引用 / 0 缺失 / 1 未引用（`Dav1dDecoderJni`）**。
+
+#### (d) 状态变更（终报口径，逐条）
+1. **K-15 分层**：**jar/AAR 侧 = 已闭合**（`J/N` 在位 + `GEN_JNI` `native=0` + 193↔193 + 194/194，且为 **B** 形态）；**APK 侧 = 未闭合，待 t33 重编后由 t34 实测**。
+2. **现行 APK `721df1c8…`（33 293 061 B / mtime 11:28:34）标注为"已被取代的历史轮次交付物"**（由未落位 jar 构建、dex 无 `LJ/N;`）。
+3. **K-17 = 已闭合**（captain 修复 + 我复验，见 §6 与 §13.21 追加）。
+4. **"AV1 残余 / 悬空引用"表述作废**：B 落位后 `LibaomAv1EncoderJni` 的引用由非 native 桩兜住；该风险**仅适用于 A 变体**，仅作对照留档（§13.8/§13.19）。
+5. **major 分布不作失败/风险**：`{55: 51, 61: 458}` **全部 ≤ 61**（AGP/D8 可接受）；captain 说明这 51 个（45 `*Jni` + 6）系 **t23 合并批次遗留、本次未触碰**；`FINAL2.jar` 的"统一到 61"（`{55:2, 61:507}`）为**未被采用**的另一变体（§13.20）。
+6. 落位过程记录以 **`reports/15 §16`（captain 写入）** 为准；本报告只做**独立复核与三态结论**，不修改任何产物。
 
 ---
 
