@@ -1134,7 +1134,7 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 #### (b) 未验证（**我无法验证**，请勿写成"三方复现成立"）
 native-dev 称 webrtc-builder 在**构建树**内独立跑出同名 srcjar：`webrtc-build/src/out/Release-arm64/gen/sdk/android/libjingle_peerconnection_so__jni_registration.srcjar`，sha256 同为 `2e352096…`。
 **我的实测**：该文件确实存在（**62 140 B**，mtime **11:34:56**），但权限为 **`-rw------- root root`（0600）** ⇒ **uid 1000 读取 `Permission denied`**（`head`/`jar xf`/`sha256sum` 均失败）。
-⇒ **我无法核对它的 sha256、也无法比较内容**；"大小相同"只是**弱证据**。**结论按三态记为"未验证"**；如需我核，请 `chmod 644`（或 `chown node:node`）该文件，我一条命令即可复核（`sha256sum` + 解包比对两份 `.java`）。
+⇒ **（18:35 更新：该文件 owner 已为 node、可读，我复核 = `2e352096…` 且与 `out/A` srcjar 及两份源逐字节相同 ⇒ 本项已由"未验证"升级为"已验证"，见 §13.21 追加第 4 条。原"未能核对"的记述保留如下以备查。）** 我无法在其不可读期间核对 sha256、也无法比较内容；"大小相同"当时只是**弱证据**；如需我核，请 `chmod 644`（或 `chown node:node`）该文件，我一条命令即可复核（`sha256sum` + 解包比对两份 `.java`）。
 > ⚠️ 这同时是 **K-17 的"读侧"影响**：root 身份产出的构建中间件对 node 成员**不可读** ⇒ "终报可直接引用该路径"**对 node 身份不成立**（引用前须确认可读性）。
 
 #### (c) 与落位现状的关系（勿混）
@@ -1258,6 +1258,15 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 
 #### 附：`prefix-baseline.md` 指纹**第三次与磁盘不符**（内容我已核对）
 自述 **3 648 B / `1472f482…`**；磁盘实测 **5 205 B / `755c010938c52c70a1b66ad87324a7d5d37b1114bedb00c185402032168d7cd5`**（mtime 18:16:08）。其**新增的时序段与结论段内容我已逐条核对通过**：`dc5f8919…`（11:05:10.900671）/ APK `721df1c8…`（11:28:34.950735）/ handoff srcjar `dca67dc7…`（11:34:46.272129）/ handoff `classes/J/N.class` `1ff8d3ff…`（11:34:46.273129）**四个 mtime 全部与盘上现值一致**，"t26 APK 构建自未落位 jar"的时序结论**成立**。⇒ 引用请以磁盘现值为准（这是同一文件第三次给出不匹配的指纹）。
+
+
+#### 13.21 追加（18:35 复核）：**B 已恢复**，A 只是 18:32:24–18:33:42 的短暂窗口；K-17 已闭合；第三方 srcjar 复现已可验证
+1. **交付 jar 现况 = B**（与 captain 的 B 裁定一致）：`third_party/libwebrtc/java/libwebrtc-java.jar` = **`0c776934c1452b7b…`**、1 206 602 B、mtime **18:33:42**；`J/N.class` = `1ff8d3ff…`、`GEN_JNI.class` = `a6e7edcf…`、`GEN_JNI` 含 AV1 桩 = 1 ⇒ **B 形态**；live AAR 亦回到 `8e8f2baf…`。
+   **状态时间线（同一路径）**：`18:17:28` B(`0c776934`) → **`18:32:24` A(`c289b4df`)** → **`18:33:42` B(`0c776934`) 恢复**。⇒ §13.21 前段的"现 live = A"**已作废**；A 落位仅存在约 **78 秒**，**未进入任何 APK**（APK 仍 `721df1c8…`、mtime 11:28:34）。**A/B 问题按 captain 的 B 裁定闭环**（我先前请二选一的 (甲)/(乙) 无需再答）。
+2. **AV1 口径**：因现行交付件是 **B**，`LibaomAv1EncoderJni` 的引用由**非 native 桩**兜住（触发时 `RuntimeException("Native method not present")`）⇒ **不存在"悬空引用/`NoSuchMethodError`"风险**；该风险仅存在于 A 变体（保留为对照说明，§13.19）。
+3. **K-17 已闭合（captain 修复 + 我复验）**：`find .git ! -user node` = **0 项**（含深层）；`.git/objects/{33,56,ac,c6}` 与 `.git/index` 均为 `node:node`；以 **uid 1000** 执行 `git hash-object -w --stdin` **成功** ⇒ "后续以 uid 1000 提交不再踩坑"成立。（注：我此前删除的测试 blob `9daeafb9864cf43055ae93beb0afd6c7d144bfa4` 与 captain 复验写入的是同一内容，现存在、不可达、`git gc` 可回收，不影响 ref/tree。）
+4. **第三方复现声明：由"未验证"升级为"已验证"**（§13.16(b) 的遗留项）：构建树内 `webrtc-build/src/out/Release-arm64/gen/sdk/android/libjingle_peerconnection_so__jni_registration.srcjar` 现**可读**（owner=node，0600），其 `sha256 = 2e352096714d63de52cfc37fa98602313b9f310ab726879134fc25495fc22113` **与 `t30/out/A` 的 srcjar 逐字节相同**，两份源 `J/N.java`(`6bd817a6…`)/`GEN_JNI.java`(`e0ff02a7…`) 亦逐字节相同 ⇒ **"同一生成器、两处独立落盘、产物逐字节一致"成立**（该 srcjar 只对应 **A** 输入集；B 的 194 口径仍如 §13.19 所述）。
+5. **`.git/index` 今日 3 次被 root 抢占（18:25 / 18:27 / 18:31:18）为 chown 之前的窗口**；chown 后未再复现。**我按就地修复完成提交（未改任何他人内容）**。
 
 ---
 
