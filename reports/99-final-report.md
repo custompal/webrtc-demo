@@ -1387,8 +1387,9 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 - t36 证据（我核对哈希一致）：`webrtc-build/t36/signature-crosscheck.tsv` = `e7c1980b…`（194 行 = 表头 + **193 数据行**）、`signature-crosscheck-refined.tsv` = `015402fc…`（178 行 = 表头 + **177**）、`t36-report.md` = `6810282…`、`t36-addendum-transient-reland.md` = **`d02ae1b8…`**（记录本次瞬时回退）。其 §5 已自述边界：**描述符一致 ≠ 运行期可绑定**，真机首调仍是唯一决定性判据 —— 与本报告 §13.3 口径一致。
 
 #### (f) t33 构建日志内的两道门（env-installer 新增，t34 直接引用）
-- **[P-11] dex 级绑定形态**（`scripts/build_app.sh:421` 起）：**jar 侧 + dex 侧双闸**查 `J.N` 与转发 `GEN_JNI`，任一为 0 即 FAIL —— 正是 K-15 的**交付层**判据（旧 APK dex 实测 `jn=0` ⇒ 必红）。
-- **[P-12] native 交付件对象漂移护栏**（`scripts/build_app.sh:382` 起）：APK 内 `libjingle_peerconnection_so.so` 必须 == `757cef81…`、`libc++_shared.so` == `c9dbf4ec…` —— 与我 §13.15(a)/§13.20 的护栏同向，可互为交叉验证。
+- **⚠️ 行号已漂移（env-installer 提醒 + 我 `[读盘 21:05:18]` 复核：现 `scripts/build_app.sh` = `aafd4e48f19889dcea4b3f809b8a529bc5b7883dfcf96190fdc664d237314f39` / 603 行）**：闸门**以"闸名 + 判据"为准，行号仅作当前参考** —— **[P-14] `:72`**（执行环境前置）、**[P-10] `:162`**（对象真实性）、**[P-13] `:343`/`:366`**（窗口双钉前后）、**[P-12] `:463`**（native 交付件漂移护栏）、**[P-11] `:502`**（dex 级绑定形态）。下文若见他处旧行号（如 `:421`/`:382`），一律按此表替换。
+- **[P-11] dex 级绑定形态**（`scripts/build_app.sh`，**现行 `:502`**；旧引 `:421` 已失效）：**jar 侧 + dex 侧双闸**查 `J.N` 与转发 `GEN_JNI`，任一为 0 即 FAIL —— 正是 K-15 的**交付层**判据（旧 APK dex 实测 `jn=0` ⇒ 必红）。
+- **[P-12] native 交付件对象漂移护栏**（`scripts/build_app.sh`，**现行 `:463`**；旧引 `:382` 已失效）：APK 内 `libjingle_peerconnection_so.so` 必须 == `757cef81…`、`libc++_shared.so` == `c9dbf4ec…` —— 与我 §13.15(a)/§13.20 的护栏同向，可互为交叉验证。
 - **断言精确化（防假 FAIL，webrtc-builder 实测 + 我已复核）**：`GEN_JNI` = **方法 194 / `static` 194 / `native` 0 / 转发目标（`invokestatic J/N.`）193（全为 native）/ `athrow` 桩 1（不计入转发目标）**；`J.N` = **方法 194 / native 193 / 非 native 桩 1**。⇒ **不要**写 `forward_stub == 1`（会 FAIL）；应写 `gen_jni_methods == 194 ∧ gen_jni_native == 0 ∧ jn_native == 193`，或按 captain 口径"**194/194 且 `static native` = 0**"。我 `javap -c` 实测：`invokestatic J/N.` = **193**、`athrow` = **1**；AV1 桩字节码 = `new RuntimeException` → `ldc "Native method not present"` → `invokespecial` → `athrow`。
 - **断言集"规范六数"（native-dev 定稿 + 我按原始命令逐条复跑）** —— 关键纪律：**两侧过滤器必须分开**（`J.N` 用 `static native`，`GEN_JNI` 用 `^  public static`）；混用会静默得 **0** 或 **195**（下附负对照）。
   ```
