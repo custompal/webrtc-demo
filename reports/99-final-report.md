@@ -1381,6 +1381,21 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 - **[P-11] dex 级绑定形态**（`scripts/build_app.sh:421` 起）：**jar 侧 + dex 侧双闸**查 `J.N` 与转发 `GEN_JNI`，任一为 0 即 FAIL —— 正是 K-15 的**交付层**判据（旧 APK dex 实测 `jn=0` ⇒ 必红）。
 - **[P-12] native 交付件对象漂移护栏**（`scripts/build_app.sh:382` 起）：APK 内 `libjingle_peerconnection_so.so` 必须 == `757cef81…`、`libc++_shared.so` == `c9dbf4ec…` —— 与我 §13.15(a)/§13.20 的护栏同向，可互为交叉验证。
 - **断言精确化（防假 FAIL，webrtc-builder 实测 + 我已复核）**：`GEN_JNI` = **方法 194 / `static` 194 / `native` 0 / 转发目标（`invokestatic J/N.`）193（全为 native）/ `athrow` 桩 1（不计入转发目标）**；`J.N` = **方法 194 / native 193 / 非 native 桩 1**。⇒ **不要**写 `forward_stub == 1`（会 FAIL）；应写 `gen_jni_methods == 194 ∧ gen_jni_native == 0 ∧ jn_native == 193`，或按 captain 口径"**194/194 且 `static native` = 0**"。我 `javap -c` 实测：`invokestatic J/N.` = **193**、`athrow` = **1**；AV1 桩字节码 = `new RuntimeException` → `ldc "Native method not present"` → `invokespecial` → `athrow`。
+- **断言集"规范六数"（native-dev 定稿 + 我按原始命令逐条复跑）** —— 关键纪律：**两侧过滤器必须分开**（`J.N` 用 `static native`，`GEN_JNI` 用 `^  public static`）；混用会静默得 **0** 或 **195**（下附负对照）。
+  ```
+  [读盘 20:04:32] jar=0c776934c1452b7b        # 判据前提：落位件三值之一，先钉再跑
+  javap -p    J/N.class                     | grep -c 'static native'                 -> 193   # J.N native
+  javap -p    J/N.class                     | grep -cE '^  public static '            -> 194   # J.N 方法
+  javap -p    org/jni_zero/GEN_JNI.class    | grep -cE '^  public static '            -> 194   # GEN_JNI 方法
+  javap -p    org/jni_zero/GEN_JNI.class    | grep -c 'static native'                 -> 0     # ★B 的判别键
+  javap -p -c org/jni_zero/GEN_JNI.class    | grep -c 'invokestatic.*J/N\.'           -> 193   # 转发目标（全 native）
+  javap -p -c org/jni_zero/GEN_JNI.class    | grep -c 'athrow'                       -> 1     # AV1 桩，不转发
+  javap -p    J/N.class | grep -v ' static native ' | grep 'public static'
+                                            ->   public static long org_webrtc_LibaomAv1Encoder_create(long);   # 唯一非 native
+  ```
+  六数关系：`J.N` 194/193 + `GEN_JNI` 194/0 = **193 转发 + 1 桩**（字节码级口径；与 §13.22(f) 上文"194/194 且 `static native`=0"等价，但**不可**表述为"194 native"）。
+  **负对照（我实测，证明数字对过滤器敏感）**：`javap -p J/N.class | grep -cE '^  public static .*static native'` = **0**（混用）；`javap -p J/N.class | grep -c '('` = **195**（计入构造器）。⇒ t34 引用六数时必须同时附**命令原文**，只写数字不可复核。
+  **t34 用法**：这六数在 v2 门禁（`t34-gate-post-landing.md`）中为**基线断言**；t34 将在**新 APK 的 dex 侧**与 jar 侧各跑一次，并断言"jar 侧六数不变 + dex 内 `LJ/N;` = 1（v2 期望值）"。
 - 两条均含**正负例验证**，且会原样出现在 t33 的构建日志里 ⇒ **t34 把它们作为输入证据引用，并在 APK 实体上独立复跑一次**。
 - 实现细节提醒：**P-11 的脚本体用 `unzip -q -o`（`scripts/build_app.sh:402`）⇒ 其执行环境须有 `unzip`（宿主有、容器无）**；我在容器侧的等价复算一律用 **`jar xf`**（结果等价，t34 两口径都给）。
 - **`check_jn_binding.py` 的版本与豁免边界（对齐 webrtc-builder）**：**权威 = 工作树版 `aa2e96922f5313f7f3a740942d7460e42391ea7b41ebee090b3d7f60e199683f`**（mode 600 / mtime 18:08:57；`git diff --stat` = 9+/3−；最后入库提交 `1621d72` 为旧版）——它是 captain 授权的 out-of-scope 例外，**不计入任何 `changedPaths`**；`KNOWN_EXEMPT = {org_webrtc_LibaomAv1Encoder_create}` 使 **A/B 都会 PASS**，故它**只证 ①②④、不能证"AV1 路径安全"**；**在交付件（B）上豁免数为 0**（E3 = 调用点 194 / 覆盖 194 / 未覆盖 0 / 已知豁免 0 / 真缺失 0）⇒ `RESULT` 文案应写明"**闸门绿 ≠ AV1 路径安全；B 下豁免未触发**"（我处无写权改其文件，留待持写权者）。
