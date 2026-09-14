@@ -1135,7 +1135,8 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 **可用的就地修复（我已完成，未动任何他人内容）**：`.git` 目录本身是 `node` 可写 ⇒ **`rm -f .git/index && git read-tree HEAD`** 即由 git 以 node 身份重建索引（实测重建后 `0644 node:node`，`git status` 恢复正常、仅剩他人在途文件）。
 **给 captain 的建议（一次性根治）**：`chown -R node:node /data/dsh/home/workspace/code/webrtc-demo/.git`（同时覆盖 `.git/objects/{33,56,ac,c6}` 的 root 属主问题）。**根治前，root 身份的任何 `git` 操作都可能再次把 `.git/index`/对象目录置为 root 所有，从而阻塞 node 身份成员。**
 
-> **最终处置（captain，2026-09-14）：已根治 = chown + “uid-1000-only” 规则**
+> **最终处置（captain，2026-09-14）：已定位根因 + 已根治 = chown + “uid-1000-only” 规则**
+> **根因（captain 定位）**：**有成员以 root 身份在仓库里跑 git**（最典型：root shell 里的 `git status` 会刷新并重写 `.git/index`，将其置为 `root:root`）⇒ 与 `objects/{33,56,ac,c6}` 同源，即 18:25/18:27 等多次复发的来源。**处置**：再次 `chown -R 1000:1000 .git`（含 `.git/index`）+ 向相关成员下**硬规则：仓库内 git 一律以 uid 1000 执行**（SSH 用 `su -s /bin/bash admin -c "cd <repo> && git …"`），提交命令模板已分发。
 > **根因（captain 定位、我复核一致）**：本仓库 git 操作**混用两个身份** —— 成员常经 SSH 以 **root** 在宿主机仓库跑 `git status/diff/commit`，而 verifier 在容器内以 **uid 1000（宿主 `admin`）** 跑 git；**root 的任一次 git 写操作**（刷 index / 写对象）都会把 `.git/index` 或 `.git/objects/<fanout>` 置为 `root:root` ⇒ uid 1000 的提交随即失败（`objects/{33,56,ac,c6}` 与 `.git/index` 两个变体同一根因）。
 > **已执行**：`chown -R 1000:1000 /opt-dsh-workspaces/code/webrtc-demo/.git`（含 `.git/index` 与全部 objects），并以 uid 1000 实测 `git status/log/rev-parse` 正常；**全队规则：仓库内所有 git 命令一律以 uid 1000 执行**（SSH 场景 `su -s /bin/bash admin -c "cd <repo> && git …"`），**禁止 root 身份跑 git**。
 > **verifier 复核与一次复发留痕**：chown 之后我又观察到 **`.git/index` 于 18:54:11 再次变为 `root:root`**（⇒ chown 本身不足以长期维持，**规则才是操作性根治**）；我按就地修复重建（18:55:47 恢复 `node:node`，`find .git ! -user node` = **0**）。**四次时间点**：`18:25`、`18:27`、`18:31:18`、`18:46:11`（+ 复核时 `18:54:11`）。
@@ -1316,7 +1317,7 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 2. **现行 APK `721df1c8…`（33 293 061 B / mtime 11:28:34）标注为"已被取代的历史轮次交付物"**（由未落位 jar 构建、dex 无 `LJ/N;`）。**（18:39 起 t33 构建窗口：仓库内 `app/build/outputs/apk/debug/app-debug.apk` 已被清理，仓库内已无任何 `.apk`；仓外快照 `/data/dsh/home/workspace/artifacts/app-debug-721df1c8.apk` 仍为同哈希 `721df1c8…`/33 293 061 B，历史证据以此快照为准；交付以 t33 新 APK 为准。）**
 3. **K-17 = 已闭合**（captain 修复 + 我复验，见 §6 与 §13.21 追加）。
 4. **"AV1 残余 / 悬空引用"表述作废**：B 落位后 `LibaomAv1EncoderJni` 的引用由非 native 桩兜住；该风险**仅适用于 A 变体**，仅作对照留档（§13.8/§13.19）。
-5. **major 分布不作失败/风险**：`{55: 51, 61: 458}` **全部 ≤ 61**（AGP/D8 可接受）；captain 说明这 51 个（45 `*Jni` + 6）系 **t23 合并批次遗留、本次未触碰**；`FINAL2.jar` 的"统一到 61"（`{55:2, 61:507}`）为**未被采用**的另一变体（§13.20）。
+5. **裁定 (甲)：采用现行落位件，不做"统一到 61"（有意裁定，非遗漏）** —— 终态 = jar **`0c776934…`**（1 206 602 B / 18:17:28 / major **`{55: 51, 61: 458}`**）+ AAR `8e8f2baf…`；`J/N.class` = `1ff8d3ff…`、`GEN_JNI.class` = `a6e7edcf…`（t30 handoff = **B**）。**不做统一的三条理由（captain 逐条验过）**：(i) `FINAL.jar`/`FINAL2.jar` 的 49 个 `*Jni` 是 `javac --release 17` **重编译产物**，51 条变更中 **version-only = 0**（即字节差异不止版本号）；(ii) jar 内 2 个类**当前源无法忠实复现**（源修订漂移）；(iii) 审计成本高于收益。**51 个 major-55 类全部 ≤ 61、D8 可消费 ⇒ 非交付阻塞**；应按 **`{55:51, 61:458}`** 记录（`{55:2, 61:507}` 属 **未被采用**的 `FINAL`/`FINAL2` 变体，见 §13.20），且 t33 的重编与我的复验清单**不按 `FINAL.jar` 重排**。
 6. 落位过程记录以 **`reports/15 §16`（captain 写入）** 为准；本报告只做**独立复核与三态结论**，不修改任何产物。
 
 #### (e) 跨报告口径标注（captain 2026-09-14 指令，逐条落实；**不修改被标注的报告文件**）
