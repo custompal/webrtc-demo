@@ -918,7 +918,15 @@ reports/10-t33-captain-testDebugUnitTest-20260914-184232.log # BUILD SUCCESSFUL 
 | `lib/arm64-v8a/libwebrtcdemo_native.so` | `95c44e5ab9ff6f851e5e1de26b9d28810c09017264909424e64985b57f821bc0` | 自有库（strip 后形态） |
 | `lib/arm64-v8a/libandroidx.graphics.path.so` | `41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6` | AndroidX 依赖 |
 
-（可选**从钉**：`resources.arsc` 与 `AndroidManifest.xml` —— 两包间亦逐字节相同，写作第二层。）
+**第二层｜从钉（captain 追加授权，**建议一并钉**；与主钉合计 = "**6 主钉 + 2 从钉 = 8 件**"）**：
+
+| 从钉 | sha256（全长） | 说明 |
+|---|---|---|
+| `resources.arsc` | `ecbf1aa805f34dcbefad276a5d46ff99cbdca63f0c807d81a0319afbd751afb2` | 438,772 B；两包逐字节相同 |
+| `AndroidManifest.xml` | `bf985c144150b35c7086d127512f9eec571e6de105ec1f042b7a4ea831cfff6f` | 7,572 B；两包逐字节相同 |
+
+> 措辞层级约定（captain）：**"6 主钉 + 2 从钉 = 8 件"**，主钉＝判据对象（t34 用），从钉＝加固项；**整包 sha 只作"冻结交付件身份"**（`30c41ac9…`），**判据落在载荷钉**上。
+> 实测（本作者只读复算，`[宿主读盘]` 同批）：上述 8 件在 `30c41ac9…` 与 `ef29e00c…` **两包之间全部逐字节相同**。
 
 ⚠️ 这 6 件在 `30c41ac9…` 与 `ef29e00c…` 之间**逐字节相同**；**`115aa211…` 是未剥离中间件**（`…/cxx/…/obj/arm64-v8a/`），**钉它必假失败**；`app/src/main/jniLibs/` 只有 2 个 `.so`（另两件由构建中间件产出），故"载荷 6 件（从 APK 内解出）"比"只钉 jniLibs"更完整。
 
