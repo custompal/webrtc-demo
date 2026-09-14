@@ -814,7 +814,7 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 - `与 AAR 内 `classes.jar` 同 sha256`（**裸子串**）→ **uniq = 2（`:545` 与 `:563`）**，**不能**当唯一锚点；**精确整串**（native-dev 原意、带反引号）= `` 部署 `third_party/libwebrtc/java/libwebrtc-java.jar`（`d98939bb…`，**与 AAR 内 `classes.jar` 同 sha256**） `` ⇒ **uniq = 1（`:545`）** —— 其消息里漏了反引号，故 `grep -cF` 裸串得 0/2；**t27 用"行号 + 精确整串"作键即可**。
 - `47（47/47 全缺）` / `全缺` → **`全缺` uniq = 4（`:710/:757/:763/:774`）**；`修复前 jar` + `d98939bb` 的组合才可用（`d98939bb` 本身 uniq=2：`:545/:710`）。
 - 其余本轮给的锚点我实测确实 `uniq=1`：`:769`、`:717`、`:544`、`:567`、`:777`（用 `（AV1，潜在）`匹配）✅
-- 另：`7dbe8400…` 在 `reports/07` 内出现在 **`:527`/`:717`/`:769` 三处**（不是两处）；其**文件**在磁盘上已无保留（有界搜索无命中）。
+- 另：`7dbe8400…` 在 `reports/07` 内出现在 **`:527`/`:717`/`:769` 三处**（不是两处）；~~其**文件**在磁盘上已无保留（有界搜索无命中）~~ **← 本句已被后文更正，勿再引用**：容器可见树内**确有**该件 `artifacts/pre-deploy-7dbe8400.jar`（**`root:root` / mode 600 / 1 187 970 B / mtime 11:03:36，uid 1000 不可读**），宿主侧另存 `/tmp/pre-deploy.jar`（webrtc-builder 报，容器不可见）⇒ 正确口径 = **"在盘但容器侧不可读；宿主侧可复算、容器侧不可复算"**（详见 §13.22(e) 与 §13.25(i)）。
 
 
 ### 13.3 "修好"判据必须**按路线分支**（我先前给出的四条只适用路线 B）
@@ -1526,6 +1526,16 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 - **宿主路径** `/opt/apk-http/served/app-debug.apk`：容器不可见（宿主侧 captain/coturn-installer/android-dev 三方报告同哈希；我**不能**复算）。
 - **单测未重跑**：我引用的是 t33 产物自带 XML（19:07:05）。重跑需 `:app:testDebugUnitTest` 并**写入仓库 `app/build/**`**，属"改动构建产物树"⇒ 超出我"只写 `reports/99`"的授权，故留待授权者。
 - **t39 机器码结论**：仅核了冻结件指纹（见 (e)）。
+
+#### (h) webrtc-builder 建议的"名字级形态判据"在锚点上**已成立**（我 20:12 实测）
+- dex 内 `grep -a -o` 计数（`classes.dex` / `classes13.dex` / `classes14.dex`）：`LJ/N;` = **2 / 1 / 0**（合计 3）；`Lorg/jni_zero/GEN_JNI;` = **0 / 2 / 1**（合计 3）；**`org_webrtc_LibaomAv1Encoder_create` = 1 / 1 / 1（合计 3）**；GEN_JNI 可读转发名样例 `org_jni_1zero_CommonApis_releaseRawPtr` 在 `classes13.dex` = **1**。
+- 意义：**B 形态**在 dex 层同时具备 ① `LJ/N;` 存在 ② 可读 AV1 名（GEN_JNI 的**抛异常桩** + `J/N` 的非 native 声明）③ GEN_JNI 可读转发名；**A 形态**（无 AV1 桩）缺 ②。⇒ 该建议判据**已在交付锚点 `30c41ac9…` 上通过**，宜纳入 P-11 后续断言（脚本改由持写权者做，我不改）。
+- **⚠️ D-13 类过期口径提示**：webrtc-builder 本条消息的③仍以 `721df1c8…`（33 293 061 B / 11:28:34）为"现行 APK"、K-15"仍开放"、t33"in_progress" —— 三项**均已被取代**：现行锚点 = **`30c41ac9…`**、dex `LJ/N;` = **3（非 0）**、t33 已 completed（captain 接管 attempt 3）、t34 已 completed（→ native-dev）⇒ 其"APK 侧仍开放、待 t33 关闭"的结论**过期，不采纳**（其"重编后 dex 应出现 `LJ/N;`"的预期**已实现**）。
+
+#### (i) `7dbe8400…` ↔ `dc5f8919…`"同内容、异时间戳"：**半侧我可复算、半侧不可**（读盘 20:12）
+- **我可复算的一侧（已实测）**：`/data/dsh/home/workspace/tmp/t31/pre-routeA-libwebrtc-java.jar` = **`dc5f8919…`**（1 187 970 B / mode 600 / node 可读）= **508 条目 / 508 个 `.class` / `^J/` 条目 = 0**（印证"落位前 508 条目、无 `J/N`"，§13.11/§13.20）。
+- **我不能复算的一侧**：`artifacts/pre-deploy-7dbe8400.jar` **此刻复测仍为 `root:root` mode `600`（uid 1000 不可读）** ⇒ webrtc-builder 新给的"`7dbe8400…` = 宿主机 `/tmp/pre-deploy.jar`；与 `dc5f8919…` **508/508 条目内容逐字节相同、508/508 时间戳不同、两者 compress_type 均 0（ZIP_STORED）**"**仍属宿主侧读数，我无法验证**。要闭环需持写权者把该件 `chmod 644`/`chown 1000:1000`（或在容器可见路径留一份）。
+- **口径**：其结论"**同一内容、仅 zip 时间戳不同 ⇒ sha256 不同**"**与本报告 §13.22(e) 既有记录一致**（该点我已按 native-dev 更正采纳，**不是**新增分歧）；**唯一仍开放的是"容器侧可复算性"**。K-17 相关：本条消息①的"已闭合"与我的记录（§13.21 追加、§13.22(d)3）**同向，无冲突**——我此刻复测 `find .git ! -user node` = **0**，`.git/objects/{33,c6}` 均为 `node:node 775`（`56`/`ac` 已不存在）。
 
 ---
 
