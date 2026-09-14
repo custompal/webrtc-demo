@@ -916,6 +916,7 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 - **事实（我 `javap -c` 实测）**：即使在这个 staging jar 里，`org.webrtc.LibaomAv1EncoderJni` **仍然** `invokestatic // Method org/jni_zero/GEN_JNI.org_webrtc_LibaomAv1Encoder_create:(J)J`；而该 jar 的 `GEN_JNI` **没有**这个方法（`grep org_webrtc_LibaomAv1Encoder_create` = **0 命中**）。
 - **后果**：一旦触发 AV1 编码器创建，将抛 **`NoSuchMethodError`**（而不是上游 Placeholder 语义的 `RuntimeException("Native method not present")`）。**这是 t30 推荐 B 的全部理由**（§13.6）。
 - **可达性（我核了 app 侧）**：`app/src/main/kotlin/**` 只注册 **`Vp9VideoEncoderFactory`**（`WebRtcEngine.kt:144`），全仓**无** `LibaomAv1EncoderFactory`/Dav1d 使用 ⇒ 以"1:1 VP9 通话 demo"为交付口径，该路径**不可达**，**不是运行阻塞**，但属**静态确定的潜在缺陷**。
+- **（已收口 2026-09-14 落位后：captain 已裁定 (i) 落 B ⇒ 本项不再适用；现行 `GEN_JNI`/`J.N` 均含 AV1 非 native 桩，触发时是设计内 `RuntimeException("Native method not present")`，不是 `NoSuchMethodError`。以下为落位前分析，保留为过程史。）**
 - 因此本项**按 medium（潜在、需裁定）**记，不作失败判定：请 captain 二选一 —— **(i) 落 B**（补 AV1 非 native 桩，同时满足判据③=194 与 §13.6），或 **(ii) 明确裁定"A 可接受"**，并在交付说明里写明"AV1 路径不可达 + 若启用则 `NoSuchMethodError`"。
 
 #### 门禁脚本 `scripts/check_jn_binding.py` 的评价（我**未能执行**，只做静态审查 + 等价复跑）
@@ -1251,7 +1252,7 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 | ② `GEN_JNI` `static native` = 0 | ✅ | **通过** |
 | ③ `GEN_JNI` 方法数 | **193**（A；B 才为 194） | **通过**（按参数化口径） |
 | ④ `jni_mangle(J.N 193)` ≡ `.so` 193 | ✅ 双向差集 0/0 | **通过** |
-| AV1 调用点 | **未覆盖** ⇒ 触发时 `NoSuchMethodError` | app 仅注册 VP9、**不可达** ⇒ medium 潜在（§13.8） |
+| AV1 调用点 | **未覆盖** ⇒ 触发时 `NoSuchMethodError`（**仅 A 形态/落位前；已收口为 B，见 §13.22**） | app 仅注册 VP9、**不可达** ⇒ medium 潜在（§13.8，**落位后不适用**） |
 | `.so` 未漂移 / 16 KB | ✅ `757cef81…` / `p_align=0x4000` | **通过** |
 ⇒ **A 在"VP9 1:1 通话"交付口径下功能足够**，但与"推荐 B"相反、且相较 18:17 的 B 件**丢失 AV1 桩**。**请 captain 明确一次**：
 - **(甲) 有意接受 A**：须书面记录"AV1 路径不可达；若启用则 `NoSuchMethodError`"，并把期望值表③按 **193(A)** 记；
