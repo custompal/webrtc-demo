@@ -772,6 +772,23 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 
 **方法论留痕**：verifier 第一版正则**不支持子包** ⇒ "46 被引用 / 4 未引用"；加 `(?:子包/)*` 后收敛为 **47 / 1** —— 与 native-dev 最初只扫 `org/webrtc/<Class>Jni` 得 **42** 是**同一类漏检**（漏 `org/webrtc/audio/*Jni` ×3 与 `org/jni_zero/*Jni` ×2）。47/48 现行口径 = "**native-dev 自查更正 + webrtc-builder 与 verifier 分别独立复算确认**"。
 
+**(4.5) 42 / 47 / 48 对账表（消解"三个数字互相矛盾"的读者困惑）** —— 全部由我自跑（ZIP 全条目 + 常量池引用扫描）：
+
+| 量 | 组成 | 口径来源 |
+|---|---|---|
+| **存在 48** | **43**（`org/webrtc` 顶层）+ **3**（`org/webrtc/audio`）+ **2**（`org/jni_zero`） | `jar tf` 全条目；**三前缀之外 = 0（无盲区，我实测越界条目为空）** |
+| **被引用 47** | **42**（顶层被引用）+ **3** + **2** | 我的常量池引用扫描（逐类逐 `*Jni` 名匹配） |
+| **差 1** | `org.webrtc.Dav1dDecoderJni`（存在但未被任何类引用） | 同上 |
+| 顶层 **42** vs 顶层存在 **43** | native-dev 最初的 **42 = "顶层被引用数"**，**不是存在数** | 口径差异，非错误 |
+| 历史 **45** | 只扫 **14 个 `generated_*` jar** ⇒ 漏 `base_java_jni_java`（`LoggingJni`）与 `third_party/jni_zero/generate_jni_java`（`CommonApisJni`/`JniZeroJni`） | `reports/07:523` 版本史旧值（保留 + 注明） |
+| 我第一版 **46/4** | 我的正则**不支持子包** ⇒ 同时丢 `org/webrtc/audio`×3 与 `org/jni_zero`×2 中的部分 | 已收敛为 47/1（§13.2(4) 方法论留痕） |
+⇒ **建议统一写法**："**48 = 43+3+2；47 = 42+3+2；差 1 = `Dav1dDecoderJni`**"，并注明 42/45/46 各自的漏法（**漏子包** vs **漏 jar 集合**是两种方向不同、结果不同的漏检）。
+
+**TSV 机械复核（我自跑，`reports/07-native-dev-jnizio-mapping.tsv` = `65ff70064355ca099c4f11fb9e21c7cc5406b0893f11cb3bf4babd969b6894f1`）**：`wc -l` = **205**；`^#` = **11**（10 条注释 + 1 条以 `#` 开头的表头）；数据行 = **194**；`awk -F'\t'` 全部 **NF=4**；第 4 列 = **193 `yes` + 1 `no`**。唯一 `no` 行逐字为：
+`Java_J_N_M0vTiIkf` ⇥ `org_webrtc_LibaomAv1Encoder_create` ⇥ `sdk/android/generated_libaom_av1_encoder_jni/LibaomAv1Encoder_jni.h` ⇥ `no`
+⇒ **AV1 的精确符号名就此钉死 = `Java_J_N_M0vTiIkf`**（与 §12.2(5) 一致；早前口述"标不确定"作废）。
+
+
 **(5) AV1 = 设计内抛异常桩**：`jni_zero/codegen/gen_jni_java.py:10-15` `_stub_for_missing_native` → `throw new RuntimeException("Native method not present")`；开关 `jni_registration_generator.py:280/:511`。覆盖率 **193/193**；`GEN_JNI` native 数 **194**，多出的 1 条即 AV1（`Java_J_N_M0vTiIkf`），仅在实际创建 AV1 编码器时抛异常、**不到 JNI**；本项目走 VP9 ⇒ **非缺陷**。
 
 ### 13.3 "修好"判据必须**按路线分支**（我先前给出的四条只适用路线 B）
