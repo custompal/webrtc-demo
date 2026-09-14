@@ -135,7 +135,22 @@ python3  webrtc-build/t34/t34_variant_diff.py <交付apk> <变体apk> <wa> <wb> 
 ## 9. 复现性备注（对终报的影响）
 
 - **APK 整包不可复现**：同输入、T0/T1 双钉（jar `0c776934…` / AAR `8e8f2baf…`）均 OK，仍产出 `ef29e00c…` ≠ `30c41ac9…` ⇒
-  终报应写「byte-reproducibility = **false**」，并把稳定判据落在**载荷**：`classes.dex a1b2ebdc…`（sha16）+
-  四 `.so`（`757cef81…` / `c9dbf4ec…` / `95c44e5a…` / `41e9a793…`）。
+  终报应写「byte-reproducibility = **false**」，并把稳定判据落在**载荷**。
+- **载荷钉集合 = 6 件**（`classes.dex` + **`classes13.dex`** + 四 `.so`；**一律从 APK 内解出后计算**，不要取
+  `app/build/intermediates/**` —— `merged_native_libs/…` 与 `cxx/…/obj/…` 都是未剥离件 `115aa211…`，
+  而 APK 内是 stripped 件 `95c44e5a…`）。下表为交付件与变体 `ef29e00c` 实测（逐件相同）：
+
+| 载荷 | sha256（交付 `30c41ac9` = 变体 `ef29e00c`） |
+|---|---|
+| `classes.dex` | `a1b2ebdceec4f1fd11f78df7b22ca0133c50768c5f0e8dfee68429f63941028d` |
+| `classes13.dex` | `a1f35bd51c0e5a30ceb2c3f453da59bdfa8054e56f3f761c79541d3f42a98a16` |
+| `lib/arm64-v8a/libjingle_peerconnection_so.so` | `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e` |
+| `lib/arm64-v8a/libc++_shared.so` | `c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36` |
+| `lib/arm64-v8a/libwebrtcdemo_native.so` | `95c44e5ab9ff6f851e5e1de26b9d28810c09017264909424e64985b57f821bc0` |
+| `lib/arm64-v8a/libandroidx.graphics.path.so` | `41e9a793c43a0f4fddb19e33f346bace464f30f888ba7b9eaf96294ea115bfb6` |
+
+  **为何含 `classes13.dex`**：两个 JNI 关键类分居两个 dex —— `J/N` 在 `classes.dex`、`GEN_JNI` 在 `classes13.dex`；
+  只钉前者会漏掉后者。**不要钉全部 14 个 dex**：其中 7 个（`classes3/5/6/9/11/12/14`）在两份构建间字节不同，会假红。
+  `classes13.dex` 的现有一致性是**两次构建的数据点（经验性稳定）**，非证明。
 - **mtime 不能作证据**：`app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so` 曾被"内容不变地重写"至少两次
   （18:47:54、19:02:06，`mtime==ctime`，inode 与 third_party 副本不同）⇒ 门禁只认 sha。
