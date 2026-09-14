@@ -1121,6 +1121,26 @@ llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
 **可用的就地修复（我已完成，未动任何他人内容）**：`.git` 目录本身是 `node` 可写 ⇒ **`rm -f .git/index && git read-tree HEAD`** 即由 git 以 node 身份重建索引（实测重建后 `0644 node:node`，`git status` 恢复正常、仅剩他人在途文件）。
 **给 captain 的建议（一次性根治）**：`chown -R node:node /data/dsh/home/workspace/code/webrtc-demo/.git`（同时覆盖 `.git/objects/{33,56,ac,c6}` 的 root 属主问题）。**根治前，root 身份的任何 `git` 操作都可能再次把 `.git/index`/对象目录置为 root 所有，从而阻塞 node 身份成员。**
 
+### 13.16 生成件可复现性：**A 侧我已独立复算**；第三方构建树内的同名 srcjar **对 node 不可读，暂无法验证**
+
+#### (a) 我独立复算（**已复现**）：同一 JDK 重编 A 的两份源 ⇒ class 逐字节相同
+对 `webrtc-build/t30/out/A/libjingle_peerconnection_so__jni_registration.srcjar`（`2e352096714d63de52cfc37fa98602313b9f310ab726879134fc25495fc22113`，62 140 B）解包并用构建树同一 JDK（`webrtc-build/src/third_party/jdk/current/bin/javac --release 17`）重编：
+| class | 我现场编译 | t30 `out/A/classes/`（对方产物） | 结果 |
+|---|---|---|---|
+| `J/N.class` | `9ada0641fcee5881…` | `9ada0641fcee5881…` | **逐字节相同** ✅ |
+| `org/jni_zero/GEN_JNI.class` | `8f3ce6137f02cef9…` | `8f3ce6137f02cef9…` | **逐字节相同** ✅ |
+源侧口径（A）：`J/N.java` = `6bd817a61b02e9ed…`、`GEN_JNI.java` = `e0ff02a77279d8dc…`；`LibaomAv1` 命中 **0**、`J/N` `static native` = **193**、`GEN_JNI` `static native` = **0** ⇒ **A 不含 AV1 桩**（与 §13.6 一致）。
+
+#### (b) 未验证（**我无法验证**，请勿写成"三方复现成立"）
+native-dev 称 webrtc-builder 在**构建树**内独立跑出同名 srcjar：`webrtc-build/src/out/Release-arm64/gen/sdk/android/libjingle_peerconnection_so__jni_registration.srcjar`，sha256 同为 `2e352096…`。
+**我的实测**：该文件确实存在（**62 140 B**，mtime **11:34:56**），但权限为 **`-rw------- root root`（0600）** ⇒ **uid 1000 读取 `Permission denied`**（`head`/`jar xf`/`sha256sum` 均失败）。
+⇒ **我无法核对它的 sha256、也无法比较内容**；"大小相同"只是**弱证据**。**结论按三态记为"未验证"**；如需我核，请 `chmod 644`（或 `chown node:node`）该文件，我一条命令即可复核（`sha256sum` + 解包比对两份 `.java`）。
+> ⚠️ 这同时是 **K-17 的"读侧"影响**：root 身份产出的构建中间件对 node 成员**不可读** ⇒ "终报可直接引用该路径"**对 node 身份不成立**（引用前须确认可读性）。
+
+#### (c) 与落位现状的关系（勿混）
+- 上述**复现的是 A**（193 转发、无 AV1 桩）；
+- **B**（`dca67dc7…`，194 = 193 转发 + 1 条 AV1 非 native 桩）仍是 t30 侧产物，但其两份 class 已被**落位实测证实**：live jar 内 `J/N.class` = `1ff8d3ff…`、`GEN_JNI.class` = `a6e7edcf…`（§13.11）⇒ **实际交付采用的是 B**。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
