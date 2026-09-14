@@ -1036,7 +1036,8 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 #### (d) 工具可用性修正（本容器）
 - **无 `strings`**：`strings -a <so> | grep -c …` 会"静默返回 0"（管道收到空输入）——**不可用作"字符串不存在"的证据**！请用 **`grep -a -c '<pat>' <so>`**（或 node 扫二进制）。我以此复测：`org/jni_zero/GEN_JNI` = 0、`org_webrtc_` = 0、`org_jni_1zero_` = 0 ✅（§13.1 的结论不变，但取证命令须换）。
 - **无 `unzip`**（§13.7(d) 已记）：改用 `jar tf` / `jar xf`。
-- `javap -classpath <jar> J.N`：**本容器实测可用**（输出 `Compiled from "N.java"` / `public class J.N`），native-dev 的"单字母包名易失败"警告**我未能复现**；但"先抽条目再 `javap -p <dir>/J/N.class`"仍是**更稳的规范做法**，t34 采用后者。
+- **`javap -classpath <jar> J.N` 可用（原"单字母包名会失败"的 caveat 已被 native-dev 本人撤回）**：我实测 `javap -p -classpath <jar> J.N`（native=193）与 `… J/N`、`… org.jni_zero.GEN_JNI`（native=0）**均正常**；"先抽条目再 `javap -p <dir>/J/N.class`"**同样可用、非必需**，仅作更稳的规范做法（t34 采用后者以留原样文本）。该 caveat **从未进入任何文件**（我复核其 `logs/{t34-gate,README-logs,commands-portable}.md` 中 `classpath` 命中 = **0/0/0**）⇒ 复现命令段**不含**"必须抽条目"的约束。
+- **读方法名前缀别用 `grep -c 'org_'`**（会把**签名里的 `org.`** 也计入）：正确做法是先筛 `^  public static` 行再按前缀分组。我实测落位件 = **`org_webrtc_` 191 + `org_jni_1zero_` 3 = 194**（`grep -c 'org_'` 同为 194 属巧合），A 变体 = **190 + 3 = 193**；`org_webrtc_audio_` = 5（含于 191）。
 
 ### 13.13 "修复前失败"基线的独立复验、判定合取要求与两个假红/假绿陷阱
 
