@@ -1915,4 +1915,100 @@ classes6.dex … 相同；classes9/11/12/14 字节不同而结构相同；classe
 
 ---
 
+## 13.28 t43 独立复验（新锚点 v3 载荷钉集 · t39 双真机缺陷修复 · doc/14 勘误）——`verdict = pass`
+
+- **板面归属**：`t43`（kind = verification，round 1，attempt **2**，`attempt_id = e91ac70f-08d1-4491-b61e-c82821a92fef`，deps = `t39`+`t42`，均已 completed；本轮由 captain 从 native-dev reassign 回 verifier）。**本节为追加**，不改写任何历史节；被验证产物（`doc/14`、`app/src/**`、jar/AAR/`.so`/APK、他人报告）**一律未修改**；唯一改动 = 本文件。
+- **三态口径**：源码级与产物级 = **已验证**（下有原始输出）；真机运行期表现 = **未验证**（§13.28.8 单列，不得写成通过）。
+
+### 13.28.1 缺陷① 根因（第一手读源码，不引 t39 结论）
+| 位置（我逐行读） | 原文 | 因果意义 |
+|---|---|---|
+| `third_party/libwebrtc/include/sdk/android/api/org/webrtc/TextureBufferImpl.java:110-114` | `public VideoFrame.I420Buffer toI420() { return ThreadUtils.invokeAtFrontUninterruptibly(toI420Handler, () -> yuvConverter.convert(this)); }` | 上游 `toI420()` **只做 YUV 转换、不做旋转** ⇒ "rotation 已烘进 I420" 前提为假 |
+| `.../org/webrtc/VideoFrameDrawer.java:199-205` | `renderMatrix.reset(); … preScale(1f,-1f); **preRotate(frame.getRotation())**; preTranslate(-0.5f,-0.5f);` | **I420 与 texture 帧都走此路径** ⇒ 渲染朝向**读元数据**；元数据被置 0 ⇒ 预览朝向错误 |
+| `app/src/main/kotlin/com/example/webrtcdemo/encoder/Vp9VideoEncoder.kt:208`（+ `:407-409`） | `normalizeRotation(frame.rotation)`；`if (rotation == 0 \|\| 90 \|\| 180 \|\| 270) rotation else 0` | 编码器**直取元数据**（doc/14 §6.6 `:635`）⇒ 元数据归零会**同时**丢失 90/270 尺寸交换信号（doc/14 §6.5 `:518`：「`g_w`/`g_h` … rotation 90/270 时交换」） |
+- **因果链**：改为 texture 采集 + `FrameNormalizer` 归一化后，第二实参写死 `0` ⇒ ① 渲染器 `preRotate(0)`（本地预览逆时针 90°，即用户所见缺陷）；② 编码器失去 90/270 交换信号（横竖颠倒/花屏风险）。**doc/14 `:692` 的错误论断**（"`rotation 已烘进 I420`"）是第一处事实来源，见 §13.28.7。
+
+### 13.28.2 缺陷① 修复复核（看 diff，不看摘要）
+- **提交**：`bc56901 fix(android): t39 真机两缺陷修复`（`--stat`：`CallScreen.kt +46`、`FrameNormalizer.kt +25/-4`、`strings.xml +8`、`reports/13-device-defect-fix.md +281`；**无 gradle/`doc/`/`third_party/`/`cpp/`/二进制改动**）。
+- **核心 1 行（唯一代码改动）**：`FrameNormalizer.kt:82`
+  `-        val converted = VideoFrame(i420, 0, frame.timestampNs)`
+  `+        val converted = VideoFrame(i420, frame.rotation, frame.timestampNs)`
+- **最小性/无副作用（我自跑 grep，全仓 Kotlin）**：`grep -rn "VideoFrame(" app/src/main/kotlin` ⇒ **唯一一处** = `FrameNormalizer.kt:82`（参数为 `frame.rotation`）⇒ **不存在第二处把 rotation 置 0 的构造**；`grep -rn rotation app/src/main/kotlin` 其余命中 = `FrameNormalizer` 日志/注释、`Vp9VideoEncoder.kt:208/408-409`（元数据直取与合法值归一）、`NativeVp9Encoder.kt:63/80`（形参声明）、`VideoRendererPool.kt:69/73`（只读日志）。
+- **I420 直通分支未被改成重复旋转**：`FrameNormalizer.kt:54-69` 对 `VideoFrame.I420Buffer` **原帧零拷贝透传**，该块在 diff 中**零改动** ⇒ 无"双重旋转"。
+- **日志字段未破坏 doc/14 §9 冻结节流**：doc/14 §7.4 `:694` 冻结格式 `capture frame buf=texture|i420 convert_us=<n> w=<n> h=<n> rot=<n>`；代码 `mapOf("buf", "convert_us", "w", "h", "rot")`，且 diff 未触碰任何打点块（`rot` 两分支均有）⇒ 形态不变（`convert_us` 仅在 texture 分支，为 t39 之前的既有形态，非本次引入）。
+
+### 13.28.3 缺陷② 复核（会议号常驻可见 + 可复制）
+| 验收点 | 证据（`CallScreen.kt` 当前行号） | 结论 |
+|---|---|---|
+| `isConnecting == false` 时仍渲染 | 新增覆盖层位于**顶层 `Box(modifier = fillMaxSize())`（`:144`）内、`:165-191`**，条件 `if (roomId.isNotBlank())`（`:168`）**不在** `if (state.isConnecting)`（`:291`）之内 ⇒ 整个通话生命周期可见 | 通过 |
+| 条件表达式（真实代码） | `if (roomId.isNotBlank())` ⇒ 空/空白 roomId 不渲染（避免"会议号："空壳） | 通过 |
+| 复制动作写剪贴板 | `:97-101` `val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager; clipboard.setPrimaryClip(ClipData.newPlainText(roomId, roomId))`；`context = LocalContext.current`（`:88`） | 通过 |
+| 用户可见反馈 | `:100` `Toast.makeText(context, context.getString(R.string.call_room_code_copied), Toast.LENGTH_SHORT).show()`；`IconButton(onClick = copyRoomId)`（`:184`） | 通过 |
+| 字符串资源三项齐全 | `strings.xml:69/71/73` = `call_room_code`（"会议号：%1$s"）/`call_room_code_copied`（"会议号已复制"）/`call_room_code_copy_desc`（"复制会议号"） | 通过 |
+| **新资源真进 APK** | 从 APK 内 `resources.arsc`（`e5550e4254b2e9dc…`，440 012 B）字节扫描：`call_room_code` = 3 命中、`call_room_code_copied` = 1、`call_room_code_copy_desc` = 1 | 通过 |
+| 无新增第三方依赖 | `git show bc56901 --stat -- gradle/ *.kts` = 空；仅用框架 `ClipboardManager`/`Toast`/`ClipData`（API 1 起存在） | 通过 |
+- **观察（不构成失败项）**：`isConnecting` 期间遮罩内仍保留原 `Text(text = roomId)`（`:306`，既有行、未删）⇒ 与该时刻的顶部徽标文案重复，属**装饰性重复**；不影响可见性/复制，且已改为"连接期可见 + 全程可见"的严格改进。
+- **观察（既有、非 t39 引入）**：doc/14 `:635` 要求"非法值按 0 处理**并记 WARN**"，`Vp9VideoEncoder.normalizeRotation`（`:407-409`）只归零**未记 WARN**。该行为在 t39 之前即如此、t39 未触碰该文件 ⇒ 记为**既有契约偏差**，建议后续单开小修。
+
+### 13.28.4 载荷钉集 **v3**（新实体，v2 基线保留不覆盖）
+- **APK（v3）**：`36ba3ec6e4b69c47281ab258ea681420440db81d7e739ea2af77cc37f6c0d50c` / **33 310 685 B** / **165 条目**；容器可见两处同值：构建输出 `app/build/outputs/apk/debug/app-debug.apk`（现 mtime 22:09:50，事故回滚副本）与快照 `artifacts/app-debug-36ba3ec6.apk`（mtime 22:00:46）。
+- **dex 钉（14 件全登记，sha256）**
+
+| 文件 | sha256 | 与 v2 `30c41ac9…` |
+|---|---|---|
+| `classes.dex` | `a1b2ebdceec4f1fd11f78df7b22ca0133c50768c5f0e8dfee68429f63941028d` | **相同** |
+| `classes2.dex` | `4f9c752c691ac3a7357ffe918a73b2476869e56cd9bf43b1035fe224f6def58f` | 变化 |
+| `classes3.dex` | `08c053402a986ba3447024a1e49d12ff3abc862b08cc7f1a5087d7fb6f54b10d` | 变化 |
+| `classes4.dex` | `b97db179f2146b8df7b76475e2574052dca4646d1b6d74e83e888ecdfdcae0d6` | 相同 |
+| `classes5.dex` | `b76e40dc00ea4e32adea441037eddc9484a4a4e7411ab17670d3af6090839e84` | 变化 |
+| `classes6.dex` | `166f429799508e2a02cfdb99c89fe4c914c3b867512f5a9d5c114e0d4f3b5bd9` | 变化 |
+| `classes7.dex` | `f8f0aedcac7dd84399346dbd1ba4893642562916f04151aafcb17dde6bc74d3b` | 相同 |
+| `classes8.dex` | `7f0c74b0e46df8888edd4f985a770ab9a8dad3c9235da4ff715706553d54bca0` | 相同 |
+| `classes9.dex` | `82b98c1b98e6ec48e3b6cc3a5be022673a4b2edab6d239f91a2e385630e39b52` | 变化 |
+| `classes10.dex` | `5ea4176b781985b0406452e472a7d8fa5a0393d3fb891f200e588e033947aabe` | 相同 |
+| `classes11.dex` | `2270074b71eed572c369745879b710e47a10f0f44dd0564c01898b8c2903b3b5` | 变化 |
+| `classes12.dex` | `5da65229bfdb2c265d0e16d283659a3d97bb6973414d2f0eb876f1cba25e2674` | 变化 |
+| `classes13.dex` | `a1f35bd51c0e5a30ceb2c3f453da59bdfa8054e56f3f761c79541d3f42a98a16` | **相同** |
+| `classes14.dex` | `79fbcfd8d82619af5d1b1dcc615e145ddfc08ccf71d6e7ca08802c41d90e9de6` | 变化 |
+
+- **v2 六载荷钉在新锚点上全部继续成立（不作废）**：`classes.dex` `a1b2ebdc…`、`classes13.dex` `a1f35bd5…`、`libjingle_peerconnection_so.so` `757cef81…`、`libc++_shared.so` `c9dbf4ec…`、`libwebrtcdemo_native.so` `95c44e5a…`、`libandroidx.graphics.path.so` `41e9a793…` **与 v2 逐位相同**（纠正 native-dev「Kotlin 一改 ⇒ 两个主钉 sha 必变、六钉作废」的预测——实测证伪）。
+- **变化面**：165/165 条目、无增删；**仅 8 个 `classes*.dex` + `resources.arsc`**（`e5550e4254b2e9dc1a68850cb8964a8321e01a6942c956de42d2a92d4eb9a1e7`，440 012 B）；`AndroidManifest.xml`（`bf985c14…`）与其余条目不变。
+- **16 KB 页门禁（我自跑 `llvm-readelf -lW`，对象 = APK 内实体）**：四件 `LOAD p_align` **全部 `0x4000`** —— `libjingle_peerconnection_so.so` `757cef81…`(12 946 912 B)、`libc++_shared.so` `c9dbf4ec…`(1 356 968 B)、`libwebrtcdemo_native.so` `95c44e5a…`(1 231 512 B)、`libandroidx.graphics.path.so` `41e9a793…`(10 096 B)。**`grep -a` 对 deflated APK 无效的历史坑按 P-14 规避**（一律解包后再判）。
+- **绑定面锚点未变**：`third_party/libwebrtc/java/libwebrtc-java.jar` = `0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757`；`libwebrtc-arm64.aar` = `8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099`（= t42 T0/T2 双钉同值）。
+- **形态判据（B 家族，合取成立）**：`LJ/N;` = **3**（`classes.dex` 2 + `classes13.dex` 1）、`Lorg/jni_zero/GEN_JNI;` = **3**（`classes13` 2 + `classes14` 1）、`org_webrtc_LibaomAv1Encoder_create` = 3 dex、`Native method not present` = **2 dex**（`classes.dex` 1 + `classes13.dex` 1）⇒ 与 §13.26 的 A/B 判据一致（A 无 stub 字面量）。
+
+### 13.28.5 单测证据（载体 = 入库日志；`app/build/**` mtime 不作证据）
+- **锚点轮（t42，`--no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest`）**：`reports/10-t42-captain-testDebugUnitTest-20260914-215240.log` = `c384d0d5491dc54b1b4fc62482065427a30cfb3bbf21f909bea6755ecd171df3`（1 450 B，含 `> Task :app:testDebugUnitTest` + `BUILD SUCCESSFUL in 2m 46s`）；过程日志 `reports/10-t42-captain-build-20260914-215240.log` = `45646f9457c05fd80f1d880fa846675acaa9b961523543fdc778a261b0107c9a` 内含 `TEST_EXIT=0`、`XML 文件数=5`、`XML mtime 最新=2026-09-14 22:00:41.310167198`、`SUM tests=46 / skipped=0 / failures=0 / errors=0`；同值亦已入库 `reports/10-app-build.md:1042`（tracked）。**两件日志均受版控（`git ls-files` 命中）** ⇒ 满足"≥ 基线 46/0/0 且失败=0 + 日志路径 + XML mtime"。
+- **盘上 XML 现况（补，带限定）**：5 份 @ **22:09:34** = 8/4/17/11/6（`JniBindingClasspathTest` 6）= **46/0/0/0**，现 uid `1000:1000`；**其批次并非锚点轮产出**（22:00:41 批已被覆盖，属未授权并行链）⇒ 计数同值但不作锚点轮指针（P-16 口径，已由 captain 采纳并入库）。
+
+### 13.28.6 交付面四路一致（**两路我第一手，两路非我第一手**）
+| 交付面 | 值 | 我的证据等级 |
+|---|---|---|
+| 构建输出 `app/build/outputs/apk/debug/app-debug.apk` | `36ba3ec6…` / 33 310 685 B | **第一手**（`sha256sum`） |
+| 归档 `artifacts/app-debug-36ba3ec6.apk` | `36ba3ec6…` / 33 310 685 B | **第一手**（`sha256sum`） |
+| 宿主 `/opt/apk-http/served/app-debug.apk` | `36ba3ec6…` | **非第一手**：captain 提供（`reports/10-t42-captain-publish-20260914-220045.log` = `51a431ce95ed50993e3419aab4d40b4f3a060290e7a2698852d05e439ad4a47b`）；webrtc-builder 独立宿主读数亦同（served mtime 22:00:46.065） |
+| `parts/` 四片拼接 | part00-02 各 8 388 608 B + part03 8 144 861 B = 33 310 685 B；`SOURCE.sha256` = `36ba3ec6…`；`sha256sum -c SHA256SUMS` = 4/4 OK | **非第一手**（同上两位宿主侧读数一致）；旧片归档 `/opt/apk-http/parts-archive/parts-30c41ac9-20260914-220045/`（6 件） |
+- 服务面：`apk-http` enabled/active、MainPID 664402 未重启、公网 `HEAD` = 200 / `Range 0-1023` = 206 —— **非第一手**（captain 报告；我容器不可见）。⇒ 口径：**"四处同值"中 2 处由我复算、2 处为宿主侧旁证**，不得写成"全部由 verifier 第一手核验"。
+
+### 13.28.7 doc/14 「`rotation 已烘进 I420`」勘误入册（doc/14 冻结，未改）
+- **错误论断（原文，`doc/14-interface-contract.md:692`）**：`构造 VideoFrame(i420, 0 /*rotation 已烘进 I420*/, frame.timestampNs)`。
+- **已被上游源码证伪**：`TextureBufferImpl.java:110-114` 只调 `yuvConverter.convert(this)`（该文件全篇 `rotation` 命中 = 0）；朝向由**元数据消费者**取得 —— `VideoFrameDrawer.java:204 renderMatrix.preRotate(frame.getRotation())`（I420/texture 同路）与本工程 `Vp9VideoEncoder.kt:208 normalizeRotation(frame.rotation)`；且 doc/14 自身 `:518`（90/270 交换编码尺寸）与 `:635`（`getRotation()` 直接映射）要求该元数据**必须存活**。
+- **正确口径（与 doc/14 冻结件并行成立）**：`FrameNormalizer` 的 texture→I420 分支**必须保留 `frame.rotation`**（现行实现 `FrameNormalizer.kt:82` 即如此）；doc/14 `:692` 的错误仅作**勘误登记**，冻结件本身未改。
+- **冻结件未变**：`doc/14-interface-contract.md` sha256 = **`b3b6743825eababc51d41944d61d0f4ab542c8a0f3cdfc4d7a754cefd1cc0f4d`**（与 t11/t34 期逐位相同）。
+
+### 13.28.8 未验证项清单（**不得写成通过**）
+1. 新 APK 的**真机表现**：本地预览朝向是否已纠正（"逆时针 90°"是否消失）、通话页会议号是否**常驻可见/可复制**（含 Toast 与剪贴板落点）、**第二台设备用会议号 join** 能否成功；
+2. `JNI_OnLoad` **运行期**注册与 `UnsatisfiedLinkError` 是否实测消失（本轮只做静态/产物级）；
+3. Camera2 采集链路运行期（首帧到达、`frame.rotation` 真机取值 0/90/180/270、`capture_frame` 打点实测输出）；
+4. 端到端 ICE/媒体全流程（coturn 公网 TURN）与日志导出（诊断页）在真机上的可用性；
+5. 宿主侧 `/opt/apk-http/**` 与 `systemctl` 状态（容器不可见，仅旁证）；
+6. `t39` 修复对**横竖屏/前后摄切换**组合的实际效果（静态代码无回归，运行期未测）。
+
+### 13.28.9 判决与证据索引
+- **判决：`verdict = pass`** —— 源码级（三处上游 file:line 逐字核对 + diff 最小性/无副作用 + 全仓无第二处置 0）、产物级（v3 钉集、16 KB 门禁、四路一致性 2/2 可及面、B 形态判据、单测 46/0/0 入库日志）、文档级（doc/14 勘误入册 + 冻结件 sha 未变）三项自洽；**唯一未满足面 = 真机运行期**，按 §13.28.8 一律记为未验证，不影响本次 verdict 的适用范围（本 verdict **只覆盖**源码级 + 产物级 + 文档级）。
+- **证据索引（可复跑，均只读）**：`tmp/vfy43/t43/A-anchors.log` = `a3031e7d4fedde0d34e7ef9981fe3341bc0c2b5cbb5e4337cd25cfe84375ebd2`；`B-payload.log` = `45580414b27891b4ba4f3bae7943f6b6a29968394eb624df7ecc57767b6e9dd9`（v3 钉集/p_align/`resources.arsc` 新串/形态计数）；`C-diff.log` = `82cc6e411c49c8c66334cf4d478b4983d9f084d452d890c3f5a75010875e7107`（t39 diff）；`D-greps.log` = `6939dcaa11b62015b387b177a7fb9a3e2d38d05b5504edb5687770195390f311`（rotation 全仓/字符串/无新依赖）；`tmp/vfy43/pin-compare.log` = `726596a11b74cb2edffbb58b02355a10202401869e922d6f8f2db0c890ef1df8`（v2↔v3 逐条目）；`tmp/vfy43/struct-eq-36ba.log` = `d0d4ad9d…`（12/14 结构指纹，§13.27）；`tmp/vfy43b/struct-eq-30c4.log` = `bc4a6544…`（旧锚点对 14/14）。
+- **过程说明**：以上脚本/日志位于工作区 `tmp/**`（**未入库**，P-17 意义上是"过程件"）；本节已把**全部结论性数值**内联入库，宿主侧数据以 captain 与 webrtc-builder 的入库日志为准。
+
+---
+
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
