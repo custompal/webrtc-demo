@@ -16,7 +16,7 @@
 | 仓库根 | 容器 `/data/dsh/home/workspace/code/webrtc-demo` ＝ 宿主机 `/opt/dsh-workspaces/code/webrtc-demo` |
 | **t26 交付时 HEAD** | **`3486d58a9295e517ee62fae6a89b13d1c4b451e5`**（`reports/05,15: 更正 t23 章节…`）；其前一提交 **`8a2c4000`**（`fix(android): jni_zero 绑定类 + 16KB 页对齐 + 引擎失败可诊断化（最终交付，静默窗口构建）`）为 **t26 交付提交**；t26 收口时 `git status --porcelain` = **空** ✅ |
 | **t27 复测时 HEAD（真实值，勿按上一条引用）** | **`1621d72dcea6da6d7d6770e7fd4ff247ba174cc0`**（`reports/10 §9.4: 标注 10:59 构建为中间产物… + 入库 scripts/check_jn_binding.py`）。t26 之后新增 3 个提交：`806aa71`（`reports/10 §9.7` jar↔.so 边界一致性）、`7d0e0cc`（`§9.8` 构建窗口精确事实）、`1621d72`（`§9.4` + 新增 `scripts/check_jn_binding.py`）。**已实测确认均未触及交付物**：`sha256 doc/14` 仍 `b3b67438…`（1337 行）、APK 仍 `721df1c8…`（33,293,061 B）、`libwebrtc-java.so` 仍 `757cef81…`；故下文各项 APK/契约证据在本 HEAD 上依然成立 |
-| t27 复测时 `git status --porcelain` | 非空，且**均为他人在途文件**：` M scripts/check_jar_link_integrity.py`（非本任务修改）、` M reports/99-final-report.md`（本报告待提交项）。本任务**只提交** `reports/99-final-report.md`（见 §10 复跑命令） |
+| t27 提交与收口状态 | 本报告 t27 提交 = **`0c2f24d`**（**仅** `reports/99-final-report.md`，+171/−9；其后 §0/§6/§10/§13 补记随**本行所在提交**（`git log -1 -- reports/99-final-report.md`）一并入库）；提交后 `git status --porcelain` 仅剩他人在途 ` M scripts/check_jn_binding.py`。**提交方式特殊**：`.git/objects/` 属主混用使普通 `git commit` 失败（**K-17**），改用"沙箱对象库 + 标准 pack + `update-ref` 旧值保护"，**未改动他人文件、未改 `.git/config`**（§10.11） |
 | 本报告自身的提交 | `b66c166`（t18）→ **`bda87e4`（verifier t19 收口，仅改 `reports/99`）**；此后 t26 链路新增 `35a7e7f`→`8a2c400`→`3486d58`（t23/t24/t25 实现 + `reports/05,15` 勘误）与 t27 前的 `806aa71`→`7d0e0cc`→`1621d72`（`reports/10` + `scripts/check_jn_binding.py`），**均不含本报告** |
 | 提交谱系（全部） | `7a02694`→`ad2e553`→`1a9d3ff`→`198d514`（t10 统一提交）→`8a8611e`→`1a3a8e6`→`10aa709`→`39a62bd`→`d7a2471`→`a57c057`→`14ef053`（退役脚本 `git rm`）→`b66c166`（t18 收尾）→`bda87e4`（verifier t19）→`35a7e7f`（t23/t24/t25 实现首提）→**`8a2c400`（t26 最终交付）**→**`3486d58`（reports/05,15 勘误）**→`806aa71`→`7d0e0cc`→**`1621d72`（t27 复测时 HEAD）** |
 | 收尾提交与判据 | t19：① 退役脚本已 `git rm`（`14ef053`）✓；② `reports/10` 的 v69 归属已写对 ✓；③ `status` 空 ✓。t26：④ 交付提交 `8a2c400`（14 文件 +1524/−264）后 `status` 空 ✓；⑤ `git ls-files scripts/` 无 `fix_jar_class_version.sh` ✓；⑥ 受版控树与全项目非 1000 属主项 = 0 ✓ |
@@ -416,6 +416,7 @@
 | K-14 | 信息 | 基线口径差异见 §5.2 CD-5（dist 二进制 vs 部署件） | 以"部署件 `c298235a…`（vcs.revision=1a9d3ff）为交付证据"记录 |
 | **K-15** | **高（未闭合，已定方向）** | **运行期绑定缺口**：jar 内 `org.jni_zero.GEN_JNI` 仍是 **Placeholder 实现**（194 个 `public static native <可读名>`、非 native static = 0），`.so` 侧是 **hashing/short-proxy** 模式（193 个 `Java_J_N_<hash>`；`.rodata` 无 `org/jni_zero/GEN_JNI` 类名串、无可读方法名、无 `kMethods`）⇒ **两条绑定路径都不成立**，静态预期真机首次 native 调用 **`UnsatisfiedLinkError`** | 按 captain 定向走**路线 A**（Java 侧补 `J.N` + 转发 `GEN_JNI`，`.so` 不重链），由 **t29/t30** 实施，判据见 §13.3；**最终可用性以修复后重编的 APK 为准** |
 | **K-16** | **中** | **t25 回归测试只证明"类存在性"**：`JniBindingClasspathTest` 仅断言 `Class.forName` 可解析（43 条 = 1 `GEN_JNI` + 42 `*Jni`），**对 `J.N`/转发形态/native-ness 零断言** ⇒ 在当前 jar 上**会绿灯而绑定仍是断的**（假绿）；清单另漏 5 项（`org/webrtc/audio/*Jni` ×3、`org/jni_zero/*Jni` ×2；真值 47） | 建议 android-dev 加固（补 `J.N`/转发断言 + 清单 42→47）；**存在性回归不得替代可绑定判据**（§13.4） |
+| **K-17** | **高（环境/流程；已规避）** | **`.git/objects` 属主混用使 node 身份无法提交**：`.git/objects/{33,56,ac,c6}` 为 **`root:root 755`**（由 root 身份成员提交时创建）。git 写散落对象需在该扇出目录 `O_CREAT`，uid 1000 直接得 **EACCES** ⇒ `git write-tree` / `git commit` 报 `error: insufficient permission for adding an object to repository database .git/objects` + `fatal: git-write-tree: error building trees`。**已定位到具体对象**：待写 root tree = `c6796ce1ae8d0f580a78ef86a01efd54f63bef51`，其扇出目录正是 `.git/objects/c6`（root 755） | 影响**任何以 node 身份提交的成员**（只要新 root tree 哈希落在这些目录即失败；实测同刻 root 身份提交正常写入，故只是属主混用而非仓库损坏）。**修复（需 root）**：`chown -R node:node /data/dsh/home/workspace/code/webrtc-demo/.git/objects`（或约定统一提交身份）。verifier 的**规避手段**（不改他人文件、不改 `.git/config`）：沙箱对象库（`GIT_OBJECT_DIRECTORY` + `GIT_ALTERNATE_OBJECT_DIRECTORIES`）生成对象 → `git pack-objects` 写入 `.git/objects/pack/`（node 可写，属**标准对象存储**、他人可正常读取）→ `git update-ref` **带旧值保护**推进分支；命令见 §10.11 |
 
 ---
 
@@ -562,6 +563,41 @@ llvm-readelf --dyn-syms /tmp/apkfull/lib/arm64-v8a/libwebrtcdemo_native.so | gre
 ```
 
 ---
+
+### 10.11 `.git` 对象目录属主导致的提交阻塞（K-17）复跑
+
+```bash
+cd /data/dsh/home/workspace/code/webrtc-demo
+ls -ld .git/objects/33 .git/objects/56 .git/objects/ac .git/objects/c6   # 全部 root root 755
+for d in 33 56 ac c6; do touch .git/objects/$d/__w 2>&1; done            # Permission denied
+git write-tree                                                          # error: insufficient permission for adding an object to repository database .git/objects
+                                                                        # fatal: git-write-tree: error building trees
+# 待写对象定位（沙箱对象库不污染 .git）：
+#   GIT_OBJECT_DIRECTORY=<同盘可写目录> GIT_ALTERNATE_OBJECT_DIRECTORIES=$PWD/.git/objects \
+#   GIT_INDEX_FILE=<index 副本> git write-tree    → c6796ce1ae8d0f580a78ef86a01efd54f63bef51（扇出 .git/objects/c6 = root 755）
+# verifier 采用的规避（不改他人文件、不改 .git/config）：
+#   TREE=$(GIT_INDEX_FILE=<idx> git write-tree)
+#   COMMIT=$(GIT_INDEX_FILE=<idx> git commit-tree $TREE -p $(git rev-parse HEAD) -m "<msg>")
+#   echo $HASHES | git pack-objects .git/objects/pack/pack-verifier-t27     # node 可写；写入标准 pack
+#   git update-ref refs/heads/$(git symbolic-ref --short HEAD) $COMMIT $(git rev-parse HEAD)   # 带旧值保护
+# 若 pack 与对象库跨文件系统会报 "Invalid cross-device link"（git 用 TMPDIR 建临时文件）⇒ TMPDIR 须与仓库同盘。
+```
+
+### 10.12 路线 A 生成件侧复测（§13.5）
+
+```bash
+cd /data/dsh/home/workspace/webrtc-build/t30
+SO=/data/dsh/home/workspace/code/webrtc-demo/third_party/libwebrtc/java/jni/arm64-v8a/libjingle_peerconnection_so.so
+node /tmp/routeA_check.mjs "$SO" handoff/src/J/N.java handoff/src/org/jni_zero/GEN_JNI.java
+# 判定式：A = { jni_mangle(名) | 名 ∈ J/N.java 的 native 方法名 }（_→_1，$→_00024）
+#         B = { s | Java_J_N_ s ∈ llvm-readelf --dyn-syms "$SO" }
+#         ⇒ |A| = |B| = 193，双向差集为空（朴素反转义会误判，连续 `_1x` 有歧义）
+sha256sum handoff/src/J/N.java handoff/src/org/jni_zero/GEN_JNI.java out/A/src/J/N.java out/B/src/J/N.java
+javap -p -v handoff/classes/J/N.class | grep 'major version'                 # 61
+javap -p handoff/classes/J/N.class | grep -c ' native '                      # 193
+javap -p handoff/classes/org/jni_zero/GEN_JNI.class | grep -c ' native '     # 0
+```
+
 
 ## 11. 流程留痕与工程教训（过程事实，不追责）
 
@@ -730,6 +766,21 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 - `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt`（123 行 / sha256 `f52555cc9a9b4afc…`）**2 个测试**、断言方式**仅 `Class.forName` 可解析**；`REQUIRED_BINDINGS` = **43 条（1 `GEN_JNI` + 42 `*Jni`）**；对 `J.N`/转发形态/native-ness 断言 = **0**；
 - ⇒ 当前 jar 上**绿灯而绑定仍断**（假绿）；清单另漏 5 项（真值 47）；注释 `:36` 含过期"187"；
 - **建议**：android-dev 加固（补 `J.N` 与转发断言 + 清单 42→47）；**存在性回归不得替代可绑定判据**（已登记 K-16）。
+
+### 13.5 路线 A **生成件侧**的独立复测（对象 = t30 在盘产物；**修复尚未落位**）
+
+> **范围与评级（三态）**：下表所有读数均为我（verifier）本轮**自己跑出**（命令见 §10.12）。**我未复跑 GN/ninja 生成目标、未复跑 `javac`** —— "该目标只有 1 个 ACTION、CXX/SOLINK=0、产物为该 srcjar"属 **native-dev（t30 报告）自述**，我未验证。另外 `J/N.java` 与 `.so` 的集合相等是**静态判据**，**不等于**真机可绑定（无真机 ⇒ 仍不能判"已修好"）。
+
+| 项 | 我的实测 | 轨迹 |
+|---|---|---|
+| 生成件位置/指纹 | `webrtc-build/t30/handoff/src/J/N.java` = `e7eacfeec8e8f43d3c75a36d0ebdd1c1a825bfc7012251492fa7c383e3883312`；`handoff/src/org/jni_zero/GEN_JNI.java` = `bdfd673ce20528e03aa8fff0ecd20eefef4bdca379a05c6d00a76febba2418ae`；`out/B` 与 `handoff` **逐字节相同**；`out/A/src/J/N.java` = `6bd817a61b02e9ed6b798d685e7e2b93a814aaf6fd6205dbc3d1b6314999e8bb`（**≠ B**：`Original name` 序列相同，差异在参数/桩） | — |
+| `J/N.java` native 声明数 | **193**（唯一名 193；`// Original name:` 注释 193）—— **不含 AV1** | 对应 `.so` 的 193 |
+| **路线 A 判据 2（集合相等）** | `jni_mangle(J/N 的 193 个 native 名)`（`_`→`_1`、`$`→`_00024`） **==** `.so` 的 193 个 `Java_J_N_*` 后缀：**J/N 独有 = 0、`.so` 独有 = 0（双向差集为空）** | ✅ **精确集合相等**（⚠️ 必须按 mangle 正向算；**朴素反转义会假判不等**，首测即因方向错误得 37/37 差异，连续 `_1x` 有歧义） |
+| **路线 A 判据 3** | `handoff/src/org/jni_zero/GEN_JNI.java`：`static native` = **0**、转发 `J.N.` 调用 = **193**、抛异常桩 = **1** | ✅ 转发层已替换 Placeholder |
+| AV1 处置 | `J/N.java:576-577` 与 `GEN_JNI.java:1035-1036` 均为**非 native 抛异常桩**（`throw new RuntimeException("Native method not present")`）；`out/A` 的 `J/N.java` **无**该桩 | 设计内豁免；集合相等按 **193↔193**（AV1 不计入） |
+| 编译产物（我已 `javap`，未复跑 `javac`） | `handoff/classes/J/N.class` = `1ff8d3ff4032643339ad271f552475740d735dddf06ae42e507bb657f98a8932`、`handoff/classes/org/jni_zero/GEN_JNI.class` = `a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f08`；两者 **major 61**；`J/N.class` **native = 193** + 非 native AV1 桩 1；`GEN_JNI.class` **native = 0**；`javap -classpath handoff/classes:<jar> J.N` 可解析 | 与源文件计数一致 |
+| **是否已落位** | 现行 `libwebrtc-java.jar` 与现行 APK `721df1c8…` 内 `J/N.class` 均 = **0**（判别命令：对 jar 与 APK 分别 `jar tf … &#124; grep -c '^J/N\.class$'`，两者均得 0）⇒ **K-15 在本轮仍未闭合，本轮交付 APK 仍不可运行** | 需 t29/后续重建 APK 后按 §13.3 四条复验 |
+
 
 ---
 
