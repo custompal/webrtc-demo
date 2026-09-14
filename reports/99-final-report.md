@@ -1235,6 +1235,25 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 | 内含 `LibaomAv1` | **0** | **2**（`J/N.java` 1 + `GEN_JNI.java` 1） |
 | `J/N` native / `GEN_JNI` native | **193 / 0** | **193 / 0** |
 > 附：官方清单里唯一命中"av1"的行是 `Dav1dDecoder.java`（`D**av1**dDecoder`，大小写不敏感的假命中）；`nativesources.txt` 同样不含 libaom ⇒ **libaom 既不在 present、也不在 absent 输入集**。
+#### (c) 出处**判别式**（B 生成器版 vs `FINAL.jar` 另作版）——我 `javap -p -c` 双侧实测（native-dev 指出、我已复跑）
+
+| 观测项（`javap -c`，可复跑） | **B**（生成器版 = 现部署 `0c776934…`） | `FINAL.jar`（`d0d05244…`，另作/手加） |
+|---|---|---|
+| `J.N` 侧 AV1 方法**名** | **可读名** `org_webrtc_LibaomAv1Encoder_create(long)` | **哈希名** `M0vTiIkf(long)` |
+| `J.N` 侧该方法体 | `new RuntimeException` → `ldc "Native method not present"` → `invokespecial` → **`athrow`** | **同**（也是抛异常桩） |
+| **`GEN_JNI` 侧 AV1 方法体** | **自身抛异常**（`new`/`dup`/`ldc_w`/`invokespecial`/`athrow`；**无 `invokestatic`**） | **转发**：`lload_0` → `invokestatic J/N.M0vTiIkf:(J)J` → `lreturn` |
+| `J/N.class` / `GEN_JNI.class` 大小 | **6 924 B / 24 910 B** | **6 898 B / 24 828 B** |
+| 与生成器行为 | 一致（`_stub_for_missing_native` 用 `native.proxy_name`；`generate_impl` 与 `generate_forwarding` 对 absent proxy **各自落桩** ⇒ 两侧都是自身抛异常） | 不一致（`J.N` 用哈希名、`GEN_JNI` 写成**转发到 `J.N.M0vTiIkf`**） |
+
+⇒ **口径修正**：上文"194 = 193 转发 + 1 桩"是**源码级**描述（`generate_forwarding` 的 present 循环 193 次 + absent 桩 1 次）；**字节码级**必须写成"**194 方法 / `native` = 0 / 转发目标（`invokestatic J/N.`）= 193（全为 native）/ `athrow` 桩 = 1（不转发）**"——**B 的第 194 条不转发**（这与 §13.22(f) 的断言精确化一致）。
+**复跑命令（native-dev 给的版本，我实测可用）**：
+```bash
+javap -p J/N.class | grep -v " static native " | grep "public static"   # 唯一非 native 声明 = AV1 桩
+javap -p -c org/jni_zero/GEN_JNI.class | awk "/LibaomAv1Encoder_create/,/^$/"  # athrow(=生成器版) 还是 invokestatic(=另作版)
+stat -c %s J/N.class org/jni_zero/GEN_JNI.class                          # 6 924/24 910(B) vs 6 898/24 828(FINAL)
+```
+⚠️ **不要用 `javap -p J/N.class | grep -i av1`**：对 `FINAL.jar` 的哈希名 `M0vTiIkf` **0 命中**，且 `-i` 会误命中 `Dav1dDecoder`（大小写不敏感）。
+
 
 **结论（三段式）**：
 1. **官方对本目标（`sdk/android:libjingle_peerconnection_so__jni_registration`）的产物 = 193/193、完全不含 AV1** ✅（我实测 A 的 srcjar：`LibaomAv1` 命中 0）。
