@@ -813,7 +813,7 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 | 断言 | 落位前 | 落位后 | 性质 |
 |---|---|---|---|
 | `org.jni_zero.GEN_JNI` 存在 | ✅ | ✅ | 恒真 |
-| `GEN_JNI` **方法签名数 = 194** | ✅ | ✅ | **不变式**（可长期断言） |
+| `GEN_JNI` **方法签名数**（B 形态 = **194**；A 形态 = **193**，见 §13.8） | ✅ 194（Placeholder） | 194(B) / 193(A) | 仅在保留 AV1 桩的 **B** 形态下是 194 |
 | `GEN_JNI` 的 `static native` 数 = **0** | ❌ **= 194** | ✅ | **切换点断言**（落位前必红） |
 | `J/N.class` 可解析（jar 内 `J/` 条目 0 → 1） | ❌ **= 0** | ✅ | **切换点断言** |
 | `J.N` native 数 = **193**（+1 非 native AV1 桩，方法合计 194） | n/a | ✅ | 落位后 |
@@ -839,6 +839,43 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 # ② 集合相等（必须正向 mangle：`_`→`_1`、`$`→`_00024`；193 名中 37 名含 `_`/`$`，朴素反转义会 37/37 假红）
 #    见 §10.12 的 /tmp/routeA_check.mjs 判定式
 ```
+
+
+### 13.8 t31 **staging jar** 独立复验（`tmp/jn-fix/libwebrtc-java.jar`）——**A/B 形态分歧，需 captain 裁定**
+
+对象：`/data/dsh/home/workspace/tmp/jn-fix/libwebrtc-java.jar`（webrtc-builder 的 staging，**未落位**）
+我实测：`sha256 c289b4dfd06827bc…`、**1 206 237 B**、**509 个 `.class`**、major 分布 **`{55:51, 61:458}`**（无 >61）——与其自述**完全一致** ✅
+
+| 判据 | 我的实测（staging） | 结论 |
+|---|---|---|
+| `J/N.class` 存在 | ✅ | 路线 A 判据① **通过** |
+| `J.N` native 数 | **193**（类方法合计 194 = 193 native + `<init>`，**无 AV1 桩**） | — |
+| `jni_mangle(J.N native)` ↔ `.so`（`757cef81…`）193 符号 | **双向差集为空（0 / 0）** | 判据④ **通过**（核心修复成立） |
+| `GEN_JNI` `static native` | **0** | 判据② **通过** |
+| `GEN_JNI` 方法签名数 | **193**（193 转发 + `<init>`，**无 AV1 桩**） | ⚠️ **不是 194** ⇒ 见下"分歧" |
+| 对照：现行交付 jar（未修复） | `J/N.class` = **false**、`GEN_JNI` native = **194** | 同一判据在修复前必红 ⇒ **判据本身有效**（非恒真）✅ |
+
+#### ⚠️ A/B 形态分歧（**本轮最重要的新增发现**）
+- **事实（我 `javap -c` 实测）**：即使在这个 staging jar 里，`org.webrtc.LibaomAv1EncoderJni` **仍然** `invokestatic // Method org/jni_zero/GEN_JNI.org_webrtc_LibaomAv1Encoder_create:(J)J`；而该 jar 的 `GEN_JNI` **没有**这个方法（`grep org_webrtc_LibaomAv1Encoder_create` = **0 命中**）。
+- **后果**：一旦触发 AV1 编码器创建，将抛 **`NoSuchMethodError`**（而不是上游 Placeholder 语义的 `RuntimeException("Native method not present")`）。**这是 t30 推荐 B 的全部理由**（§13.6）。
+- **可达性（我核了 app 侧）**：`app/src/main/kotlin/**` 只注册 **`Vp9VideoEncoderFactory`**（`WebRtcEngine.kt:144`），全仓**无** `LibaomAv1EncoderFactory`/Dav1d 使用 ⇒ 以"1:1 VP9 通话 demo"为交付口径，该路径**不可达**，**不是运行阻塞**，但属**静态确定的潜在缺陷**。
+- 因此本项**按 medium（潜在、需裁定）**记，不作失败判定：请 captain 二选一 —— **(i) 落 B**（补 AV1 非 native 桩，同时满足判据③=194 与 §13.6），或 **(ii) 明确裁定"A 可接受"**，并在交付说明里写明"AV1 路径不可达 + 若启用则 `NoSuchMethodError`"。
+
+#### 门禁脚本 `scripts/check_jn_binding.py` 的评价（我**未能执行**，只做静态审查 + 等价复跑）
+- **我无法运行它**：本容器 **无 python3**（`command -v python3/python/python3.11/python3.12` 全空）⇒ 脚本作者/维护者在容器内无法自测；且该文件当前为 **`M`（未提交）**，与 `1621d72` 入库版可能不同（mtime 18:08、mode 0600）。**我没有执行它**，上述 staging 结论全部由我自己的 `javap`/常量池扫描得出。
+- **静态审查要点**：`KNOWN_EXEMPT = {"org_webrtc_LibaomAv1Encoder_create"}`（`:52`）会把 AV1 未覆盖项计为"已知豁免"，`RESULT` 仍 **PASS**（`:188-199`、`:211`）⇒ **该门禁对 A 与 B 都会 PASS**，因此它**不能**用来证明"AV1 路径安全"，只能证明判据①④与②（这是本修复的实质部分）。建议注释里写明这一边界，避免"闸门绿 = AV1 安全"的误读。
+- **它设计得对的地方**：符号期望值按官方规则正向复算（`Java_` + `jni_mangle('J/N')` + `_` + `jni_mangle(hashed)`，`_`→`_1`/`$`→`_00024`/`/`→`_`），并做**双向**差集 ⇒ 与 §13.3/§13.7 的判据同构（不是数量对齐）✅
+
+#### 对 §13.7(b) 真值表的**修正**（原表把 194 写成"恒真不变式"，仅在 B 形态下成立）
+| 断言 | 现行（未修复） | 落位=**A** | 落位=**B（推荐）** |
+|---|---|---|---|
+| `J/N.class` 存在 | ❌ 0 | ✅ | ✅ |
+| `GEN_JNI` native = 0 | ❌ 194 | ✅ 0 | ✅ 0 |
+| `GEN_JNI` 方法签名数 | 194 | **193** | **194**（193 转发 + 1 AV1 桩） |
+| `J.N` native ↔ `.so` 193（双向差集空） | n/a | ✅ | ✅ |
+| AV1 调用点 | 悬空（native，真机 `UnsatisfiedLinkError`） | 悬空 ⇒ **`NoSuchMethodError`** | 由抛出桩兜住（`RuntimeException`） |
+
+⇒ **落位验收时请先确认取的是哪一形态**：`javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '`（A=193 / B=194）。
 
 
 ---
