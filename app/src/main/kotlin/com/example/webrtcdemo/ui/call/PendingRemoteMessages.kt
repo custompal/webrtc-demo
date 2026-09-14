@@ -58,9 +58,16 @@ class PendingRemoteMessages(val maxEntries: Int = DEFAULT_MAX_ENTRIES) {
     /** 入队 answer；返回入队后的长度。 */
     fun enqueueAnswer(sdp: String): Int = enqueue(Entry(Kind.ANSWER, sdp))
 
-    /** 入队远端候选；返回入队后的长度。 */
-    fun enqueueIce(candidate: String, sdpMid: String?, sdpMLineIndex: Int): Int =
-        enqueue(Entry(Kind.ICE, candidate, sdpMid, sdpMLineIndex))
+    /**
+     * 入队远端候选；返回入队后的长度。
+     *
+     * @param sdpMLineIndex 协议允许为空（§8.2：`sdpMid` 与 `sdpMLineIndex` 至少一个有效），
+     *   为空时按 0 记录（与 `Entry` 的默认值一致）。**t51b 修复**：原签名要求非空 `Int`，
+     *   而 `SignalingMessage.Ice.sdpMLineIndex` 是 `Int?` ⇒ 宿主机构建报
+     *   `CallViewModel.kt:377 Argument type mismatch: actual type is 'kotlin.Int?'`。
+     */
+    fun enqueueIce(candidate: String, sdpMid: String?, sdpMLineIndex: Int?): Int =
+        enqueue(Entry(Kind.ICE, candidate, sdpMid, sdpMLineIndex ?: 0))
 
     /**
      * 取出全部条目并清空（**按到达顺序**返回，调用方据此顺序回放）。
