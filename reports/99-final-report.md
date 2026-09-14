@@ -766,7 +766,7 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 ### 13.4 t25 回归测试的断言强度（review finding，**不判失败但不得当作可绑定证据**）
 - `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt`（123 行 / sha256 `f52555cc9a9b4afc…`）**2 个测试**、断言方式**仅 `Class.forName` 可解析**；`REQUIRED_BINDINGS` = **43 条（1 `GEN_JNI` + 42 `*Jni`）**；对 `J.N`/转发形态/native-ness 断言 = **0**；
 - ⇒ 当前 jar 上**绿灯而绑定仍断**（假绿）；清单另漏 5 项（真值 47）；注释 `:36` 含过期"187"；
-- **建议**：android-dev 加固（补 `J.N` 与转发断言 + 清单 42→47）；**存在性回归不得替代可绑定判据**（已登记 K-16）。
+- **建议（含生效时间点，见 §13.7(b)）**：android-dev 加固——**清单 42→47（共 48）现在即可做**（纯严格化）；**`J.N` 存在 / `GEN_JNI` native=0 两条断言须等 t31 落位后再加**，否则当前 jar 上会立即打红；**存在性回归不得替代可绑定判据**（已登记 K-16）。
 
 ### 13.5 路线 A **生成件侧**的独立复测（对象 = t30 在盘产物；**修复尚未落位**）
 
@@ -796,6 +796,47 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 | 5 | `src/out/Release-arm64/aar/arm64-v8a/toolchain.ninja`（9,398,126 B）：`--use-proxy-hash` 出现 **34 次**；`jni_zero.py generate-final` 命令行 **7 条**（7/7 带该 flag） | 与 native-dev 自述"27 条 `from-source`"**不符**（疑取自另一 ninja 文件或不同计法）。**"hashed/proxy 是 build 面事实"这一结论我认可**（7 条官方 action 逐字带 flag），但 27 这个数字我**未能复现**，不写进结论 |
 
 **材料勘误提示（native-dev t30 材料，供其自订）**：`webrtc-build/t30/logs/verify.log:16-17` 记 `GEN_JNI.java: … stub=0 方法合计=193` 与 `J_N.java: … stub=0 方法合计=193` —— 这两行与 **A 变体**（`out/A`）相符，与**其推荐并handoff 的 B 变体**（每份 193+1 = 194 方法）**不一致**。若 t31 依据该日志挑选变体，会取到 A。建议把该日志标注为"对应 A 变体"，并另存 B 变体的计数输出。
+
+
+### 13.7 可绑定判据的**最终措辞**、真值表（含生效时间点）与量化补强
+
+#### (a) `kMethods` 措辞收紧（我报告从未写"或 `kMethods` 存在"这一分支）
+`grep -n kMethods reports/99-final-report.md` 仅 **2 处**（K-15 与 §12.5），均为**描述性**："`.so` 侧为 hashing/short-proxy 模式、无 `kMethods`"。**判据不设"或"分支**，写法固定为单一路径：
+
+> **运行期可绑定 ⇔** ① jar/APK 内 `J/N.class` 可解析；② `org.jni_zero.GEN_JNI` 的 `static native` 计数 = **0**（转发形态）；③ `GEN_JNI` 方法签名数 = **194**；④ `jni_mangle(J.N 的 193 个 native 名)` ≡ `.so` 的 **193** 个 `Java_J_N_*`（双向差集为空；AV1 不计入符号集合）。
+
+`kMethods` 的正确表述：本 build 里它**不是"缺失"而是设计上不存在**——非 module 的 hashing 模式**不生成 `.cc`**（golden 已证 `.cc` 计数 = 0），只有**带 module 的 hashing** 才生成 `kMethods`，而那时 `kMethods` 的 **name 是哈希名**。因此"`kMethods` + **可读名**"在本 checkout **不对应任何真实形态**，它等价于**已被 captain 否掉的路线 (i)**（切经典/非 hashing 模式 ⇒ 必须重编 `.so`）。⇒ 作为**路线 (i) 的前置条件单列**，**不并入可绑定判据**。
+
+#### (b) 判据真值表（落位前 = 现行 jar/APK `721df1c8…`；落位后 = t31/t33 之后）
+| 断言 | 落位前 | 落位后 | 性质 |
+|---|---|---|---|
+| `org.jni_zero.GEN_JNI` 存在 | ✅ | ✅ | 恒真 |
+| `GEN_JNI` **方法签名数 = 194** | ✅ | ✅ | **不变式**（可长期断言） |
+| `GEN_JNI` 的 `static native` 数 = **0** | ❌ **= 194** | ✅ | **切换点断言**（落位前必红） |
+| `J/N.class` 可解析（jar 内 `J/` 条目 0 → 1） | ❌ **= 0** | ✅ | **切换点断言** |
+| `J.N` native 数 = **193**（+1 非 native AV1 桩，方法合计 194） | n/a | ✅ | 落位后 |
+| `jni_mangle(J.N native)` ≡ `.so` **193**（双向差集空） | n/a | ✅ | 落位后（唯一豁免 AV1） |
+
+⇒ **生效时间点（避免把当前绿色测试打红）**：`JniBindingClasspathTest` 的**清单 42→47（共 48）**属"纯严格化"，**现在就能做**；而 **`J/N.class` 存在 / `GEN_JNI` native=0** 两条断言**必须等 t31 落位后再加**（否则当前 jar 上立即失败）。已同步 android-dev，本报告亦按此记录，替代 §13.4 中未注明时间点的建议。
+
+#### (c) 我复跑得到的量化补强（**全部自跑**，用于钉死"两侧必须同时满足"）
+| 复跑项 | 我的原始读数 | 说明 |
+|---|---|---|
+| B 版 `GEN_JNI` ↔ jar Placeholder：**名字+描述符** | `javap -p` 各得 **194** 条签名；**交集 194**、Placeholder 独有 **0**、B 独有 **0**；`native` 修饰符：B = **0**、Placeholder = **194** | 唯一差异即"有意为之的 native 修饰符" ✅ |
+| Placeholder 194 的**来源 = 16 个 per-target 并集** | 我按 gen 目录归属复算：`peerconnection 121 + video 25 + base 12 + swcodecs 8 + java 4 + java_audio_device_module_native 4 + libvpx_vp9 4 + environment 3 + generate_jni 3 + builtin_audio_codecs 2 + libvpx_vp8 2 + metrics 2 + dav1d 1 + java_audio 1 + libaom_av1 1 + video_egl 1` = **194**，未映射 **0** | 与 native-dev 的 16 项清单**多重集完全一致** ⇒ 这就是 Placeholder"看起来齐全却一条都绑不上"的成因（类名是 `org.jni_zero.GEN_JNI`，运行期要求 `J.N`） |
+| 5 个补充类的 8 条 native | `M3mJB0tB/MIXdWn9A/MioeoqOK/MVoHeMKY/MsGvGVCS/MMv8RAm7/ME2Hhs12/MRCqqvhw` 逐个 `llvm-nm -D --defined-only` 命中 `.so` 各 **1** 次 | ⇒ 清单 42→47 为**纯严格化、无新豁免债** |
+| J.N 名结构断言 | 193 个 native 名**全部 8 字符且以 `M` 开头**；含 `_ForTesting` = **0**（本目标未用 `--include-test-only`） | 纯 JVM 侧廉价结构断言，可在 t32 采用 |
+| 门禁命令的环境修正 | **本容器无 `unzip`**（`command -v unzip` = 空）⇒ native-dev 给的 `unzip -oq` 版本在此会直接失败；请改用 `jar tf` / `jar xf`（本报告全部用 `jar`/`javap` 实测） | 避免 t34 复跑时"命令找不到"式假红 |
+
+#### (d) 提交级不变式（t34 可直接复用）
+```bash
+# ① 落位后应得：J/N 条目 1、GEN_JNI native 0、签名数 194
+jar tf <jar|apk> | grep -c '^J/N\.class$'                      # 期望 1（落位前 0）
+javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -c ' native '   # 期望 0（落位前 194）
+javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 194
+# ② 集合相等（必须正向 mangle：`_`→`_1`、`$`→`_00024`；193 名中 37 名含 `_`/`$`，朴素反转义会 37/37 假红）
+#    见 §10.12 的 /tmp/routeA_check.mjs 判定式
+```
 
 
 ---
