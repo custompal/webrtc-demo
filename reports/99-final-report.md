@@ -2029,3 +2029,18 @@ classes6.dex … 相同；classes9/11/12/14 字节不同而结构相同；classe
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
+
+---
+
+## 14. 勘误：doc/14 §7.4 第 692 行「rotation 已烘进 I420」（**t43 独立验证**，2026-09-14 22:45；本节点为追加，不改写任何历史节）
+
+- **被证伪的原文**（逐字）：`doc/14-interface-contract.md:692` —— `VideoFrame(i420, 0 /*rotation 已烘进 I420*/, frame.timestampNs)`（该行前提是把第二实参写死为 0）。
+- **第一手证伪依据（三处 file:line 逐一打开核对）**：
+  1. `third_party/libwebrtc/include/sdk/android/api/org/webrtc/TextureBufferImpl.java:111-113`：`toI420()` 仅 `yuvConverter.convert(this)`（**该文件 `rotation` 命中数 = 0**）⇒ 只做 YUV 转换、**不做旋转**；
+  2. `third_party/libwebrtc/include/sdk/android/api/org/webrtc/VideoFrameDrawer.java:204`：`renderMatrix.preRotate(frame.getRotation())` ⇒ 朝向来自 `VideoFrame` 的 rotation 元数据（I420 与 texture 帧同走此路径）；
+  3. 本工程 `app/src/main/kotlin/com/example/webrtcdemo/encoder/Vp9VideoEncoder.kt:208`：`normalizeRotation(frame.rotation)` 作为 `nativeEncode(..., rotationDegrees=…)` 实参（与 `doc/14:635`「`VideoFrame.getRotation()` 直接映射」一致）。
+- **正确口径**：`FrameNormalizer` 的 texture→I420 分支**必须保留 `frame.rotation`**；实际修复点 = `webrtc/FrameNormalizer.kt:82` → `VideoFrame(i420, frame.rotation, frame.timestampNs)`。置 0 会丢失朝向元数据（真机表现为本地预览逆时针旋转 90°）。
+- **doc/14 冻结状态（未改）**：`doc/14-interface-contract.md` sha256 = **`b3b6743825eababc51d41944d61d0f4ab542c8a0f3cdfc4d7a754cefd1cc0f4d`**（1337 行）—— 本勘误**只登记、不改 doc/14**。
+- **附带登记（非 t43 验收项，独立验证附带发现）**：
+  - `doc/14:518`「`g_w`/`g_h` | InitEncode 传入（对齐到偶数；**rotation 90/270 时交换**）」**当前实现未落地**：`app/src/main/cpp/encoder/vp9_encoder.cpp:419-426` 仅**校验** `rotation_degrees`（非法值记 WARN 并**按 0 处理**），**无宽高交换**；全仓亦无 swap 实现 ⇒ **t39 的修复只是恢复 rotation 信号送达 native，并未实现该交换**。建议：或另立任务实现 `§518`，或在 `reports/13-device-defect-fix.md` 收窄「缺陷②」表述为"契约信号恢复（当前消费端仅校验）"。
+  - `reports/13-device-defect-fix.md:94` 的结论句「`app/src/main/kotlin` 内**不再有任何位置把 rotation 强制置 0**」**字面不成立**：`encoder/Vp9VideoEncoder.kt:361` 存在 `.setRotation(0)`（作用于 `EncodedImage.builder()`，即**输出侧编码帧元数据**，语义正确、非采集帧 rotation）；该文件 §1.4 的 rotation 审计表未列此条 ⇒ 建议补列并收窄结论为"**采集帧 rotation 无第二处置 0；输出侧 `EncodedImage.setRotation(0)` 属编码输出元数据**"。
