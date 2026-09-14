@@ -57,8 +57,16 @@ data class IceCandidateInfo(
          * @param sdp 候选行（org.webrtc 的 `IceCandidate.sdp`，不带 `a=` 前缀）。
          * @return 解析结果；格式不符时返回带 `type=unknown` 的结果而不是抛异常（日志路径不得抛）。
          */
-        fun parse(sdp: String): IceCandidateInfo {            val tokens = sdp.trim().removePrefix("a=").split(' ').filter { it.isNotEmpty() }
-            val body = if (tokens.firstOrNull()?.startsWith("candidate:") == true) tokens.drop(1) else tokens
+        fun parse(sdp: String): IceCandidateInfo {
+            // 【t49 修复】`candidate:` 与 foundation 处在**同一个 token** 内
+            // （形如 `candidate:2998576043`）。原实现 `tokens.drop(1)` 把 foundation 整块丢掉，
+            // 使 body 整体前移一格 ⇒ protocol 读到 priority、address 读到 port、port 读到字面量 `typ`
+            // （实测 4 个单测失败：expected:<udp> but was:<2122260223> 等）。
+            // 正确做法：只剥掉 `candidate:` 前缀，保留 foundation 作为 body[0]。
+            val raw = sdp.trim().removePrefix("a=").split(' ').filter { it.isNotEmpty() }
+            val body = raw.mapIndexed { index, token ->
+                if (index == 0) token.removePrefix("candidate:") else token
+            }
             // body = [foundation, component, protocol, priority, address, port, "typ", type, …]
             val foundation = body.getOrElse(0) { "" }
             val component = body.getOrElse(1) { "0" }.toIntOrNull() ?: 0
