@@ -1083,6 +1083,39 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 #### (d) 新增流程教训 **P-9**（与 P-7 同类）
 **`--rerun-tasks` 单独使用仍可能命中构建缓存**（实测：`testDebugUnitTest` 报 `FROM-CACHE`）⇒ 凡"某测试/构建刚真实执行过"的断言，必须同时满足 **`--no-build-cache --rerun-tasks`** 且输出 **`N actionable tasks: N executed`（FROM-CACHE = 0）**；只凭 `BUILD SUCCESSFUL` 或 XML 时间来推断"刚跑过"会误判。
 
+### 13.15 终产物 `.so` 回归护栏（t33/t34 必查）+ 跨代哈希勘误候选
+
+#### (a) 回归护栏（**新 APK 必须仍满足**）
+t29/t31 是**纯 Java 侧**修复 ⇒ 新一轮 APK 内 `lib/arm64-v8a/libjingle_peerconnection_so.so` **必须仍是 `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e`**。若变，说明发生了重链/重编，**t30 的"符号集合 ≡ 193"证明对象即漂移，必须整组重跑**（否则会变成"证明对象漂移后的假通过"）。
+命令（**本容器无 `unzip`**，故用 `jar`）：
+```bash
+mkdir -p /tmp/guard && (cd /tmp/guard && jar xf <APK> lib/arm64-v8a/libjingle_peerconnection_so.so)
+sha256sum /tmp/guard/lib/arm64-v8a/libjingle_peerconnection_so.so   # 期望 757cef81…
+# 同时复核 16 KB：四个 .so 的 LOAD 段 p_align 必须均 = 0x4000
+llvm-readelf -lW /tmp/guard/lib/arm64-v8a/*.so | grep LOAD
+```
+
+#### (b) 现行 APK 的 `.so` 复核（我自跑，与 native-dev 一致）
+| `.so` | sha256（前 16） | `p_align` |
+|---|---|---|
+| `libandroidx.graphics.path.so` | `41e9a793c43a0f4f` | `0x4000` |
+| `libc++_shared.so` | `c9dbf4ec15e931f5` | `0x4000`（4 段） |
+| `libjingle_peerconnection_so.so` | `757cef8128bf9151` | `0x4000` |
+| `libwebrtcdemo_native.so` | `95c44e5ab9ff6f85` | `0x4000` |
+另：APK 内 `libc++_shared.so`（`c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36`）**与 `app/src/main/jniLibs/arm64-v8a/libc++_shared.so` 逐字节相同**（`cmp` 通过）⇒ AGP 未对落位件做变形 ✅
+> 交付 APK 另有仓外快照：`/data/dsh/home/workspace/artifacts/app-debug-721df1c8.apk` = 33 293 061 B / `721df1c8…` / mtime 11:28:34（与仓库内那份同哈希）。
+
+#### (c) 跨代哈希勘误候选（`reports/07` §9.1.2/§15.1 等；**证据有效、数值跨代**，非事实错误）
+| 锚点 | 出现行（我实测 `grep -cF`） | 处置 |
+|---|---|---|
+| `c72d3667…`（**t10 代** APK，33 260 234 B） | **3 处**：`:392`、`:401`、`:522` | 加注"**当时值**；现行交付 APK = `721df1c8…`（33 293 061 B，mtime 11:28:34）"，**保留**旧证据 |
+| `e9b66cc9…`（当时 APK 内自有库，1 231 512 B） | **3 处**：`:399`、`:522`、`:571` | 加注"尺寸不变、**sha256 已演进为 `95c44e5a…`**（同报告 `:670` 已是新值）"⇒ 报告内**两代值并存**，须显式区分 |
+| `b0cddd86…`（**另一代** APK，33 260 234 B） | **1 处**：`:581`（§15.1 标题） | 加注对应代次即可 |
+| `95c44e5a…`（现行自有库） | **1 处**：`:670` | 现行值，正确 |
+| `721df1c8…` / `6653fddf…` / `dc5f8919…` / `0c776934…` | **0 处** | ∠ 终报直接引用 `721df1c8…`（现行）与 `0c776934…`（落位 jar） |
+> ⚠️ **更正 native-dev 本轮的表述**："全文没有 `721df1c8`/`6653fddf`/`b0cddd86` 任一出现"——`721df1c8`、`6653fddf` 确实为 **0**，但 **`b0cddd86` 出现 1 次（`:581`）**，不能一并写"没有"。
+> 另：**t10 代 APK（`c72d3667…`）已不在盘**（我全树有界搜索 `.apk` 仅得现行 `721df1c8` 快照与一处构建中间件）⇒ 跨代数值**无法现测**，只能按历史证据引用。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
