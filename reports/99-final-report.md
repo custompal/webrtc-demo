@@ -1015,6 +1015,26 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 
 ⇒ **结论**：路线 A（B 形态）在 **jar/AAR 层已完成且可绑定**（判据①②③④全绿）。**交付可用性仍以 t33 重编后的 APK 为准**；t34 复验清单：新 APK 内 `LJ/N;` 出现、4 个 `.so` `p_align=0x4000`、`*Jni` 48 存在/47 被引用/0 缺失、`.so` 未漂移 `757cef81…`、dex major ≤ 61。
 
+### 13.12 判据归属与计数口径的**最终钉死**（含两处会假红/假绿的数字）
+
+#### (a) 判据归属（与 §13.3/§13.10 同一结论，此处给"唯一主判据"的最终写法）
+- **路线 B 专属（不得用于本工程）**：`.rodata` 出现 `org/jni_zero/GEN_JNI` ≥1、≈194 条 `^org_webrtc_` 可读名、`JNI_OnLoad` 内 `blr` ≥1。**在路线 A 下这些恒为 0 且属正常**。
+- **唯一主判据（路线 A）**：① jar/APK 内 `J/N.class` 可解析；② `GEN_JNI` 的 `static native` = 0（转发形态）；③ `GEN_JNI` 方法数 = **194**（**仅 B 形态**；A 形态为 193）；④ `jni_mangle(J.N 的 193 个 native 名)` ≡ `.so` 的 193 个 `Java_J_N_*`（双向差集为空）＋ `.so` 仍 `757cef81…`（不漂移）。
+- 这与"把 `kMethods` 从判据剔除"是**同一类错误**：**用另一条修复路线的特征验收本路线 ⇒ 系统性假阴性**（已登记为流程教训）。
+
+#### (b) 会**假红**的数字：可读名前缀分解（我实测，落位前/后同值）
+`javap -p org.jni_zero.GEN_JNI` → 方法行 **195**（**194 方法 + 1 默认构造器**）；其中 **`org_webrtc_*` = 191**、**`org_jni_1zero_*` = 3**、两类之外 = **0**（`org_webrtc_audio_*` = 5，属 `org_webrtc_*` 子集）。
+⇒ 判据里**不要**写"`grep -c 'org_webrtc_'` = 193"（那是 **`.so` 侧符号数**）——**jar 侧应为 191**；**193 与 191 是两个不同量**，混用必假红。落位后我复查 live jar 亦为 **191 + 3 = 194**（`static native` = 0，B 形态）✅
+
+#### (c) `JNI_OnLoad` 指令数/分支数（我显式区间实测）
+`llvm-objdump -d --start-address=0x29f718 --stop-address=0x29f78c` → **29 条指令**、**`bl` = 6**、**`blr` = 0**。
+> native-dev 报"356 B / 89 指令 / `bl`=7"：其**区间取法不同**（我这一段 = 0x74 = 116 B），我**未能复现 89/7**；**实质结论一致（`blr` = 0 ⇒ 无注册调用）**。引用时请带上地址区间，否则数字对不上会互相怀疑。
+
+#### (d) 工具可用性修正（本容器）
+- **无 `strings`**：`strings -a <so> | grep -c …` 会"静默返回 0"（管道收到空输入）——**不可用作"字符串不存在"的证据**！请用 **`grep -a -c '<pat>' <so>`**（或 node 扫二进制）。我以此复测：`org/jni_zero/GEN_JNI` = 0、`org_webrtc_` = 0、`org_jni_1zero_` = 0 ✅（§13.1 的结论不变，但取证命令须换）。
+- **无 `unzip`**（§13.7(d) 已记）：改用 `jar tf` / `jar xf`。
+- `javap -classpath <jar> J.N`：**本容器实测可用**（输出 `Compiled from "N.java"` / `public class J.N`），native-dev 的"单字母包名易失败"警告**我未能复现**；但"先抽条目再 `javap -p <dir>/J/N.class`"仍是**更稳的规范做法**，t34 采用后者。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
