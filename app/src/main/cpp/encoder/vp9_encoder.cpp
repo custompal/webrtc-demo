@@ -441,22 +441,46 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
   const int target_width = RotatedWidth(frame_width, frame_height, rotation);
   const int target_height = RotatedHeight(frame_width, frame_height, rotation);
 
-  // 分辨率变化（SDK 的 VideoAdapter 会按带宽下调分辨率）：允许在单通+低延迟
-  // 模式下用 vpx_codec_enc_config_set 直接改 g_w/g_h
-  // （vp9_cx_iface.c:878 明确允许 g_lag_in_frames<=1 && pass==ONE_PASS）。
-  // 【t46】此处用**旋转后**尺寸 ⇒ doc/14:518 的"90/270 时交换"经同一路径生效
-  // （Init 时 g_w/g_h 仍是请求尺寸；带 rotation 的首帧按需 config_set 交换一次）。
+  // 分辨率变化（SDK 的 VideoAdapter 会按带宽下调分辨率）+【t46】旋转导致的尺寸交换
+  //   ⇒ 必须用**旋转后**尺寸，与 doc/14:518「90/270 时交换」一致。
+  // 【t50 修复】尺寸变化时**重建编解码上下文**，不能用 `vpx_codec_enc_config_set`：
+  //   真机证据（reports/20-encode-resize-crash.md；宿主 `/opt/dsh-workspaces/tmp/dl-a/x/`）：
+  //     16:24:15.691 encoder_resize w=480 h=640      ← config_set 返回 OK（本行即有日志）
+  //     16:24:15.698 encode_vpx_begin frame=1 w=480 h=640 … img_owner=0
+  //     （随后该进程再无任何日志；16:24:18.556 新进程启动 = App 闪退重启）
+  //     计数：encode_vpx_begin=2 / encode_vpx_done=0 / encoded_frame=0
+  //   ⇒ `vpx_codec_encode()` 内部崩溃。原因：本 checkout 的 libvpx 在 config_set
+  //   路径下**不会随 g_w/g_h 重建内部帧缓冲**，图像(480×640) 与编解码器内部尺寸
+  //   (仍是 Init 时的 640×480) 不一致 ⇒ 越界访问。故改为 destroy + 以新尺寸重新
+  //   `vpx_codec_enc_init`（cfg_ 已含冻结配置与分层码率，无需重算）。
   if (target_width != width_ || target_height != height_) {
+    const int old_w = width_;
+    const int old_h = height_;
     width_ = target_width;
     height_ = target_height;
+    DestroyCodecLocked();  // 幂等：vpx_codec_destroy + 清句柄 + codec_open_=false
     cfg_.g_w = static_cast<unsigned int>(width_);
     cfg_.g_h = static_cast<unsigned int>(height_);
-    if (vpx_codec_enc_config_set(&codec_, &cfg_) != VPX_CODEC_OK) {
-      NLOG_ERROR(kTagEncoder, "encode_resize_failed w=%d h=%d err=%s", width_,
-                 height_, vpx_codec_error(&codec_));
+    const vpx_codec_err_t reinit_result =
+        vpx_codec_enc_init(&codec_, vpx_codec_vp9_cx(), &cfg_, 0);
+    if (reinit_result != VPX_CODEC_OK) {
+      NLOG_ERROR(kTagEncoder, "encode_resize_reinit_failed w=%d h=%d err=%s",
+                 width_, height_, vpx_codec_error(&codec_));
+      initialized_ = false;
       return kVp9Error;
     }
-    NLOG_INFO(kTagEncoder, "encoder_resize w=%d h=%d", width_, height_);
+    codec_open_ = true;
+    initialized_ = true;
+    vpx_codec_control(&codec_, VP8E_SET_CPUUSED, kCpuUsed);
+    // 新码流：取证标记按"首帧"重打；尺寸变化后必须重新出关键帧，否则远端无法起播。
+    frame_count_ = 0;
+    last_pts_us_ = -1;
+    force_key_frame_ = true;
+    encoded_.clear();
+    NLOG_INFO(kTagEncoder,
+              "encoder_reinit w=%d h=%d old_w=%d old_h=%d reason=size_change_"
+              "rotation_or_adapt",
+              width_, height_, old_w, old_h);
   }
 
   // ---- 组装 vpx_image_t --------------------------------------------------
