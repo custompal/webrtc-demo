@@ -896,9 +896,11 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 ```
 
 
-### 13.8 t31 **staging jar** 独立复验（`tmp/jn-fix/libwebrtc-java.jar`）——**A/B 形态分歧，需 captain 裁定**
+### 13.8 t31 **staging jar** 独立复验（`tmp/jn-fix/libwebrtc-java.jar`）——~~A/B 形态分歧，需 captain 裁定~~ **已收口：captain 裁定 (i) 落 B（§13.22）**
 
-对象：`/data/dsh/home/workspace/tmp/jn-fix/libwebrtc-java.jar`（webrtc-builder 的 staging，**未落位**）
+> **收口说明（2026-09-14 落位后）**：本节及其字节证据描述的是**落位前**的 staging A 形态（`c289b4df…`）；**落位件 = B**（jar `0c776934…`、`J/N.class` `1ff8d3ff…`、`GEN_JNI.class` `a6e7edcf…`，与 `t30/handoff/classes` 逐字节相同）。**A/B 二选一问题已关闭，本节保留为过程史。**
+
+对象：`/data/dsh/home/workspace/tmp/jn-fix/libwebrtc-java.jar`（webrtc-builder 的 staging，**未落位**；该文件**现已不在盘上** —— 落位后同内容件更名为 `candidate-A-DO-NOT-LAND-libwebrtc-java.jar` 后亦已删除，见 §13.21/§13.22）
 我实测：`sha256 c289b4dfd06827bc…`、**1 206 237 B**、**509 个 `.class`**、major 分布 **`{55:51, 61:458}`**（无 >61）——与其自述**完全一致** ✅
 
 | 判据 | 我的实测（staging） | 结论 |
@@ -1300,7 +1302,8 @@ GEN_JNI.class  = a6e7edcf9b90a4f7a15273de580bf7faf35ac7f818a4345c9618fd75fea40f0
 2. **`7dbe8400…` 的"可复算对象"表述须加限定**：该哈希的**文件在磁盘上已无保留**（我有界搜索 jar/aar 无命中）⇒ 任何"中间版与 live 等价"的结论**只能引用当时的逐成员对比，现不可复算**。
    **行号归属更正（实测）**：captain 指令里的 `:527/:717/:769` 三处属 **`reports/07-native-dev.md`**（非 `reports/05`）；`reports/05` 另有 **7 处** = `:506`、`:598`、`:776`、`:780`、`:784`、`:923`、`:995`。⇒ 加注需**两个文件都做**（本报告只登记、不代改）。
 3. **K-17 已在 §6 与本条前十节记为"已闭合"**（captain `chown -R 1000:1000` + 我复验：`find .git ! -user node` = 0、uid 1000 `git hash-object -w` 成功；副作用 blob `9daeafb9…` 不可达、`git gc` 回收）——与 captain 指令一致，无需再改。
-4. **A/B 分歧按 B 闭合、终态判据 `194/194`**（§13.18/§13.22(c)）；`FINAL.jar`/`FINAL2.jar` 的 `{55:2, 61:507}` 与手加桩 variant **仅作对照登记**，不进入落位件口径。
+4. **`reports/08-android-dev.md` 无需再加注（已自纠）**：其 `:1264-1305` 已自行更正"落位源 = `FINAL2.jar`"的推断（说明该推断源自已移除脚本的默认值），并写明"落位件 majors = `{55:51, 61:458}`、`FINAL2`/`FINAL` 属被弃变体"。我实测该文件**不再把 `FINAL2` 记为落位件** ⇒ native-dev 关于"`reports/08` 仍写错"的提醒**已过期**（我另测：部署件 51 个 major-55 = 45 个 `*Jni.class` + 6 个其它，其它名单与 native-dev 所列**完全一致**）。
+5. **A/B 分歧按 B 闭合、终态判据 `194/194`**（§13.18/§13.22(c)）；`FINAL.jar`/`FINAL2.jar` 的 `{55:2, 61:507}` 与手加桩 variant **仅作对照登记**，不进入落位件口径。
 
 ---
 
