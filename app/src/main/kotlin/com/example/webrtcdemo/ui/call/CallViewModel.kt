@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.webrtc.VideoTrack
+import java.util.concurrent.atomic.AtomicInteger
 
 // ============================================================================
 // 通话页 ViewModel（doc/14 §2.1 / §7.4；界面契约 doc/10 §3.2/§5.2）
@@ -76,7 +77,24 @@ class CallViewModel(application: Application) :
 
     private var session: CallSession? = null
 
-    private var started = false
+    // ===================== t53：会话槽位（每次通话必须全新会话） =====================
+    // 真机缺陷：反复进出房间后，joiner 在新 PeerConnection 就绪前就 answer_create/sent，
+    // 导致该端 up_bps 恒 0（详见 reports/23-session-lifecycle.md）。
+    // 根因之一就是"旧会话没有被彻底替换"：旧实现的 `if (started) return` 让重复 initCall
+    // 变成静默空操作，新房间会跑在上一次通话遗留的 CallSession/PeerConnection 上。
+
+    /**
+     * 当前通话槽位（纯 Kotlin 状态机，见 [CallSessionSlot]）。
+     *
+     * `beginCall()` 返回"上一代仍活跃"时必须先关闭旧会话，绝不复用其 PC/轨道/统计循环。
+     */
+    private val slot = CallSessionSlot()
+
+    /** 本次通话的进程内递增序号（`call_init` 起的所有关键事件都带 `seq`）。 */
+    private var callSeq = 0
+
+    /** 本次通话实际使用的 [CallSession.sessionId]（0 表示尚未建立）。 */
+    private var sessionId = 0
 
     private var sessionReady = false
 
@@ -143,16 +161,59 @@ class CallViewModel(application: Application) :
     }
 
     /**
-     * 初始化通话（导航到 CallScreen 时调用一次）。
+     * 初始化通话（导航到 CallScreen 时调用；**每次进入通话都必须调用**）。
+     *
+     * 【t53】与旧实现的关键区别：旧实现是 `if (started) return` —— 一旦同一 ViewModel 被复用
+     * （返回后再次进入、配置变更、Compose 重新进入组合），第二次 `initCall` 变成**静默空操作**，
+     * 新房间就"继承"了上一次通话的 `CallSession`/`PeerConnection`/轨道/编码器状态。
+     * 现在改为：每次调用都开启新一世代（[CallSessionSlot.beginCall]），
+     * 上一代仍活跃则**先彻底关闭**，然后一律新建 `CallSession` + 新建 `PeerConnection`。
      *
      * @param roomId 房间号。
      * @param role `host` / `joiner`。
      */
     fun initCall(roomId: String, role: String) {
-        if (started) return
-        started = true
+        // 【t53】幂等闸门：**同一次通话**的重复 initCall 必须保持空操作。
+        // `CallScreen` 用 `LaunchedEffect(Unit)` 调用本方法；Activity 因配置变更重建时组合会重建、
+        // 该方法会在**保留下来的同一个 ViewModel** 上再次执行 —— 若此处无条件重建会话，
+        // 会把正在进行的通话拆掉。只有"换了房间/角色"或"上一次通话已结束"才允许开新一代。
+        if (slot.decideInit(roomId, role, callEnded) == InitDecision.IGNORE) {
+            AppLog.i(
+                TAG,
+                "call_init_ignored",
+                mapOf(
+                    "reason" to "same_call",
+                    "room" to roomId,
+                    "role" to role,
+                    "seq" to callSeq.toString(),
+                    "session" to "s$sessionId",
+                    "pc_ready" to slot.peerReady.toString(),
+                ),
+            )
+            return
+        }
+        val staleActive = slot.beginCall(roomId, role)
+        callSeq = CALL_SEQ.incrementAndGet()
+        if (staleActive) {
+            AppLog.w(
+                TAG,
+                "call_reinit",
+                mapOf("seq" to callSeq.toString(), "room" to roomId, "role" to role),
+            )
+            // 旧会话必须被关闭：它可能仍在跑 stats 采样、仍持有 PeerConnection
+            releaseSession("reinit")
+        }
+        // 【t53】新一代通话必须把"上一次通话的遗留闸门/一次性标记"全部复位：
+        // 旧实现靠"每次新的 ViewModel 实例"来保证这些字段是干净的，一旦同一 VM 被复用，
+        // 残留的 `callEnded` 会让新一代通话**无法挂断**、残留的 `natTypeSent` 会让本端 NAT
+        // 不再上报、残留的 ICE 事件会串到新通话。
+        callEnded = false
+        natTypeSent = false
+        _iceEvents.value = emptyList()
         this.role = role
-        _uiState.update { it.copy(roomId = roomId, role = role, isConnecting = true) }
+        _uiState.update {
+            it.copy(roomId = roomId, role = role, isConnecting = true, error = null)
+        }
         val app = getApplication<Application>()
 
         SignalingIdentity.reset()
@@ -163,6 +224,8 @@ class CallViewModel(application: Application) :
         if (!WebRtcEngine.initialize(app)) {
             // t25：把**真实异常类名/message**带进用户可见文案（原先只有笼统一句，真机排障极难）。
             val detail = WebRtcEngine.lastFailureDetail()
+            // 【t53】初始化失败必须结束本世代，否则 `decideInit` 会把"同房间重试"判成重复调用而拒绝
+            slot.endCall()
             fail(
                 if (detail.isNullOrBlank()) {
                     "WebRTC 引擎初始化失败（native 库缺失或初始化异常）"
@@ -175,9 +238,11 @@ class CallViewModel(application: Application) :
         val factory = WebRtcEngine.factory()
         val capture = WebRtcEngine.mediaCapture()
         if (factory == null || capture == null) {
+            slot.endCall()
             fail("WebRTC 引擎组件缺失")
             return
         }
+        // 【t53】**无条件**新建会话：绝不复用 `session` 字段里的旧对象
         val callSession = CallSession(
             factory = factory,
             mediaCapture = capture,
@@ -186,21 +251,33 @@ class CallViewModel(application: Application) :
             listener = this,
         )
         session = callSession
+        sessionId = callSession.sessionId
         val ok = callSession.start(IceServerCache.get(), AppConfig.forceRelay(app))
         if (!ok) {
             // 【t44】start 失败后必须把 session 置空：否则 `session` 非空但 `peerConnection` 为空，
             // 后续 offer/answer 会走进"看起来有会话、实际静默丢弃"的路径（正是真机缺陷①的形态）。
-            session = null
-            callSession.close()
+            slot.endCall()
+            releaseSession("start_failed")
             fail("创建 PeerConnection 失败")
             return
         }
+        slot.markPeerReady()
         _localVideoTrack.value = callSession.currentVideoTrack()
         // 【t51】会话就绪 ⇒ 把此前排队等待的远端消息（offer/answer/候选）按到达顺序回放
         flushPendingRemoteQueue(callSession)
         // 若 NAT 探测在进入通话页之前就完成了（常见：host 在等待对端时探测完），这里补发一次
         maybeSendNatType()
-        AppLog.i(TAG, "call_init", mapOf("room" to roomId, "role" to role))
+        AppLog.i(
+            TAG,
+            "call_init",
+            mapOf(
+                "room" to roomId,
+                "role" to role,
+                "seq" to callSeq.toString(),
+                "session" to "s$sessionId",
+                "pc_ready" to slot.peerReady.toString(),
+            ),
+        )
     }
 
     // ============================ 用户操作 ============================
@@ -228,10 +305,11 @@ class CallViewModel(application: Application) :
     fun hangup() {
         if (callEnded) return
         callEnded = true
-        AppLog.i(TAG, "hangup")
+        AppLog.i(TAG, "hangup", mapOf("seq" to callSeq.toString(), "session" to "s$sessionId"))
         client?.leave()
-        session?.close()
-        session = null
+        // 【t53】会话释放纪律：旧 CallSession 必须 close()（PC/统计循环/看门狗一并停）
+        slot.endCall()
+        releaseSession("hangup")
         IceServerCache.clear()
         NatTypeRepository.cancel()
         SignalingHolder.release()
@@ -339,6 +417,7 @@ class CallViewModel(application: Application) :
                         "remote_deferred",
                         mapOf(
                             "kind" to "offer",
+                            "seq" to callSeq.toString(),
                             "queued" to queued.toString(),
                             "sdp_bytes" to message.sdp.length.toString(),
                         ),
@@ -360,6 +439,7 @@ class CallViewModel(application: Application) :
                         "remote_deferred",
                         mapOf(
                             "kind" to "answer",
+                            "seq" to callSeq.toString(),
                             "queued" to queued.toString(),
                             "sdp_bytes" to message.sdp.length.toString(),
                         ),
@@ -380,6 +460,7 @@ class CallViewModel(application: Application) :
                         "remote_deferred",
                         mapOf(
                             "kind" to "ice",
+                            "seq" to callSeq.toString(),
                             "queued" to queued.toString(),
                             "mid" to (message.sdpMid ?: "-"),
                         ),
@@ -464,12 +545,48 @@ class CallViewModel(application: Application) :
     }
 
     override fun onCleared() {
-        session?.close()
-        session = null
+        // 【t53】离开通话页（ViewModel 销毁）也必须关闭旧会话：不得留下仍在跑统计循环的 PC。
+        if (!callEnded) {
+            AppLog.i(
+                TAG,
+                "session_release",
+                mapOf("reason" to "on_cleared", "seq" to callSeq.toString(), "session" to "s$sessionId"),
+            )
+        }
+        slot.endCall()
+        releaseSession("on_cleared")
         super.onCleared()
     }
 
     // ============================ 内部实现 ============================
+
+    /**
+     * 释放当前 [CallSession]（t53）。
+     *
+     * 只负责"关会话 + 清本端/远端轨道状态"，**不改变** [slot] 的通话世代 ——
+     * 由调用方决定这是"新一代通话的前置清理"（[initCall]）还是"本次通话彻底结束"（[hangup]）。
+     *
+     * @param reason 释放原因，用于日志定因（`reinit`/`hangup`/`on_cleared`/`start_failed`）。
+     */
+    private fun releaseSession(reason: String) {
+        val old = session
+        session = null
+        sessionReady = false
+        peerJoined = false
+        peerWatchdogArmed = false
+        peerResponseSeen = false
+        // 【t53】上一代的轨道对象绝不可留给下一代使用（旧轨随旧 PC 一起失效）
+        _localVideoTrack.value = null
+        _remoteVideoTrack.value = null
+        if (old != null) {
+            AppLog.i(
+                TAG,
+                "session_teardown",
+                mapOf("reason" to reason, "session" to "s${old.sessionId}"),
+            )
+            old.close()
+        }
+    }
 
     /**
      * 上报本端 NAT 类型（doc/09 §3.7；§7.4「对端 NAT ← 信令 natType」）。
@@ -568,6 +685,8 @@ class CallViewModel(application: Application) :
                         "reason" to reason,
                         "waited_ms" to PEER_RESPONSE_TIMEOUT_MS.toString(),
                         "role" to role,
+                        "seq" to callSeq.toString(),
+                        "session" to "s$sessionId",
                     ),
                 )
                 onError(NO_PEER_RESPONSE_NOTICE)
@@ -628,5 +747,111 @@ class CallViewModel(application: Application) :
          * 以常量内联；后续若要 i18n 可迁移为字符串资源（已在报告中登记）。
          */
         const val NO_PEER_RESPONSE_NOTICE = "对端无响应：可能未加入或版本不一致（20 秒内未收到 answer/远端候选）"
+
+        /**
+         * 进程内递增通话序号（t53）。
+         *
+         * 为什么放在伴生对象：反复进出房间会创建多个 [CallViewModel] 实例，
+         * 只有进程级单调递增的 `seq` 才能把"第几次通话"在多份日志里串起来
+         * （`session` 来自 [CallSession.sessionId]，两者一起构成会话身份）。
+         */
+        private val CALL_SEQ = AtomicInteger(0)
+    }
+}
+
+// ============================================================================
+// 【t53】通话会话槽位（纯 Kotlin，无 Android 依赖，可 JVM 单测）
+// ----------------------------------------------------------------------------
+// 建模 CallViewModel 的"当前通话"槽位，把三条纪律变成可断言的不变量：
+//   1. 每次 initCall 都开启**新一代**通话（旧实现 `if (started) return` 会让新房间跑在旧会话上）；
+//   2. 新一代开始前，上一代若仍活跃，**必须被关闭**（`beginCall()` 返回 true 即调用方须 close）；
+//   3. 上一代的"PC 已就绪"标记**绝不**泄漏到新一代（`peerReady` 在换代时清零）——
+//      这正是"反复进出房间后复用旧 PeerConnection"的状态残留点。
+// 单测见 app/src/test/kotlin/com/example/webrtcdemo/ui/call/CallSessionSlotTest.kt。
+// ============================================================================
+
+/**
+ * `initCall` 的处置结果（t53）。
+ */
+enum class InitDecision {
+    /** 同一次通话的重复初始化：必须**空操作**（配置变更重建组合时会走到这里）。 */
+    IGNORE,
+
+    /** 新一代通话：必须新建 `CallSession`/`PeerConnection`，上一代活跃时先 `close()`。 */
+    NEW_CALL,
+}
+
+/**
+ * 通话会话槽位状态机（t53）。
+ */
+class CallSessionSlot {
+
+    /** 当前世代号（从 0 开始，每 [beginCall] 递增 1）。 */
+    var generation: Int = 0
+        private set
+
+    /** 当前世代是否已有活跃会话。 */
+    var hasActiveSession: Boolean = false
+        private set
+
+    /** 当前世代的会话是否已建立 PeerConnection（换代时必清零）。 */
+    var peerReady: Boolean = false
+        private set
+
+    /** 当前世代的房间号（无会话时为空串）。 */
+    var roomId: String = ""
+        private set
+
+    /** 当前世代的角色（无会话时为空串）。 */
+    var role: String = ""
+        private set
+
+    /**
+     * 判定一次 `initCall` 应当如何处理。
+     *
+     * @param roomId 本次要进入的房间。
+     * @param role 本次角色。
+     * @param callEnded 上一次通话是否已结束（挂断/终态失败）。
+     * @return [InitDecision.IGNORE] = 同一次通话的重复初始化；[InitDecision.NEW_CALL] = 开新一代。
+     */
+    fun decideInit(roomId: String, role: String, callEnded: Boolean): InitDecision =
+        if (hasActiveSession && !callEnded && this.roomId == roomId && this.role == role) {
+            InitDecision.IGNORE
+        } else {
+            InitDecision.NEW_CALL
+        }
+
+    /**
+     * 开始新一代通话。
+     *
+     * @return 上一代是否仍活跃；true ⇒ 调用方**必须**先关闭旧 `CallSession`（绝不复用）。
+     */
+    fun beginCall(roomId: String, role: String): Boolean {
+        val stale = hasActiveSession
+        generation += 1
+        hasActiveSession = true
+        peerReady = false
+        this.roomId = roomId
+        this.role = role
+        return stale
+    }
+
+    /** 标记当前世代的 PeerConnection 已建立；没有活跃会话时不生效（防止给已结束的通话打标记）。 */
+    fun markPeerReady() {
+        if (hasActiveSession) peerReady = true
+    }
+
+    /**
+     * 结束当前世代。
+     *
+     * @return true 表示本次真的从"活跃"变为"不活跃"（幂等：重复结束返回 false）。
+     */
+    fun endCall(): Boolean {
+        if (!hasActiveSession) return false
+        hasActiveSession = false
+        peerReady = false
+        roomId = ""
+        role = ""
+        return true
     }
 }

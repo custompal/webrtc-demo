@@ -24,6 +24,7 @@ import org.webrtc.VideoTrack
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 // ============================================================================
 // 1:1 会话编排（doc/14 §2.1 / §7.4 / §7.5；协议 doc/09 §5）
@@ -90,6 +91,15 @@ class CallSession(
         const val ICE_FAIL_MS = 30_000L
 
         private const val CODEC_VP9 = "VP9"
+
+        /**
+         * 全局递增会话号（t53）。
+         *
+         * 为什么必须**进程内全局**递增：反复进出房间会在同一进程里创建多个 [CallSession]，
+         * 只有单调递增的编号才能在多份日志交织时一眼判断"这条事件属于哪一次会话"。
+         * `session` 字段与 [CallViewModel] 侧的 `seq` 一起构成会话身份，见 reports/23-session-lifecycle.md。
+         */
+        private val SESSION_SEQ = AtomicInteger(0)
     }
 
     private var peerConnection: PeerConnection? = null
@@ -106,6 +116,52 @@ class CallSession(
 
     @Volatile
     private var closed = false
+
+    // ======================= t53：会话标识与就绪闸门 =======================
+
+    /**
+     * 本会话的递增编号（形如 `s1`/`s2`）。
+     *
+     * 多会话交织定因用：`session` 字段会出现在 `pc_starting`/`pc_created`/`pc_local_tracks`/
+     * `offer_create`/`answer_create`/`ice_candidate_local`/`pc_closed` 等关键事件上。
+     */
+    val sessionId: Int = SESSION_SEQ.incrementAndGet()
+
+    /**
+     * 会话内事件序号。
+     *
+     * 日志是异步落盘的（真机日志里同毫秒的两行确实出现过乱序），单看时间戳无法判定
+     * `pc_created` 是否真的早于 `answer_create`；单调递增的 `evt` 可以。
+     * 只保证单调递增（等级被过滤时会有跳跃）。
+     */
+    private val eventSeq = AtomicInteger(0)
+
+    /** 会话生命周期状态机：[SessionLifecycle]（禁止 PC 复用 + offer/answer 就绪闸门）。 */
+    private val lifecycle = SessionLifecycle()
+
+    /**
+     * 就绪闸门锁。
+     *
+     * 必须让「判定不可用 ⇒ 入队」与「发布 PeerConnection ⇒ 排空暂存区」互斥，否则存在 TOCTOU：
+     * 信令线程判定"未就绪"之后、写入暂存区之前，主线程可能已经排空暂存区 ⇒ 该消息永远不会被回放。
+     */
+    private val readyLock = Any()
+
+    /**
+     * [start] 是否正在执行。
+     *
+     * 用途：区分两种暂存 —— ① `start()` 执行中的暂存**必定**会被回放（无需打扰用户）；
+     * ② 没有 `start()` 在跑却仍不可用时是真的卡住（必须给用户提示）。
+     */
+    @Volatile
+    private var startInFlight = false
+
+    /** 给既有事件字段追加 `session` + `evt`（t53，**只新增字段、不改事件名**）。 */
+    private fun Map<String, String>.withKey(): Map<String, String> =
+        this + mapOf("session" to "s$sessionId", "evt" to eventSeq.incrementAndGet().toString())
+
+    /** 仅带 `session` + `evt` 的关键事件字段（t53）。 */
+    private fun keyOnly(): Map<String, String> = emptyMap<String, String>().withKey()
 
     // ======================= t44 诊断与竞态兜底状态 =======================
 
@@ -156,63 +212,126 @@ class CallSession(
      */
     fun start(ice: IceServerConfig?, forceRelay: Boolean): Boolean {
         if (closed) return false
-        if (peerConnection != null) return true
-        // 【t44】把"本次到底用了什么 ICE 配置"与"是否强制中继"显式落盘：
-        // 真机复测时这一行即可判定"没配 TURN"还是"配了但连不上"（原 `rtc_config` 在 INFO，
-        // 被日志过滤 Bug 吞掉，导致上一轮完全看不到）。
-        val iceSummary = buildString {
-            if (ice?.stunUrl?.isNotBlank() == true) append("stun")
-            if (ice?.turnUrl?.isNotBlank() == true) {
-                if (isNotEmpty()) append('+')
-                append("turn")
-            }
-            if (isEmpty()) append("-")
-        }
-        AppLog.i(
-            TAG,
-            "pc_starting",
-            mapOf("ice_servers" to iceSummary, "force_relay" to forceRelay.toString()),
-        )
-        val config = WebRtcConfig.build(ice, forceRelay)
-        val observer = PeerConnectionObserverImpl(events)
-        val connection = factory.createPeerConnection(config, observer)
-        if (connection == null) {
-            AppLog.e(TAG, "pc_create_failed")
-            listener.onError("创建 PeerConnection 失败")
+        // 【t53】一次 CallSession 只能建立一个 PeerConnection：重复 start 必须**拒绝**，
+        // 而不是像旧实现那样静默 `return true` —— 那会让上层以为"新会话已就绪"，
+        // 实际把上一次通话遗留的 PC/轨道/编码器状态继续用下去（真机单向 0 上行的直接来源）。
+        if (!lifecycle.beginStart()) {
+            AppLog.e(
+                TAG,
+                "pc_start_rejected",
+                mapOf("reason" to "already_started", "phase" to lifecycle.phase.name).withKey(),
+            )
+            listener.onError("会话已建立，拒绝重复创建 PeerConnection")
             return false
         }
-        peerConnection = connection
+        startInFlight = true
+        try {
+            // 【t44】把"本次到底用了什么 ICE 配置"与"是否强制中继"显式落盘：
+            // 真机复测时这一行即可判定"没配 TURN"还是"配了但连不上"（原 `rtc_config` 在 INFO，
+            // 被日志过滤 Bug 吞掉，导致上一轮完全看不到）。
+            val iceSummary = buildString {
+                if (ice?.stunUrl?.isNotBlank() == true) append("stun")
+                if (ice?.turnUrl?.isNotBlank() == true) {
+                    if (isNotEmpty()) append('+')
+                    append("turn")
+                }
+                if (isEmpty()) append("-")
+            }
+            AppLog.i(
+                TAG,
+                "pc_starting",
+                mapOf("ice_servers" to iceSummary, "force_relay" to forceRelay.toString()).withKey(),
+            )
+            val config = WebRtcConfig.build(ice, forceRelay)
+            val observer = PeerConnectionObserverImpl(events)
+            val connection = factory.createPeerConnection(config, observer)
+            if (connection == null) {
+                AppLog.e(TAG, "pc_create_failed", keyOnly())
+                listener.onError("创建 PeerConnection 失败")
+                return false
+            }
 
-        val localVideo = mediaCapture.ensureStarted()
-        videoTrack = localVideo
-        if (localVideo != null) {
-            connection.addTrack(localVideo, listOf(WebRtcConfig.STREAM_ID))
-        } else {
-            AppLog.w(TAG, "video_track_missing")
+            // 【t53】★顺序即是修复本身★：先挂本地音视频轨，**最后**才发布 `peerConnection`。
+            //
+            // 旧实现先 `peerConnection = connection`，再 `mediaCapture.ensureStarted()`
+            // （真机 `pc_starting`→`capture_started` 实测 90–190 ms），于是信令线程可以在这段
+            // 窗口里拿"还没有本地视频轨"的 PC 直接 setRemoteDescription→createAnswer：
+            // 真机 room U9FQHG 的 `answer_create`(17:37:06.929, 信令线程) 就是这样比
+            // `pc_created`(17:37:07.031, 主线程) 早 102 ms，生成出的 answer 没有视频发送方向
+            // ⇒ 该端 up_bps 恒 0、impl 恒空，且对端 down_bps 恒 0（单向无画面）。
+            val localVideo = mediaCapture.ensureStarted()
+            videoTrack = localVideo
+            if (localVideo != null) {
+                connection.addTrack(localVideo, listOf(WebRtcConfig.STREAM_ID))
+            } else {
+                AppLog.w(TAG, "video_track_missing", keyOnly())
+            }
+            audioTrack?.let { connection.addTrack(it, listOf(WebRtcConfig.STREAM_ID)) }
+            // 本地轨就绪的**可证伪**证据：answer_create 之前必定出现本行且 video=true
+            AppLog.i(
+                TAG,
+                "pc_local_tracks",
+                mapOf(
+                    "video" to (localVideo != null).toString(),
+                    "audio" to (audioTrack != null).toString(),
+                ).withKey(),
+            )
+
+            // VP9 置于首位并移除其它视频编码（§7.5：不改 SDP 文本）
+            applyCodecPreferences(connection)
+
+            statsMapper.reset()
+
+            // 【t53】发布点：在同一把锁内"发布 PC + 置就绪"，与闸门判定/入队互斥（见 [readyLock]）。
+            var published = false
+            synchronized(readyLock) {
+                if (!closed) {
+                    peerConnection = connection
+                    lifecycle.markReady()
+                    published = true
+                }
+            }
+            if (!published) {
+                // start() 期间被 close()（用户挂断 / 离开通话页）：刚建的 PC 必须立即销毁，绝不泄漏
+                AppLog.w(TAG, "pc_start_aborted", mapOf("reason" to "closed_during_start").withKey())
+                safeRelease(connection)
+                return false
+            }
+
+            startStatsLoop(connection)
+            if (closed) {
+                // 发布之后、对外宣布就绪之前被 close()（用户在 start() 期间挂断）：
+                // 不再广播 `pc_created`/`onReady`，避免上层对已关闭会话继续发起协商。
+                AppLog.w(TAG, "pc_start_aborted", mapOf("reason" to "closed_after_publish").withKey())
+                return false
+            }
+            AppLog.i(TAG, "pc_created", mapOf("phase" to lifecycle.phase.name).withKey())
+            // 【t44】把 PeerConnection 就绪前暂存的远端 offer/answer/ICE 回放进来（消除信令竞态）
+            flushPendingRemote()
+            listener.onReady()
+            return true
+        } finally {
+            startInFlight = false
         }
-        audioTrack?.let { connection.addTrack(it, listOf(WebRtcConfig.STREAM_ID)) }
-
-        // VP9 置于首位并移除其它视频编码（§7.5：不改 SDP 文本）
-        applyCodecPreferences(connection)
-
-        statsMapper.reset()
-        startStatsLoop(connection)
-        AppLog.i(TAG, "pc_created")
-        // 【t44】把 PeerConnection 就绪前暂存的远端 offer/answer/ICE 回放进来（消除信令竞态）
-        flushPendingRemote()
-        listener.onReady()
-        return true
     }
 
     /**
      * 作为 host 创建 offer（收到 `peerJoined` 后调用，doc/09 §3.3）。
      */
     fun createOffer() {
-        val connection = peerConnection ?: run {
+        // 【t53】只有"就绪"（PC 已发布 + 本地轨已挂载 + 编码器偏好已设）才允许发起协商。
+        // 未就绪就发 offer，等于把"尚未挂本地轨"的会话推给对端，形态与 joiner 侧缺陷对称。
+        val connection = peerConnection
+        if (connection == null || !lifecycle.isReady) {
+            AppLog.e(
+                TAG,
+                "offer_create_rejected",
+                mapOf("reason" to "pc_not_ready", "phase" to lifecycle.phase.name).withKey(),
+            )
             listener.onError("PeerConnection 未就绪")
             return
         }
-        AppLog.i(TAG, "offer_create")
+        AppLog.i(TAG, "offer_create", keyOnly())
         connection.createOffer(
             object : SdpObserver {
                 override fun onCreateSuccess(sdp: SessionDescription) {
@@ -223,22 +342,22 @@ class CallSession(
                         mapOf(
                             "sdp_bytes" to sdp.description.length.toString(),
                             "candidates" to IceCandidateInfo.summarizeSdpCandidates(sdp.description),
-                        ),
+                        ).withKey(),
                     )
                     connection.setLocalDescription(localSetObserver, sdp)
                     signaling.sendOffer(sdp.description)
-                    AppLog.i(TAG, "offer_sent")
+                    AppLog.i(TAG, "offer_sent", keyOnly())
                 }
 
                 override fun onSetSuccess() = Unit
 
                 override fun onCreateFailure(error: String) {
-                    AppLog.e(TAG, "offer_create_failed", mapOf("reason" to error))
+                    AppLog.e(TAG, "offer_create_failed", mapOf("reason" to error).withKey())
                     listener.onError("创建 Offer 失败: $error")
                 }
 
                 override fun onSetFailure(error: String) {
-                    AppLog.e(TAG, "offer_set_failed", mapOf("reason" to error))
+                    AppLog.e(TAG, "offer_set_failed", mapOf("reason" to error).withKey())
                     listener.onError("设置 Offer 失败: $error")
                 }
             },
@@ -254,20 +373,30 @@ class CallSession(
     fun onRemoteOffer(sdp: String) {
         // 【t44】先记录"确实收到了 offer"，再做就绪判断 —— 原实现把日志放在 early-return 之后，
         // 一旦 PC 未就绪就**完全没有痕迹**（真机缺陷①无法定因的直接原因之一）。
-        AppLog.i(TAG, "offer_received", mapOf("sdp_bytes" to sdp.length.toString()))
-        val connection = peerConnection
+        AppLog.i(TAG, "offer_received", mapOf("sdp_bytes" to sdp.length.toString()).withKey())
+        // 【t53】闸门：PC **未发布**或**本地轨未挂载**时一律先暂存，绝不在这种 PC 上 createAnswer。
+        val result = gate { pendingRemoteOffer = sdp }
+        val connection = result.connection
         if (connection == null) {
-            if (closed) {
-                AppLog.e(TAG, "offer_dropped", mapOf("reason" to "session_closed"))
+            val reason = result.deferReason
+            if (reason == null) {
+                AppLog.e(TAG, "offer_dropped", mapOf("reason" to "session_closed").withKey())
                 listener.onError("会话已关闭，收到 Offer 无法处理（未回 answer）")
             } else {
-                pendingRemoteOffer = sdp
                 AppLog.w(
                     TAG,
                     "offer_deferred",
-                    mapOf("reason" to "pc_not_ready", "sdp_bytes" to sdp.length.toString()),
+                    mapOf(
+                        "reason" to reason,
+                        "start_in_flight" to result.startInFlight.toString(),
+                        "sdp_bytes" to sdp.length.toString(),
+                    ).withKey(),
                 )
-                listener.onError("会话尚未就绪，Offer 已暂存（就绪后会回 answer）")
+                // `start()` 执行中的暂存**必定**会被回放（见 start() 的发布点），不打扰用户；
+                // 只有在没有 start() 在跑却仍不可用时（真的卡住）才提示。
+                if (!result.startInFlight) {
+                    listener.onError("会话尚未就绪，Offer 已暂存（就绪后会回 answer）")
+                }
             }
             return
         }
@@ -278,7 +407,7 @@ class CallSession(
                 override fun onSetSuccess() {
                     remoteDescriptionSet = true
                     startConnectivityWatchdog(connection)
-                    AppLog.i(TAG, "answer_create")
+                    AppLog.i(TAG, "answer_create", keyOnly())
                     connection.createAnswer(
                         object : SdpObserver {
                             override fun onCreateSuccess(description: SessionDescription) {
@@ -288,22 +417,22 @@ class CallSession(
                                     mapOf(
                                         "sdp_bytes" to description.description.length.toString(),
                                         "candidates" to IceCandidateInfo.summarizeSdpCandidates(description.description),
-                                    ),
+                                    ).withKey(),
                                 )
                                 connection.setLocalDescription(localSetObserver, description)
                                 signaling.sendAnswer(description.description)
-                                AppLog.i(TAG, "answer_sent")
+                                AppLog.i(TAG, "answer_sent", keyOnly())
                             }
 
                             override fun onSetSuccess() = Unit
 
                             override fun onCreateFailure(error: String) {
-                                AppLog.e(TAG, "answer_create_failed", mapOf("reason" to error))
+                                AppLog.e(TAG, "answer_create_failed", mapOf("reason" to error).withKey())
                                 listener.onError("创建 Answer 失败: $error")
                             }
 
                             override fun onSetFailure(error: String) {
-                                AppLog.e(TAG, "answer_set_failed", mapOf("reason" to error))
+                                AppLog.e(TAG, "answer_set_failed", mapOf("reason" to error).withKey())
                                 listener.onError("设置 Answer 失败: $error")
                             }
                         },
@@ -314,7 +443,7 @@ class CallSession(
                 override fun onCreateFailure(error: String) = Unit
 
                 override fun onSetFailure(error: String) {
-                    AppLog.e(TAG, "remote_offer_set_failed", mapOf("reason" to error))
+                    AppLog.e(TAG, "remote_offer_set_failed", mapOf("reason" to error).withKey())
                     listener.onError("设置远端 Offer 失败: $error")
                 }
             },
@@ -334,17 +463,25 @@ class CallSession(
             mapOf(
                 "sdp_bytes" to sdp.length.toString(),
                 "candidates" to IceCandidateInfo.summarizeSdpCandidates(sdp),
-            ),
+            ).withKey(),
         )
-        val connection = peerConnection
+        // 【t53】与 offer 同一把闸门：未就绪（PC 未发布 / 本地轨未挂载）时一律先暂存。
+        val result = gate { pendingRemoteAnswer = sdp }
+        val connection = result.connection
         if (connection == null) {
-            if (closed) {
-                AppLog.e(TAG, "answer_dropped", mapOf("reason" to "session_closed"))
+            val reason = result.deferReason
+            if (reason == null) {
+                AppLog.e(TAG, "answer_dropped", mapOf("reason" to "session_closed").withKey())
                 listener.onError("会话已关闭，收到 Answer 无法处理")
             } else {
-                pendingRemoteAnswer = sdp
-                AppLog.w(TAG, "answer_deferred", mapOf("reason" to "pc_not_ready"))
-                listener.onError("会话尚未就绪，Answer 已暂存（就绪后自动应用）")
+                AppLog.w(
+                    TAG,
+                    "answer_deferred",
+                    mapOf("reason" to reason, "start_in_flight" to result.startInFlight.toString()).withKey(),
+                )
+                if (!result.startInFlight) {
+                    listener.onError("会话尚未就绪，Answer 已暂存（就绪后自动应用）")
+                }
             }
             return
         }
@@ -367,29 +504,42 @@ class CallSession(
         val mid = sdpMid ?: ""
         // §8.2：sdpMid 与 sdpMLineIndex 至少一个有效
         if (mid.isEmpty() && sdpMLineIndex == null) {
-            AppLog.w(TAG, "ice_dropped", mapOf("reason" to "no_mid_and_no_index"))
+            AppLog.w(TAG, "ice_dropped", mapOf("reason" to "no_mid_and_no_index").withKey())
             return
         }
         // 【t44】对端候选的类型/地址/端口必须落盘：这是判断"对端把什么候选送到了本端"的唯一证据
         val info = IceCandidateInfo.parse(candidate)
         candidateCounter.addRemote(info)
-        val connection = peerConnection
-        if (connection == null) {
-            if (closed) {
-                AppLog.w(TAG, "ice_dropped", mapOf("reason" to "session_closed", "remote" to info.summary()))
-                return
-            }
+        // 【t53】候选同样走闸门：PC 未发布时暂存（并在同一把锁内记录队列长度）。
+        var queued = 0
+        val result = gate {
             synchronized(pendingRemoteCandidates) {
                 pendingRemoteCandidates.add(RemoteCandidate(candidate, sdpMid, sdpMLineIndex))
+                queued = pendingRemoteCandidates.size
             }
-            AppLog.w(
-                TAG,
-                "ice_deferred",
-                mapOf("remote" to info.summary(), "queued" to pendingRemoteCandidates.size.toString()),
-            )
+        }
+        val connection = result.connection
+        if (connection == null) {
+            if (result.deferReason == null) {
+                AppLog.w(
+                    TAG,
+                    "ice_dropped",
+                    mapOf("reason" to "session_closed", "remote" to info.summary()).withKey(),
+                )
+            } else {
+                AppLog.w(
+                    TAG,
+                    "ice_deferred",
+                    mapOf(
+                        "remote" to info.summary(),
+                        "queued" to queued.toString(),
+                        "start_in_flight" to result.startInFlight.toString(),
+                    ).withKey(),
+                )
+            }
             return
         }
-        AppLog.i(TAG, "ice_candidate_remote", mapOf("remote" to info.summary()))
+        AppLog.i(TAG, "ice_candidate_remote", mapOf("remote" to info.summary()).withKey())
         connection.addIceCandidate(IceCandidate(mid, sdpMLineIndex ?: 0, candidate))
     }
 
@@ -406,31 +556,127 @@ class CallSession(
         AppLog.i(TAG, "video_toggle", mapOf("enabled" to enabled.toString()))
     }
 
-    /** 关闭会话（`hangup` 调用；不销毁 EglBase/工厂，§7.1）。 */
+    /**
+     * 关闭会话（`hangup`/离开通话页调用；不销毁 EglBase/工厂，§7.1）。
+     *
+     * 【t53】会话释放纪律：
+     *  1. 在闸门锁内一次性"摘除"PC/统计循环/看门狗并置 [SessionLifecycle] 为 CLOSED ——
+     *     与 [start] 的发布点互斥，避免 start() 与 close() 并发时留下仍在运行的采样线程；
+     *  2. 关闭后任何远端消息一律 [SessionGate.DROP]（不暂存、不回放），不残留"半死会话"；
+     *  3. 清空暂存区，防止旧会话的 offer/answer/候选被新会话误用。
+     */
     fun close() {
-        if (closed) return
-        closed = true
-        statsTimer?.shutdownNow()
-        statsTimer = null
-        connectivityWatchdog?.shutdownNow()
-        connectivityWatchdog = null
-        val connection = peerConnection
-        peerConnection = null
-        videoTrack = null
-        try {
-            connection?.close()
-        } catch (t: Throwable) {
-            AppLog.w(TAG, "pc_close_failed", mapOf("reason" to (t.message ?: "-")))
+        val teardown = synchronized(readyLock) {
+            if (closed) return
+            closed = true
+            lifecycle.markClosed()
+            val pending = Teardown(statsTimer, connectivityWatchdog, peerConnection)
+            statsTimer = null
+            connectivityWatchdog = null
+            peerConnection = null
+            videoTrack = null
+            remoteVideoTrack = null
+            pendingRemoteOffer = null
+            pendingRemoteAnswer = null
+            synchronized(pendingRemoteCandidates) { pendingRemoteCandidates.clear() }
+            pending
         }
-        try {
-            connection?.dispose()
+        teardown.stats?.shutdownNow()
+        teardown.watchdog?.shutdownNow()
+        val connection = teardown.connection
+        // 关前先读出信令状态：这是"旧会话确实被拆掉"的可核对证据（配合 `pc_closed`）
+        val stateBefore = try {
+            connection?.signalingState()?.name ?: "-"
         } catch (t: Throwable) {
-            AppLog.w(TAG, "pc_dispose_failed", mapOf("reason" to (t.message ?: "-")))
+            "unknown"
         }
-        AppLog.i(TAG, "pc_closed")
+        if (connection != null) {
+            safeRelease(connection)
+        }
+        AppLog.i(
+            TAG,
+            "pc_closed",
+            mapOf(
+                "signaling_before" to stateBefore,
+                "stats_loop" to "stopped",
+                "watchdog" to "stopped",
+                "phase" to lifecycle.phase.name,
+            ).withKey(),
+        )
     }
 
     // ============================ 内部实现 ============================
+
+    // ======================= t53：闸门与资源释放 =======================
+
+    /**
+     * 待释放资源。
+     *
+     * 在闸门锁内一次性摘除，锁外再真正关闭：关闭 libwebrtc 对象可能阻塞，
+     * 不宜在持锁期间做，否则会把信令线程卡在闸门上。
+     */
+    private class Teardown(
+        val stats: ScheduledExecutorService?,
+        val watchdog: ScheduledExecutorService?,
+        val connection: PeerConnection?,
+    )
+
+    /**
+     * 闸门判定结果。
+     *
+     * @param connection 可立即使用的 PeerConnection；null 表示本次没有立即处理。
+     * @param deferReason 非 null 表示"已暂存"，值为 `pc_not_ready`（就绪后会回放）。
+     * @param startInFlight 暂存时 [start] 是否正在执行（执行中 ⇒ 必定会被回放，无需打扰用户）。
+     */
+    private class GateResult(
+        val connection: PeerConnection?,
+        val deferReason: String?,
+        val startInFlight: Boolean,
+    )
+
+    /**
+     * 远端消息闸门：判定"能否立即处理"，不能则在**同一把锁内**暂存。
+     *
+     * 这是 t53 的核心不变量：`pc_created`（发布点）之前到达的 offer/answer/候选**一律暂存**，
+     * 从而保证 `answer_create` 永远发生在"本地视频轨已挂载的 PC"上。
+     *
+     * @param store 判定为不可立即处理时的暂存动作（在锁内执行）。
+     */
+    private fun gate(store: () -> Unit): GateResult = synchronized(readyLock) {
+        when (lifecycle.admit()) {
+            SessionGate.PROCEED -> {
+                val connection = peerConnection
+                if (connection != null) {
+                    GateResult(connection, null, false)
+                } else {
+                    // 不变量被破坏（READY 却没有 PC）时的保守兜底：暂存而非崩溃
+                    store()
+                    GateResult(null, "pc_not_ready", startInFlight)
+                }
+            }
+
+            SessionGate.DROP -> GateResult(null, null, false)
+
+            SessionGate.DEFER -> {
+                store()
+                GateResult(null, "pc_not_ready", startInFlight)
+            }
+        }
+    }
+
+    /** 关闭并释放 PeerConnection（含异常兜底，绝不抛出）。 */
+    private fun safeRelease(connection: PeerConnection) {
+        try {
+            connection.close()
+        } catch (t: Throwable) {
+            AppLog.w(TAG, "pc_close_failed", mapOf("reason" to (t.message ?: "-")).withKey())
+        }
+        try {
+            connection.dispose()
+        } catch (t: Throwable) {
+            AppLog.w(TAG, "pc_dispose_failed", mapOf("reason" to (t.message ?: "-")).withKey())
+        }
+    }
 
     private val localSetObserver = object : SdpObserver {
         override fun onCreateSuccess(sdp: SessionDescription) = Unit
@@ -474,7 +720,7 @@ class CallSession(
                     "local" to info.summary(),
                     "mid" to (candidate.sdpMid ?: "-"),
                     "idx" to candidate.sdpMLineIndex.toString(),
-                ),
+                ).withKey(),
             )
             signaling.sendIce(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex)
             emitEvent(IceEventType.CANDIDATE, "mid=${candidate.sdpMid} idx=${candidate.sdpMLineIndex} ${info.summary()}")
@@ -584,25 +830,32 @@ class CallSession(
      * [Listener.onError] 报出可诊断错误。
      */
     private fun flushPendingRemote() {
-        val offer = pendingRemoteOffer
-        val answer = pendingRemoteAnswer
-        val candidates = synchronized(pendingRemoteCandidates) {
-            val copy = ArrayList(pendingRemoteCandidates)
-            pendingRemoteCandidates.clear()
-            copy
+        // 【t53】必须在闸门锁内"读取 + 清空"暂存区：与 gate{} 的"判定 + 入队"互斥，
+        // 否则信令线程可能在排空之后才写入（TOCTOU），该消息永远不会被回放。
+        var offer: String? = null
+        var answer: String? = null
+        var candidates: List<RemoteCandidate> = emptyList()
+        synchronized(readyLock) {
+            offer = pendingRemoteOffer
+            answer = pendingRemoteAnswer
+            candidates = synchronized(pendingRemoteCandidates) {
+                val copy = ArrayList(pendingRemoteCandidates)
+                pendingRemoteCandidates.clear()
+                copy
+            }
+            pendingRemoteOffer = null
+            pendingRemoteAnswer = null
         }
         if (offer != null) {
-            pendingRemoteOffer = null
-            AppLog.i(TAG, "offer_replayed", mapOf("sdp_bytes" to offer.length.toString()))
+            AppLog.i(TAG, "offer_replayed", mapOf("sdp_bytes" to offer.length.toString()).withKey())
             onRemoteOffer(offer)
         }
         if (answer != null) {
-            pendingRemoteAnswer = null
-            AppLog.i(TAG, "answer_replayed", mapOf("sdp_bytes" to answer.length.toString()))
+            AppLog.i(TAG, "answer_replayed", mapOf("sdp_bytes" to answer.length.toString()).withKey())
             onRemoteAnswer(answer)
         }
         if (candidates.isNotEmpty()) {
-            AppLog.i(TAG, "ice_replayed", mapOf("count" to candidates.size.toString()))
+            AppLog.i(TAG, "ice_replayed", mapOf("count" to candidates.size.toString()).withKey())
             for (candidate in candidates) {
                 onRemoteIceCandidate(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex)
             }
@@ -614,7 +867,7 @@ class CallSession(
                 "offer" to (offer != null).toString(),
                 "answer" to (answer != null).toString(),
                 "candidates" to candidates.size.toString(),
-            ),
+            ).withKey(),
         )
     }
 
@@ -630,9 +883,16 @@ class CallSession(
         val timer = Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "ice-watchdog").apply { isDaemon = true }
         }
-        connectivityWatchdog = timer
-        connectivityWatchdogStartMs = System.currentTimeMillis()
-        AppLog.i(TAG, "ice_watchdog_started", mapOf("timeout_ms" to ICE_WARN_MS.toString()))
+        // 【t53】同上：注册与 close() 互斥
+        synchronized(readyLock) {
+            if (closed || connectivityWatchdog != null) {
+                timer.shutdownNow()
+                return
+            }
+            connectivityWatchdog = timer
+            connectivityWatchdogStartMs = System.currentTimeMillis()
+        }
+        AppLog.i(TAG, "ice_watchdog_started", mapOf("timeout_ms" to ICE_WARN_MS.toString()).withKey())
         timer.schedule({ checkConnectivity(connection, ICE_WARN_MS) }, ICE_WARN_MS, TimeUnit.MILLISECONDS)
         timer.schedule({ checkConnectivity(connection, ICE_FAIL_MS) }, ICE_FAIL_MS, TimeUnit.MILLISECONDS)
     }
@@ -696,7 +956,15 @@ class CallSession(
         val timer = Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "stats-sampler").apply { isDaemon = true }
         }
-        statsTimer = timer
+        // 【t53】注册与 close() 互斥：hangup 可能由信令线程触发，与主线程的 start() 并发；
+        // 若已关闭就绝不注册，否则会留下一条永不停歇的采样线程（旧会话残留）。
+        synchronized(readyLock) {
+            if (closed) {
+                timer.shutdownNow()
+                return
+            }
+            statsTimer = timer
+        }
         timer.scheduleWithFixedDelay(
             Runnable {
                 if (closed) return@Runnable
@@ -742,4 +1010,109 @@ class CallSession(
         mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
         mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
     }
+}
+
+// ============================================================================
+// 【t53】会话生命周期状态机（纯 Kotlin，无 Android / org.webrtc 依赖）
+// ----------------------------------------------------------------------------
+// 为什么要单独抽出来：
+//   1. 真机缺陷（单向 0 上行）的根因是**时序**，必须能被纯 JVM 单测直接钉死；
+//   2. `CallSession` 依赖 Android 与 org.webrtc，无法在 JVM 单测里实例化；
+//   3. 把"一次会话只建一个 PeerConnection""未就绪的消息必须暂存"
+//      从散落的 `if` 升级为**可断言的不变量**。
+// 单测见 app/src/test/kotlin/com/example/webrtcdemo/webrtc/SessionLifecycleTest.kt。
+// ============================================================================
+
+/** 会话阶段（t53）。 */
+enum class SessionPhase {
+    /** 尚未开始建立 PeerConnection。 */
+    NEW,
+
+    /** `start()` 执行中：PC 已创建，但**本地音视频轨尚未挂载** —— 绝不可在此阶段应答 offer。 */
+    STARTING,
+
+    /** PC 已发布且本地轨已挂载（`pc_created` 之后）：可处理 offer/answer/候选。 */
+    READY,
+
+    /** 已关闭：任何远端消息一律丢弃。 */
+    CLOSED,
+}
+
+/** 远端消息的闸门判定结果（t53）。 */
+enum class SessionGate {
+    /** 立即可处理（PC 已发布、本地轨已挂载）。 */
+    PROCEED,
+
+    /** 尚不可处理：必须暂存，待就绪后回放。 */
+    DEFER,
+
+    /** 会话已关闭：丢弃（不暂存、不回放）。 */
+    DROP,
+}
+
+/**
+ * 会话生命周期状态机（t53）。
+ *
+ * 不变量（每条都有对应单测）：
+ *  1. [beginStart] 只成功一次 —— 同一次会话**绝不**复用已有的 PeerConnection；
+ *  2. [markReady] 之前 [admit] 一律 [SessionGate.DEFER]，从而保证
+ *     `pc_created`（发布点）早于 `answer_create`；
+ *  3. [markReady] 之后 [admit] 为 [SessionGate.PROCEED]；[markClosed] 之后一律 [SessionGate.DROP]；
+ *  4. [markClosed] 之后的 [markReady] 不复活（`start()` 期间被挂断的场景）。
+ */
+class SessionLifecycle {
+
+    /** 当前阶段。 */
+    var phase: SessionPhase = SessionPhase.NEW
+        private set
+
+    /** 本会话是否已经建立过 PeerConnection（用于拒绝重复 `start()`）。 */
+    var peerConnectionCreated: Boolean = false
+        private set
+
+    /**
+     * 开始建立 PeerConnection。
+     *
+     * @return true 表示可以开始建；false 表示**已经建过**或**已关闭**，
+     *         调用方必须放弃（绝不复用旧 PC —— 真机单向 0 上行正是"跨会话复用"的形态）。
+     */
+    fun beginStart(): Boolean {
+        if (phase == SessionPhase.CLOSED || peerConnectionCreated) return false
+        peerConnectionCreated = true
+        phase = SessionPhase.STARTING
+        return true
+    }
+
+    /**
+     * 本地音视频轨已挂载、PC 已发布 ⇒ 进入就绪。
+     *
+     * @return true 表示确实转为就绪；false 表示当前阶段不允许（已关闭 / 未开始）。
+     */
+    fun markReady(): Boolean {
+        if (phase != SessionPhase.STARTING) return false
+        phase = SessionPhase.READY
+        return true
+    }
+
+    /**
+     * 关闭会话（幂等）。
+     *
+     * @return true 表示本次真的执行了关闭。
+     */
+    fun markClosed(): Boolean {
+        if (phase == SessionPhase.CLOSED) return false
+        phase = SessionPhase.CLOSED
+        return true
+    }
+
+    /** 远端 offer/answer/候选的闸门判定。 */
+    fun admit(): SessionGate = when (phase) {
+        SessionPhase.READY -> SessionGate.PROCEED
+        SessionPhase.CLOSED -> SessionGate.DROP
+        SessionPhase.NEW, SessionPhase.STARTING -> SessionGate.DEFER
+    }
+
+    /** 是否已就绪（= `pc_created` 已落盘、可安全应答）。 */
+    val isReady: Boolean
+        get() = phase == SessionPhase.READY
 }
