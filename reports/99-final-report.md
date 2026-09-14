@@ -1853,6 +1853,21 @@ libjingle 757cef81… 12 946 912 B / libc++_shared c9dbf4ec… 1 356 968 B / lib
 - **对 t34 结论的影响**：**锚点交付件未变** —— `app/build/outputs/apk/debug/app-debug.apk` 仍 = **`30c41ac9…`**（mtime 19:05:19）、jar 仍 = **`0c776934…`** ⇒ **§13.26 的 verdict 只对**这一组锚点件**成立**；但**本报告多处"`git status` = 空"的陈述属 t34 验证窗口内的状态**，**自 21:45 起不再成立**。
 - **推论（须 captain 处置）**：① 若这些改动被接受并提交，**任何新构建都会产出与锚点不同的 APK** ⇒ **K-15 的 APK 侧闭合、六载荷钉、v2 门禁、单测 46/0/0 等全部需在**新 APK 实体**上重跑**（即一轮新的 t34 类复验）；② 若改动不被接受，应**冻结/回退**并保持锚点不变；③ 无论哪条，**"交付树冻结"这一前提当前不成立**，任何"以本报告 §13.26 为最终验收依据"的表述应附带"**仅对 `30c41ac9…` 锚点件**"的限定。
 
+#### (11) **t42 新 APK（t39 真机缺陷修复轮）独立只读复验**（我自跑；本轮**无板面任务**，按 captain"只读待命"执行并如实登记）
+- **新交付锚点**：APK = **`36ba3ec6e4b69c47281ab258ea681420440db81d7e739ea2af77cc37f6c0d50c`** / **33 310 685 B** / mtime **21:57:54**；由 **t42** 脚本（captain；T1 `21:54:52` → T2 `21:57:54`，`43 actionable tasks: 42 executed, 1 up-to-date`、`FROM-CACHE 行数=0`、`:app:clean 出现=1`、`ASSEMBLE_EXIT=0`）产出；**T0/T2 双钉** jar `0c776934…` / AAR `8e8f2baf…` / so `757cef81…` / libcxx `c9dbf4ec…` **全同** ⇒ **绑定面输入未变**。前一步 `:app:compileDebugKotlin` EXIT=0（2m6s）、`--check-only` EXIT=0。
+- **旧锚点处置**：`30c41ac9…`（33 309 445 B / mtime 19:05:19）保留于 `artifacts/app-debug-30c41ac9.apk` 与服务副本，标注为**上一轮历史锚点**（自 t42 起不再代表标准路径）。
+- **我自跑（`[读盘 21:58:31 → 22:00:42]`，uid 1000，只读）**：
+  | 项 | 结果 |
+  |---|---|
+  | 四 `.so` | `757cef81…`（libjingle）/ `c9dbf4ec…`（libc++_shared）/ `95c44e5a…`（自有库）/ `41e9a793…`（androidx）——**与旧锚点逐件相同**；`LOAD` 段全 **`0x4000`**；`libjingle`、`libc++_shared` 与 `jniLibs` **逐字节相同** |
+  | 绑定面输入 | jar `0c776934…`（1 206 602 B）、AAR `8e8f2baf…` **未变**（与 T0/T2 双钉一致） |
+  | dex 对比 | **`classes.dex` `a1b2ebdc…`、`classes13.dex` `a1f35bd5…` 与旧锚点逐字节相同**（JNI 关键分片未被本次改动波及）；差异 **7 个**：`classes2/3/5/6/9/11/12/14`（= t39 修改的 Kotlin/资源所在分片） |
+  | dex 形态计数 | `LJ/N;` = **3**（2+1）、`GEN_JNI;` = **3**（0+2+1）、`PCFJni;` = **2**；`Native method not present` = **2**（`classes.dex` 1 + `classes13.dex` 1）⇒ **合取判据成立（B 家族）** |
+  | 定义级形态 | `J/N` **195 方法 / 193 native**；`GEN_JNI` **195 / 0** ⇒ **B 形态成立**（`PCFJni` 我测得 26 = **25 方法 + 1 静态字段**，与附录 §2 同义） |
+  | 单测 | **5 份 XML @22:00:41 = 46 / 0 / 0 / 0**（t42 日志：`TEST_EXIT=0`、`24 actionable tasks: 24 executed`、`BUILD SUCCESSFUL 2m46s`）；另有 t42 步骤 5 **属主归一**（`chown` 后 `app/build` 与 `.gradle` 的 root 条目 = **0**）|
+- **中间态澄清**：我首次轮询（21:57:52）读到 `d255e046…`（33 306 589 B）是**写入中的未完成文件**；最终锚点 = **`36ba3ec6…`**，`d255e046…` **不作锚点**（同 t42 日志 `APK sha256=36ba3ec6…`）。
+- **三态结论**：**已验证** = 新 APK 的 JNI/ELF 面与旧锚点**载荷级不变**、绑定面输入（jar/AAR/`.so`）不变、dex 形态仍为 B、单测 46/0/0；**仍属未验证** = 真机安装/首调/`JNI_OnLoad` 运行期注册/Camera2/首帧/日志导出，以及**宿主 served 副本是否已刷新到 `36ba3ec6…`**（容器不可见）。**限制**：本轮**无板面任务**（`t34` 归 native-dev），故记为 **verifier 只读复验**；若需正式 verdict 归属，须由 captain 开新任务。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
