@@ -444,3 +444,32 @@ sha256 : 721df1c82841ad992ffef016cdb4fc09335028869fa443e98f24fe797055b724
 - **口径纪律（重要）**：**不得**把 `GEN_JNI` 的期望 native 数写成 193 —— 194 才是 `GEN_JNI` 侧的期望值，193 是 `.so` 侧实际导出数，二者差异就是上面这一条豁免。
 - 引用：`reports/07-native-dev.md` §16/§16.5（v1.10/v1.11）、`reports/07-native-dev-jnizio-mapping.tsv`（194 行 4 列，含 `generated_header` 与 `so_exported`）。
 - 与本轮交付的关系：`libjingle_peerconnection_so.so` **无需重编**（其 193 个边界符号完整）；t26 交付 APK 内该 so 仍为 `757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e`（与 t5 交付逐字节一致）。
+
+## 9.8 两次构建的"窗口内写入"精确事实（captain 要求，避免复验误判）
+
+> 口径纪律：**不得**把"测试文件晚写"笼统表述成"构建窗口内无写入"；必须分列「主源码」与「测试文件」。
+
+### (A) 10:55:28 那次构建（**已作废**，APK `6653fddf…` 非交付物）
+
+| 文件 | mtime | 与 T0=10:55:28 的关系 |
+|---|---|---|
+| `app/src/main/kotlin/…/webrtc/WebRtcEngine.kt` | 10:49:13 | **早于 T0**（−6m15s） |
+| `app/src/main/kotlin/…/ui/call/CallViewModel.kt` | 10:37:55 | 早于 T0 |
+| `app/src/main/kotlin/…/diag/DiagnosticsScreen.kt` | 10:38:30 | 早于 T0 |
+| `app/build.gradle.kts` | 10:48:20 | 早于 T0 |
+| `app/src/main/cpp/CMakeLists.txt` | 10:37:41 | 早于 T0 |
+| **`app/src/test/kotlin/…/webrtc/JniBindingClasspathTest.kt`** | **10:55:42** | ⚠️ **晚于 T0 14 秒**（android-dev 在开编后仍在写该测试） |
+
+⇒ **主源码全部早于 T0（进 APK 的主源码无"中途快照"）**；**测试文件有一次晚于 T0 的写入（仅影响单测编译，不影响 APK 载荷）**。即便如此，按 captain 的严格判据该次产物已**作废**（APK `6653fddf…` 不再作为交付物；其 jar 亦为更早的 `7dbe8400…`）。
+
+### (B) 11:26:08 那次构建（**交付构建**）
+
+| 事实 | 实测 |
+|---|---|
+| T0 | **2026-09-14 11:26:08** |
+| 全部 app/src 最后 mtime | `app/src/test/…/JniBindingClasspathTest.kt` **11:19:51**（早于 T0 **6m17s**） |
+| 构建窗口内 `app/src` 写入 | `find app/src -newermt "$T0"` → **0**（对 `main/kotlin`、`main/cpp`、`test`、`build.gradle.kts` 均成立） |
+| jar | 前后 `dc5f8919…` + `stat "%Y %s"` = `(1789355110, 1187970)` **完全一致** |
+| 单测 | 同轮串行执行（非与 android-dev 并行）：**tests=42 / failures=0 / errors=0** |
+
+⇒ **交付构建（B）在所有 app/src 路径上都满足"窗口内零写入"**；(A) 的测试文件晚写属**已作废构建**的单独事实，两者不得混为一谈。
