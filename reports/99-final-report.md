@@ -1187,6 +1187,28 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 - **交付 APK 层**：**未重编**（仍 `721df1c8…`，dex 内 `LJ/N;` = 0）⇒ **交付可用性未闭合**（待 t33）。
 ⇒ 因此**不能再写"可绑定性 = 未落地"**（那是 18:17:28 之前的状态）；现在的正确两分是 **「jar/AAR：已修且可绑定（B 形态）」/「交付 APK：待重编，未闭合」**。
 
+### 13.19 AV1 那条桩的**出处**：官方产物 193/193 不含 AV1，交付件的 AV1 桩来自"**扩展输入集 + 官方开关**"（不是官方本目标输入，也不是手写文本）
+
+我自跑（输入清单 + 两个 srcjar 逐项比对）：
+
+| 项 | 官方（A） | 交付件（B / handoff / 本次实落） |
+|---|---|---|
+| `--java-sources-file` | `t30/registration-inputs/javasources-official.txt`（**160** 行） | `javasources-with-av1.txt`（**165** 行） |
+| 与官方清单的差 | — | **仅多 1 个 5 行 JSON 块：`sdk/android/api/org/webrtc/LibaomAv1Encoder.java`**（`diff` 实测 `159a160,164`） |
+| 其它 flag | `--use-proxy-hash` | `--use-proxy-hash` **+ `--add-stubs-for-missing-native`** |
+| srcjar sha256 | `2e352096714d63de…`（62 140 B） | `dca67dc73190e9ec…`（62 424 B） |
+| 内含 `LibaomAv1` | **0** | **2**（`J/N.java` 1 + `GEN_JNI.java` 1） |
+| `J/N` native / `GEN_JNI` native | **193 / 0** | **193 / 0** |
+> 附：官方清单里唯一命中"av1"的行是 `Dav1dDecoder.java`（`D**av1**dDecoder`，大小写不敏感的假命中）；`nativesources.txt` 同样不含 libaom ⇒ **libaom 既不在 present、也不在 absent 输入集**。
+
+**结论（三段式）**：
+1. **官方对本目标（`sdk/android:libjingle_peerconnection_so__jni_registration`）的产物 = 193/193、完全不含 AV1** ✅（我实测 A 的 srcjar：`LibaomAv1` 命中 0）。
+2. **交付件里的 AV1 桩并非"官方本目标输入"的产物**，但**也不是有人手写一段桩文本**：它由 **jni_zero 官方 `_stub_for_missing_native`** 生成（逐字 message `RuntimeException("Native method not present")` 相同），前提是**把 `LibaomAv1Encoder.java` 加进 `--java-sources-file`** 并开 `--add-stubs-for-missing-native`（`generate-final-B-with-av1.log` 的 `cmd` 逐字如此）⇒ 准确写法是"**官方生成器 + 扩展输入集 + 官方开关**"。
+3. **行为层结论不变**：仅在真正创建软件 AV1 编码器时抛 `RuntimeException`；本项目走 VP9 ⇒ 不影响启动/通话。
+
+> ⚠️ **更正 webrtc-builder 本轮的论证**："不带 / 带 `--add-stubs-for-missing-native` → 同一个 sha256（逐字节相同）"与产物不符：其 `out/B` 日志显示**同时换了输入清单**（165 行含 libaom），而 A/B 的 srcjar 哈希本就不同（`2e352096…` vs `dca67dc7…`）。"**只加 flag、不改输入**"这一情形我**无法复跑**（本容器 **无 `python3`**），故该子命题记为**未验证**；本目标官方输入下"无 absent proxy ⇒ 无桩"由第 1 点的实测支持。
+> 📌 报告内口径：§12.2(5) 引用的 `_stub_for_missing_native` 行号（`gen_jni_java.py:10-15`）与开关行号（`jni_registration_generator.py:280/:511`）**仍然正确**，但**出处须按本条表述**（扩展输入集触发，而非本目标官方输入）。
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
