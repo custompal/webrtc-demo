@@ -881,7 +881,7 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 - 因此本项**按 medium（潜在、需裁定）**记，不作失败判定：请 captain 二选一 —— **(i) 落 B**（补 AV1 非 native 桩，同时满足判据③=194 与 §13.6），或 **(ii) 明确裁定"A 可接受"**，并在交付说明里写明"AV1 路径不可达 + 若启用则 `NoSuchMethodError`"。
 
 #### 门禁脚本 `scripts/check_jn_binding.py` 的评价（我**未能执行**，只做静态审查 + 等价复跑）
-- **我无法运行它**：本容器 **无 python3**（`command -v python3/python/python3.11/python3.12` 全空）⇒ 脚本作者/维护者在容器内无法自测；且该文件当前为 **`M`（未提交）**，与 `1621d72` 入库版可能不同（mtime 18:08、mode 0600）。**我没有执行它**，上述 staging 结论全部由我自己的 `javap`/常量池扫描得出。
+- **我（verifier 容器）无法运行它**：本容器 **无 python3**（`command -v python3/python/python3.11/python3.12` 全空）⇒ **署名作者在宿主机执行不受影响**（其给的 staging 原始输出即宿主侧结果），但**容器内不可复跑**；引用该脚本时请注明执行环境。另该文件当前为 **`M`（未提交）**，与 `1621d72` 入库版可能不同（mtime 18:08、mode 0600）——请注明以哪一版为准。**我没有执行它**，下述 staging 结论全部由我自己的 `javap`/常量池扫描得出。
 - **静态审查要点**：`KNOWN_EXEMPT = {"org_webrtc_LibaomAv1Encoder_create"}`（`:52`）会把 AV1 未覆盖项计为"已知豁免"，`RESULT` 仍 **PASS**（`:188-199`、`:211`）⇒ **该门禁对 A 与 B 都会 PASS**，因此它**不能**用来证明"AV1 路径安全"，只能证明判据①④与②（这是本修复的实质部分）。建议注释里写明这一边界，避免"闸门绿 = AV1 安全"的误读。
 - **它设计得对的地方**：符号期望值按官方规则正向复算（`Java_` + `jni_mangle('J/N')` + `_` + `jni_mangle(hashed)`，`_`→`_1`/`$`→`_00024`/`/`→`_`），并做**双向**差集 ⇒ 与 §13.3/§13.7 的判据同构（不是数量对齐）✅
 
