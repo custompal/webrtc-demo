@@ -1,0 +1,49 @@
+# t34 附录 F-3 闭合：宿主侧单测现场重跑（captain 执行，2026-09-14 20:49:57–20:52:32）
+# 环境: JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 (JDK 17) ；宿主机
+# 命令: ./gradlew --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest
+# 目的: 闭合 verifier F-3（其容器内两次尝试均被 AGP 拒绝 JDK 25：What went wrong: 25.0.4.1）
+#
+# BEFORE  (20:49:57):
+#   app/build/outputs/apk/debug/app-debug.apk        30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2
+#   third_party/libwebrtc/java/libwebrtc-java.jar    0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+# AFTER   (20:52:32):
+#   app/build/outputs/apk/debug/app-debug.apk        30c41ac9d3363cab249c9a1702958993fcfd965cf7ebbfeba5349435ab059be2   （未变）
+#   third_party/libwebrtc/java/libwebrtc-java.jar    0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757   （未变）
+# 结果: TEST_EXIT=0 ; BUILD SUCCESSFUL in 2m 35s ; 24 actionable tasks: 24 executed
+# 逐类: AppConfigUrlTest 8 / NativeInterfaceContractTest 4 / SignalingErrorPolicyTest 17 / SignalingIdentityTest 11 / JniBindingClasspathTest 6 => 合计 46 / 0 failures / 0 errors
+# 结论: 同一条验证命令以 JDK 17 在本交付树上现场执行通过，且交付 APK 与 jar 前后逐位不变。
+# ---- 原始输出 ----
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.7/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:generateDebugBuildConfig
+> Task :app:generateDebugResValues
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :app:mergeDebugResources
+> Task :app:parseDebugLocalResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:preDebugUnitTestBuild UP-TO-DATE
+> Task :app:javaPreCompileDebugUnitTest
+> Task :app:processDebugManifestForPackage
+> Task :app:javaPreCompileDebug
+> Task :app:processDebugResources
+> Task :app:compileDebugKotlin
+> Task :app:compileDebugJavaWithJavac
+> Task :app:processDebugJavaRes
+> Task :app:bundleDebugClassesToRuntimeJar
+> Task :app:bundleDebugClassesToCompileJar
+> Task :app:compileDebugUnitTestKotlin
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugUnitTestJavaRes
+> Task :app:testDebugUnitTest
+
+BUILD SUCCESSFUL in 2m 35s
+24 actionable tasks: 24 executed

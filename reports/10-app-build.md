@@ -960,4 +960,23 @@ reports/10-t33-captain-testDebugUnitTest-20260914-184232.log # BUILD SUCCESSFUL 
 
 ⇒ 结论：**锚点 `30c41ac9…` 在宿主命名空间共有 4 个同哈希实体**（#7 仓外留档、#8 服务冻结副本、#11 标准路径、#12 重组件）；`b0cddd86…` 在宿主 `/tmp` 仍可复算（#4/#5）；**容器命名空间内无任何 APK 实体**。
 
+---
+
+## 9.15 t34 附录 F-3 闭合：宿主侧单测**现场重跑**（captain，2026-09-14 20:49:57–20:52:32）
+
+verifier 在容器内两次尝试重跑单测均被 **AGP 8.5.2 的 JDK 闸门**挡住（原文 `* What went wrong: 25.0.4.1`；容器内只有 Temurin 25 / JDK 11，无 JDK 17），故其 F-3 记为"未在容器内重跑（环境限制）"。本轮由 captain 在**宿主机、JDK 17** 下现场执行同一条命令，闭合该项：
+
+```
+JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+./gradlew --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest
+→ BUILD SUCCESSFUL in 2m 35s ; 24 actionable tasks: 24 executed ; TEST_EXIT=0
+→ 5 份 XML：AppConfigUrlTest 8 / NativeInterfaceContractTest 4 / SignalingErrorPolicyTest 17 / SignalingIdentityTest 11 / JniBindingClasspathTest 6 = 46 / 0 failures / 0 errors
+```
+
+**交付件前后逐位不变**（红线遵守）：`app-debug.apk` `30c41ac9…` 与 `libwebrtc-java.jar` `0c776934…` 在 **BEFORE 20:49:57 / AFTER 20:52:32** 两次采样**完全相同**（测试任务不触发 APK 重建）。
+
+**原始输出（被跟踪路径，非 `reports/logs/**`——该目录被 `.gitignore:83` 忽略，参见 P-17）**：
+`reports/10-t34-captain-testDebugUnitTest-20260914-2050.log`（2 799 B / `cdb0c5b342873a93363b13ab2096ab6808004704170f7fbb3256a1ed225a08b9`）。
+
+
 
