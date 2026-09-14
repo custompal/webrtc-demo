@@ -771,7 +771,7 @@ size   = 33 309 445 B      mtime = 2026-09-14 18:41:59.794      package = com.ex
 
 ### 9.14.6 ⚠️ 并发写入披露（本次必须留痕）
 
-1. **19:05:19 那次写入是 captain 把冻结交付件还原回标准路径**（如实改写，captain 更正）：我这次重复构建产出 `ef29e00c…`（19:04:43）后，captain 执行了代码级动作 **`cp /opt/apk-http/served/app-debug.apk → app/build/outputs/apk/debug/app-debug.apk`**，使标准路径的 mtime 变为 **19:05:19**、内容回到 **`30c41ac9…`**（与 18:41:59 那次逐字节相同；ctime 19:07:29）。⇒ **这不是"第三方又构建了一次"**，而是**交付件的回滚/还原**；两份字节均已留档（`artifacts/app-debug-30c41ac9.apk`、`app-debug-ef29e00c.apk`）。
+1. **19:05:19 那次写入是 captain 把冻结交付件还原回标准路径**（如实改写，captain 更正）：我这次重复构建产出 `ef29e00c…`（19:04:43）后，captain 执行了代码级动作 **`cp /opt/apk-http/served/app-debug.apk → app/build/outputs/apk/debug/app-debug.apk`**，使标准路径的 mtime 变为 **19:05:19**、内容回到 **`30c41ac9…`**（与 18:41:59 那次逐字节相同）。**该件的 `ctime 19:07:29` 来自随后对 `app/build` 的 chown（root→uid 1000）**，只改元数据（**mtime 与 ino 不变**）——实证：`mtime=19:05:19.310 / ctime=19:07:29.818 / ino=3144249 / uid=1000:1000`；`app/build` 非 1000 属主由 19:06:40 的 1047 归零于 19:16:17，**chown 窗口覆盖 19:07:29** ⇒ **不是第二次放置**（native-dev 早前据 ctime 的推断据此更正）。⇒ **这不是"第三方又构建了一次"**，而是**交付件的回滚/还原**；两份字节均已留档（`artifacts/app-debug-30c41ac9.apk`、`app-debug-ef29e00c.apk`）。
 2. **我的构建日志曾被删除**：`reports/10-t33-nocache-assembleDebug-20260914-190227.log` 在 19:04:44 写入成功后一度从 `reports/` 消失（`reports/logs/` 副本完好），已由副本恢复（内容 sha 不变、3333 B）。
 3. 期间 `reports/99-final-report.md` 由 verifier 持续提交（HEAD 已至 `713ecd7`），其 §13.22(f) 已登记本轮构建日志中的 P-11/P-12 两道门。
 4. **交付锚点已由 captain 指定 = `30c41ac9…`（见 §9.14.9）**：五/六代过程值 = `6653fddf…`（作废）→ `58834b5a…`（作废）→ `721df1c8…`（11:26，落位前 jar，已被取代）→ **`30c41ac9…`**（18:41:59，captain 轮次，**交付锚点**）→ `ef29e00c…`（19:04:43，本次重复构建产物，**非交付**）。按既有实测 **APK 非逐字节可复现**：两次同源、同 jar、同为 `--no-daemon --no-build-cache clean assembleDebug` 的构建会产出不同字节（**与构建缓存无关**；差异机制见下条更正）。
@@ -933,7 +933,7 @@ reports/10-t33-captain-testDebugUnitTest-20260914-184232.log # BUILD SUCCESSFUL 
 **B4｜两条口径**
 - **整包 byte-reproducibility = false**：`ef29e00c…` 与 `30c41ac9…` 属**同输入**（T0/T1 双钉 jar `0c776934…`/aar `8e8f2baf…` 均 OK）却**整包 sha 不同**；正确表述 = **"语义可复现（类集合与逐 dex 分区一致）／整包 sha 不跨构建稳定"**。
 - **`grep -a` 整包恒为 0**（APK 内 dex 为 **deflate 压缩**，必须先解包）；解包后归属 = `LJ/N;`（`classes.dex` 2 + `classes13.dex` 1 ⇒ **3 次 / 2 文件**）、`GEN_JNI;`（`classes13.dex` 2 + `classes14.dex` 1 ⇒ **3 次 / 2 文件**）、`PCF_Jni` **descriptor** `Lorg/webrtc/PeerConnectionFactoryJni;` = **2**（`classes14.dex`）—— 注意**裸串**计数为 **4**（`classes11.dex` 1 + `classes14.dex` 3），**谓词不同、两者都对**。
-- 标准路径 `app/build/outputs/apk/debug/app-debug.apk` 现 **mtime = 19:05:19**（**由冻结交付件还原**，`ctime 19:07:29`）；**`18:41:59` 属 `artifacts/app-debug-30c41ac9.apk`**。
+- 标准路径 `app/build/outputs/apk/debug/app-debug.apk` 现 **mtime = 19:05:19**（**由冻结交付件还原**；`ctime 19:07:29` 系**随后对 `app/build` 的 chown（root→uid 1000）**，非第二次放置）；**`18:41:59` 属 `artifacts/app-debug-30c41ac9.apk`**。
 
 **B5｜另附**：容器 `/tmp`（tmpfs 256M）已由 captain 清理（**98% → 4%**，留档件未动）；**t34 及后续复验的中间件写入 `/data/dsh/home/workspace/tmp/…`，不再写容器 `/tmp`**。
 
@@ -953,7 +953,7 @@ reports/10-t33-captain-testDebugUnitTest-20260914-184232.log # BUILD SUCCESSFUL 
 | 8 | `/opt/apk-http/served/app-debug.apk`（t37 冻结副本） | 33,309,445 | 2026-09-14 18:41:59 | root:root | **`30c41ac9…`** |
 | 9 | `artifacts/app-debug-ef29e00c.apk` | 33,309,445 | 2026-09-14 19:04:43 | root:root | `ef29e00c…`（**非交付**，等价次生产物） |
 | 10 | `tmp/t38-unsanctioned-rebuild/app-debug-ef29e00c.apk` | 33,309,445 | 2026-09-14 19:04:43 | root:root | `ef29e00c…`（captain 归集留档） |
-| 11 | `code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk`（标准路径） | 33,309,445 | **2026-09-14 19:05:19**（还原；ctime 19:07:29） | admin:admin | **`30c41ac9…`** |
+| 11 | `code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk`（标准路径） | 33,309,445 | **2026-09-14 19:05:19**（还原；`ctime 19:07:29` 系随后对该目录的 chown，非第二次放置） | admin:admin | **`30c41ac9…`** |
 | 12 | `/tmp/reassembled.apk`（宿主，19:41:30 新增） | 33,309,445 | 2026-09-14 19:41:30 | root:root | **`30c41ac9…`** ⇒ 重装/重组得到**与锚点逐字节相同**的件 |
 
 **对照·容器命名空间**（同一时刻采样）：`/tmp` = tmpfs 256M / 已用 **9.4M / 4%**、**容器内 `*.apk` = 0**（大件解包残留已被 captain 清理；`dl-internal.apk`/`pub-full.apk` 已不在）。
