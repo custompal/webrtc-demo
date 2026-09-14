@@ -716,7 +716,7 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 | `.rodata` 含 `org/jni_zero/GEN_JNI`（RegisterNatives 的 FindClass 目标） | **0** | 主论证 |
 | `.rodata` 含 GEN_JNI 那 194 条可读 native 方法名（`^org_webrtc_`） | **0** | 主论证 |
 | 排除"表里用哈希名"的替代解释（`^M[A-Za-z0-9_$]{7,8}$`） | 仅 **4** 条无关串（`Moderate`/`MLKEM1024`/`MymxOyox1`/`Mih8kih8`） | 主论证 |
-| `JNI_OnLoad`（`0x29f718–0x29f78c`）内 `blr` / `bl` | **0 / 6** | **旁证**（只排除其自身注册，不排除其 helper） |
+| `JNI_OnLoad`（**完整符号区间 `0x29f718–0x29f87c`**，见 §13.12(c)）内 `blr` / `bl` | **0 / 7**（89 条指令） | **旁证**（只排除其自身注册，不排除其 helper）；**`blr`=0 的结论不受区间影响** |
 | 导出符号 | 定义动态符号 **194 = `JNI_OnLoad` + 193 个 `Java_J_N_*`**（**该库不含 `JNI_OnUnload`**） | 更正 reports/07 组成错误 |
 | **对照实验**（证明"0"不是 strip 假阴性） | 自研库（RegisterNatives）：`onNatTypeDetected` = **2**、`com/example/webrtcdemo/nativebridge/NativeCallbacks` = **1**、`nativeInit` = **5** | 真做注册的库必留类名+方法名串 |
 
@@ -1030,7 +1030,13 @@ javap -p -classpath <jar> org.jni_zero.GEN_JNI | grep -cE ' static '  # 期望 1
 ⇒ 判据里**不要**写"`grep -c 'org_webrtc_'` = 193"（那是 **`.so` 侧符号数**）——**jar 侧应为 191**；**193 与 191 是两个不同量**，混用必假红。落位后我复查 live jar 亦为 **191 + 3 = 194**（`static native` = 0，B 形态）✅
 
 #### (c) `JNI_OnLoad` 指令数/分支数（我显式区间实测）
-`llvm-objdump -d --start-address=0x29f718 --stop-address=0x29f78c` → **29 条指令**、**`bl` = 6**、**`blr` = 0**。
+**更正（我此前的区间取短了）**：`llvm-objdump -d --start-address=0x29f718 --stop-address=0x29f78c` → 29 条指令、`bl` = 6、`blr` = 0 —— 但 **`0x29f78c` 不是符号边界**，该区间只有 `0x74` = **116 B**（我此前误写成 356 B）。
+**正确取法（native-dev 给出根因、我已实测复现）**：`llvm-readelf -sW <so>` 的 **size 列是十六进制** —— `JNI_OnLoad` 为 `value=000000000029f718 size=164₍₁₆₎ = 356₁₀` ⇒ 完整区间 = `0x29f718–0x29f87c`：
+```bash
+$NDK/llvm-readelf -sW <so> | awk '$8=="JNI_OnLoad"{print $2,$3,$4}'   # addr=000000000029f718 size=164 type=FUNC
+$NDK/llvm-objdump -d --start-address=0x29f718 --stop-address=0x29f87c <so> | awk '/^\s+[0-9a-f]+:/{n++} END{print n}'   # 89
+```
+我实测该完整区间 = **89 条指令 / `bl` = 7 / `blr` = 0**（89×4 = 356 B ✓ 自洽）⇒ **实质结论不变（`blr` = 0）**；t34 复跑一律用这条完整区间命令。
 > native-dev 报"356 B / 89 指令 / `bl`=7"：其**区间取法不同**（我这一段 = 0x74 = 116 B），我**未能复现 89/7**；**实质结论一致（`blr` = 0 ⇒ 无注册调用）**。引用时请带上地址区间，否则数字对不上会互相怀疑。
 
 #### (d) 工具可用性修正（本容器）
