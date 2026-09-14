@@ -1847,8 +1847,9 @@ libjingle 757cef81… 12 946 912 B / libc++_shared c9dbf4ec… 1 356 968 B / lib
   3. **方法数** ⇒ 必须标注**是否含构造器**：**反射 = 194**（不含）；**`javap` 行数 / `dexdump` 类块 = 195**（含 `<init>`）。
   ⇒ 本报告 §13.25(b)/§13.26(8) 的类定义级读数与 §13.26(2) 的"引用计数"表**分属两个口径**，均已在表头标注。
 
-#### (10) ⚠️ **post-closure 观察：交付树正在被修改**（`[读盘 21:46:06 → 21:46:29]`，本节为**观察记录**，非 t34 结论的一部分）
-- **事实**：`git status --porcelain -uall` = **2 处 `M`**（`app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallScreen.kt`、`app/src/main/kotlin/com/example/webrtcdemo/webrtc/FrameNormalizer.kt`），`git diff --shortstat -- app/src/main` = **2 files changed, 37 insertions(+), 4 deletions(-)**；两文件 mtime **21:45:32 / 21:46:20**（两次读盘间仍在增长 ⇒ **写入进行中**）；提交侧未入库（HEAD 仍 = 我的 `8047f6e`）。diff 内容自述为"**【t39 修复②】复制会议号（框架 `ClipboardManager`）**"与"**t39 真机缺陷修复：本地预览逆时针 90° —— 保留 `frame.rotation` 元数据**"。
+#### (10) ⚠️ **post-closure 观察：交付树已进入新轮次（t39 真机缺陷修复）**（`[读盘 21:46:06 → 21:49:03]`，本节为**观察记录**，非 t34 结论的一部分）
+- **轮次已识别（`[读盘 21:49:03]`）**：新增未跟踪报告 **`reports/13-device-defect-fix.md`**（279 行 / 19 902 B / `56455c33453d7e40c6057ce375d96649…` / mtime 21:48:40）自述 = **t39（implementation round 1，执行者 android-dev，attempt `6322cbbc-a371-42b3-bed7-ae5b95791b8c`）**：修两个真机缺陷（① 本地预览逆时针 90°：`FrameNormalizer` texture→I420 分支把 rotation 写死 0；② 通话页会议号只在 `isConnecting` 遮罩内）；**范围 = 仅 Kotlin/资源 + 该报告**；并声明**容器内无 JDK/SDK ⇒ 本轮不编译，`:app:testDebugUnitTest`/`assembleDebug` 由 **t41** 在宿主机执行**。
+- **事实**：`git status --porcelain -uall` = **3 处 `M` + 1 处 `??`**：`app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallScreen.kt`（mtime 21:46:20）、`app/src/main/kotlin/com/example/webrtcdemo/webrtc/FrameNormalizer.kt`（21:45:32）、`app/src/main/res/values/strings.xml`、`reports/13-device-defect-fix.md`（未跟踪）；`git diff --shortstat -- app/src/main` = **2 files changed, 37 insertions(+), 4 deletions(-)**（读盘时点值，随后仍在增长）。
 - **对 t34 结论的影响**：**锚点交付件未变** —— `app/build/outputs/apk/debug/app-debug.apk` 仍 = **`30c41ac9…`**（mtime 19:05:19）、jar 仍 = **`0c776934…`** ⇒ **§13.26 的 verdict 只对**这一组锚点件**成立**；但**本报告多处"`git status` = 空"的陈述属 t34 验证窗口内的状态**，**自 21:45 起不再成立**。
 - **推论（须 captain 处置）**：① 若这些改动被接受并提交，**任何新构建都会产出与锚点不同的 APK** ⇒ **K-15 的 APK 侧闭合、六载荷钉、v2 门禁、单测 46/0/0 等全部需在**新 APK 实体**上重跑**（即一轮新的 t34 类复验）；② 若改动不被接受，应**冻结/回退**并保持锚点不变；③ 无论哪条，**"交付树冻结"这一前提当前不成立**，任何"以本报告 §13.26 为最终验收依据"的表述应附带"**仅对 `30c41ac9…` 锚点件**"的限定。
 
