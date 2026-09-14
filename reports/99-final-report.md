@@ -783,6 +783,21 @@ strings -a /tmp/c14.dex | grep -c 'Lorg/webrtc/PeerConnectionFactoryJni;'   # 1�
 | **是否已落位** | 现行 `libwebrtc-java.jar` 与现行 APK `721df1c8…` 内 `J/N.class` 均 = **0**（判别命令：对 jar 与 APK 分别 `jar tf … &#124; grep -c '^J/N\.class$'`，两者均得 0）⇒ **K-15 在本轮仍未闭合，本轮交付 APK 仍不可运行** | 需 t29/后续重建 APK 后按 §13.3 四条复验 |
 
 
+### 13.6 路线 A 的**变体选择**与交叉核对（对象 = t30 handoff 在盘产物；新增于 t27 收尾后）
+
+> 触发：native-dev 于 t30 后追加"推荐 B（含 AV1 桩）"与若干可复算数字。以下**全部为我（verifier）自己复跑**的读数。
+
+| # | 我的实测 | 结论 / 对 t31 落位的含义 |
+|---|---|---|
+| 1 | `javap -p -c org.webrtc.LibaomAv1EncoderJni`（jar 内）→ `invokestatic // Method org/jni_zero/GEN_JNI.org_webrtc_LibaomAv1Encoder_create:(J)J` | **决定性**：交付 GEN_JNI **必须保留** `org_webrtc_LibaomAv1Encoder_create`。若采用 **A（193，无桩）**，该调用点变 **`NoSuchMethodError`**（仅在走 AV1 编码器时触发，本项目 VP9 不触发，但仍属可见缺陷）⇒ **t31 必须落位 B / `handoff`**（含非 native 抛异常桩，语义同上游 Placeholder：`RuntimeException("Native method not present")`） |
+| 2 | `handoff/libjingle_peerconnection_so__jni_registration.srcjar` = `dca67dc73190e9ece5e19e8e8599be794ee150308ffa0cb6c0e98f772aa611fb`；解包内容 = **仅** `org/jni_zero/GEN_JNI.java` + `J/N.java`，**`.cc` = 0**；两份源指纹 = `bdfd673c…`（GEN_JNI，193 转发 + 1 桩）/ `e7eacfee…`（J/N，193 native + 1 桩） | `out/B` srcjar **同哈希**；`out/A` 源不同（`6bd817a6…` / `e0ff02a7…`，无桩）⇒ **handoff 交付的就是 B** ✅ |
+| 3 | **AV1 口径（务必分开写）**：native/符号集合相等按 **193 ↔ 193**（AV1 不计入）；**类的方法面必须是 194**（193 native + 1 非 native 桩；`GEN_JNI` 同为 193 + 1）；`J/N.class` `javap` = 193 native + 1 桩，`GEN_JNI.class` = native **0** + 1 桩，两者 major **61** | 我 §13.3 第 4 条"方法总数 194"与此一致；**"不写 194"只适用于 native/符号集合**，不适用于方法面 |
+| 4 | jar 内引用 `org/jni_zero/GEN_JNI` 的 `.class` = **49**（自写常量池扫描）；jar 内 `J/` 前缀条目 = **0**（总条目 508） | 替换后应出现 `J/N.class`；**"零缺口"判据 = 这 49 个类引用的方法在 B 版 GEN_JNI 中全部存在**（可由 t34 脚本化断言） |
+| 5 | `src/out/Release-arm64/aar/arm64-v8a/toolchain.ninja`（9,398,126 B）：`--use-proxy-hash` 出现 **34 次**；`jni_zero.py generate-final` 命令行 **7 条**（7/7 带该 flag） | 与 native-dev 自述"27 条 `from-source`"**不符**（疑取自另一 ninja 文件或不同计法）。**"hashed/proxy 是 build 面事实"这一结论我认可**（7 条官方 action 逐字带 flag），但 27 这个数字我**未能复现**，不写进结论 |
+
+**材料勘误提示（native-dev t30 材料，供其自订）**：`webrtc-build/t30/logs/verify.log:16-17` 记 `GEN_JNI.java: … stub=0 方法合计=193` 与 `J_N.java: … stub=0 方法合计=193` —— 这两行与 **A 变体**（`out/A`）相符，与**其推荐并handoff 的 B 变体**（每份 193+1 = 194 方法）**不一致**。若 t31 依据该日志挑选变体，会取到 A。建议把该日志标注为"对应 A 变体"，并另存 B 变体的计数输出。
+
+
 ---
 
 *报告结束。本报告仅验证与汇总，未修改任何被验证产物。*
