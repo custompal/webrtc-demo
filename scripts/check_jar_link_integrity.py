@@ -262,7 +262,10 @@ def main():
         for r in refs:
             if r.endswith("Jni") and (r.startswith("org/webrtc/") or r.startswith("org/jni_zero/")):
                 strict_refs[r].add(owner)
-            if r.startswith("org/webrtc/") or r.startswith("org/jni_zero/"):
+            if r == "J/N":
+                # jni_zero hashing/short 形态的 native 持有类（转发版 GEN_JNI 会引用它）
+                strict_refs[r].add(owner)
+            if r.startswith("org/webrtc/") or r.startswith("org/jni_zero/") or r == "J/N":
                 info_refs[r].add(owner)
 
     print("=" * 78)
@@ -272,7 +275,7 @@ def main():
 
     # ---- 严格检查 ----
     missing_strict = {r: v for r, v in strict_refs.items() if r not in defined}
-    print("[STRICT] org/webrtc/*Jni + org/jni_zero/*Jni 引用检查")
+    print("[STRICT] org/webrtc/*Jni + org/jni_zero/*Jni + J/N 引用检查")
     print("  被引用的 *Jni 类数: %d" % len(strict_refs))
     print("  缺失（引用了但 jar 内无定义）: %d" % len(missing_strict))
     for r in sorted(missing_strict):
@@ -327,11 +330,28 @@ def main():
         print("[ASSERT] org/jni_zero/GEN_JNI: 存在 NO（*Jni 类运行期将抛 NoClassDefFoundError）")
         ok_key = False
 
+    # ---- 运行时（hashing/short）形态：native 持有类 J/N ----
+    # jni_zero 在 is_hashing / is_muxing 模式下把 native 声明放在短名类 J/N（方法名为哈希名），
+    # 由转发版 GEN_JNI 调用；此时 .so 导出的 Java_J_N_* 才能被 JVM 静态解析到。
+    # 编译期 stub 形态（GEN_JNI 直接 native 可读名）不含 J/N —— 类引用仍可解析，
+    # 但 .so 的 Java_J_N_* 符号将无法绑定（属"可绑定性问题"，由 check_jn_binding.py 判定）。
+    jn_natives = 0
+    if "J/N.class" in names:
+        jm = parse_methods(z.read("J/N.class"))
+        jn_natives = len([m for m in jm if m[2] & ACC_NATIVE])
+        print("[ASSERT] J/N (jni_zero short/proxy native 持有类): 存在 YES, native 声明数 = %d" % jn_natives)
+        if jn_natives == 0:
+            print("  FAIL: J/N 不含 native 声明")
+            ok_key = False
+    else:
+        print("[ASSERT] J/N: 存在 NO —— 若 GEN_JNI 为转发形态则其 J/N 引用无法解析（STRICT 会报缺失）；"
+              "若为编译期 stub 形态，类引用仍可解析但 .so 的 Java_J_N_* 无法绑定")
+
     print("=" * 78)
     rc = 0 if (not missing_strict and ok_key) else 1
-    print("RESULT: %s （严格缺失=%d, 关键类断言=%s, GEN_JNI native=%d）"
+    print("RESULT: %s （严格缺失=%d, 关键类断言=%s, GEN_JNI native=%d, J/N native=%d）"
           % ("PASS" if rc == 0 else "FAIL", len(missing_strict),
-             "OK" if ok_key else "FAILED", genjni_natives))
+             "OK" if ok_key else "FAILED", genjni_natives, jn_natives))
     print("=" * 78)
     return rc
 
