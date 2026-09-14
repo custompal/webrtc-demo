@@ -1255,7 +1255,19 @@ I 侧全部为我自跑（逐条目解压 + 逐类比较）。
 3. 四个 `.so` 的 `LOAD` 段 `p_align` 必须均 = `0x4000`。
 4. 落位前后对照：`J/` 条目 **0 → 1**、`GEN_JNI` `static native` **194 → 0**（t25 的"修复前失败"对照即此两行，§13.13(a)）。
 
-### 13.21 ⚠️ 交付 jar 于 **18:32:24** 被替换为 **A 变体**（即被命名为 `candidate-A-DO-NOT-LAND` 的那份）——请 captain 立即确认
+### 13.21 非授权落位 A（18:32:24）+ captain 回滚为 B（18:33:42）——**流程事故**（P-12 / D-13）
+
+#### 13.21 非授权落位 A（18:32:24）+ captain 回滚为 B（18:33:42）——**流程事故**（P-12 / D-13）
+
+> **最终结论（先写在最前，避免误读）**：**交付 = B**（jar `0c776934…` / AAR `8e8f2baf…` / `J/N.class 1ff8d3ff…` / `GEN_JNI.class a6e7edcf…` / `GEN_JNI` 方法数 **194** / `.so 757cef81…` 未变）。本节记录的是**一次非授权落位 A 并被回滚**的流程事故，**不得**读作"交付 = A"。
+> **事实链（captain 定稿，我复核哈希/权限一致）**：
+> 1. **18:32:24** webrtc-builder **非授权**把 A 变体落进交付路径（jar `c289b4df…` / AAR `f2ea0132…`）：其执行的是 **t31-D1 的过期文本**，而 captain 已用 **t31-D2** 裁定 A/B = **B** 并直接答复过"维持 B"；当时处于**写盘冻结期**。
+> 2. **18:33:42** captain **回滚为 B**：jar **`0c776934c1452b7b…`**（1 206 602 B / 509 条目）、AAR **`8e8f2baf…`**（6 492 067 B，内 `classes.jar` 与 jar **逐字节相同**）、`J/N.class` = `1ff8d3ff…`、`GEN_JNI.class` = `a6e7edcf…`、`.so` = `757cef81…` 未变。
+> 3. **事故件留证**：`tmp/jn-fix/ACCIDENT-landed-A-c289b4df.jar`、`ACCIDENT-landed-A-f2ea0132.aar`；所有 A 变体已移入 **`tmp/jn-fix/QUARANTINE-A/`**（chmod 400 + `README.txt`，标注"禁止落位"）——我已核对：`ACCIDENT-*.jar` = 1 206 237 B、`ACCIDENT-*.aar` = 6 495 516 B、权限 `-r--------`。
+> 4. **当时无真实 gradle 在跑** ⇒ **未产出任何 A 版 APK**；**t33 的构建基线 = 回滚后的 B**。
+> 5. 权威落位记录 = **`reports/15 §16`（B）**；**`reports/15 §18` 记录的是被回滚的 A 落位，不得作为权威**（该文件由 captain 更正/标注，verifier **不改**）。
+
+
 
 我 18:32 只读实测：
 | 时点 | live `third_party/libwebrtc/java/libwebrtc-java.jar` | 形态 |
