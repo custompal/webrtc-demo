@@ -1,0 +1,29 @@
+# t42b 事故处置（captain）  20260914-220943
+# 观察：标准路径 APK 于 22:08:06 被 env-installer 的并行构建改写；served/parts/artifacts 未被触碰
+
+## 1. 终止并行构建链（agent turn 已 interrupt，宿主进程仍在）
+残留 gradle/java 进程数 = 0
+
+## 2. 证据留档
+标准路径 APK（env-installer 产出）= f1b36244fb5ef0908710087e8b285abdfd16af431f2584731eeb597d31301cdf  size=33310685  mtime=2026-09-14 22:08:06.978515410 +0800
+已归档为非交付件：/opt/dsh-workspaces/artifacts/app-debug-f1b36244.apk
+证据汇总 = /opt/dsh-workspaces/code/webrtc-demo/reports/10-t42b-parallel-rebuild-evidence-20260914-220943.log  (238 行 / sha256 fc183597ac6499176c225bde28692f7a17b272a529b503efc872897d84147d0e)
+并行构建是否 clean：
+  > Task :app:clean
+  BUILD SUCCESSFUL in 3m 26s
+  43 actionable tasks: 42 executed, 1 up-to-date
+  actionable: 43 actionable tasks: 42 executed, 1 up-to-date
+  BUILD: BUILD SUCCESSFUL in 3m 26s
+
+## 3. 逐条目差异：并行件 vs 交付件 /opt/dsh-workspaces/artifacts/app-debug-36ba3ec6.apk
+交付件条目=165  并行件条目=165  相同=158  不同=7
+不同条目: classes11.dex, classes12.dex, classes14.dex, classes3.dex, classes5.dex, classes6.dex, classes9.dex
+
+## 4. 恢复标准路径 = 交付锚点 36ba3ec6…
+恢复后标准路径 = 36ba3ec6e4b69c47281ab258ea681420440db81d7e739ea2af77cc37f6c0d50c  size=33310685  owner=admin:admin  期望 36ba3ec6e4b69c47281ab258ea681420440db81d7e739ea2af77cc37f6c0d50c
+served  = 36ba3ec6e4b69c47281ab258ea681420440db81d7e739ea2af77cc37f6c0d50c（未被并行构建触碰）
+parts/SOURCE.sha256 = 36ba3ec6e4b69c47281ab258ea681420440db81d7e739ea2af77cc37f6c0d50c
+服务 active=active
+仓库 git 状态行数 = 2
+
+# 处置结束 T=2026-09-14T22:09:50+08:00

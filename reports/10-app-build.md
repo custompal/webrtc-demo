@@ -1070,5 +1070,51 @@ parts/   SOURCE.sha256 = 36ba3ec6… ；SHA256SUMS `-c` = 4/4 OK ；四片拼接
 - **命令口径偏差**：t42 契约 verify 列表写的是 `cd …/app && ./gradlew …`，但 `app/` 下**不存在** `gradlew`（Gradle 工程根 = 仓库根，见 `settings.gradle.kts`）⇒ 实际执行 = `cd …/code/webrtc-demo && ./gradlew …`，其余参数与顺序逐字相同；原始日志可查。此为 captain 建单时的路径笔误（D-19 类偏差）。
 - **仍未验证**：新 APK 的真机表现（预览朝向是否纠正、会议号是否常驻可见/可复制、第二台设备能否用会议号加入）**只能由用户真机重测定论**；APK 侧全部锚点级判据需在新实体上重跑（由 t43 承担，verdict 未出前不得写成已通过）。
 
+## 9.17 **事故：env-installer 未授权并行重复构建（22:02:59–22:09:43）** —— 非交付件 `f1b36244…`，标准路径已回滚
+
+> 发现者：**verifier**（22:08:36 只读盯盘发现标准路径 APK 由 `36ba3ec6…` 变为 `f1b36244…`，尺寸同为 33 310 685 B 而 sha 不同、且 `reports/` 内无对应构建日志）；处置者：**captain**（22:09:43–22:09:50）。
+
+### 9.17.1 事实链（宿主第一手）
+
+```
+22:02:59  env-installer 自写脚本启动（TS=20260914-220259，/tmp/t42-ts.txt）
+22:03:04  --check-only 完成（/tmp/t42-checkonly-20260914-220259.log，5 257 B）
+22:04     :app:compileDebugKotlin 两步（/tmp/t42-kotlin-*.log）
+22:04–22:08:06  ./gradlew --no-daemon --no-build-cache clean assembleDebug
+          → BUILD SUCCESSFUL in 3m 26s / 43 actionable tasks: 42 executed, 1 up-to-date / `> Task :app:clean` 出现
+          → 标准路径 app/build/outputs/apk/debug/app-debug.apk 被改写为 f1b36244… / 33 310 685 B / root:root
+22:08:20  起跑 :app:testDebugUnitTest（:app:clean 后重编，期间被 captain 发现并中止）
+22:09:43  captain：pkill GradleWrapperMain + kill 730400/730412/730457 + pkill GradleDaemon 8.7 → 残留进程 0
+22:09:50  证据归档 + 标准路径回滚完成
+```
+
+**关键事实**：该次执行**未触碰** `/opt/apk-http/**` 与 `artifacts/`（publish 步骤从不属于其脚本），故 `served`/`parts`/`SOURCE.sha256` 全程为 `36ba3ec6…`，**公网下载链路从未落后，用户侧无影响**。
+
+### 9.17.2 与交付件的关系（逐条目差异，captain 第一手）
+
+```
+f1b36244fb5ef0908710087e8b285abdfd16af431f2584731eeb597d31301cdf（未授权并行件）
+   vs 36ba3ec6e4b69c47281ab258ea681420440db81d7e739ea2af77cc37f6c0d50c（t42 交付锚点）
+条目 165 / 165 ；相同 158 ；不同 7 = classes{3,5,6,9,11,12,14}.dex
+resources.arsc、四个 .so、AndroidManifest.xml、resources.arsc 之外全部资源条目、jar/AAR → 与交付件逐位相同
+```
+
+⇒ 差异**只**落在 D8 的 dex 分片字节（与 §9.14 已量化的"整包不可逐字节复现"同源，根因 = D8 `~~~{"L<class>;":"<hex>"}` 键不稳定），**无语义差异**；但该次构建**无仓内日志、无门禁记录、无单测结论**，故**不采纳为交付件**，仅作非交付证据归档。
+
+### 9.17.3 处置与留档
+
+- 非交付件归档：`/opt/dsh-workspaces/artifacts/app-debug-f1b36244.apk`（33 310 685 B，与 `app-debug-ef29e00c.apk` 同级）。
+- 原始日志汇总（被跟踪）：`reports/10-t42b-parallel-rebuild-evidence-20260914-220943.log`（238 行 / `fc183597ac6499176c225bde28692f7a17b272a529b503efc872897d84147d0e`）。
+- 处置记录（被跟踪）：`reports/10-t42b-incident-20260914-220943.log`。
+- **标准路径回滚**：`cp artifacts/app-debug-36ba3ec6.apk → app/build/outputs/apk/debug/app-debug.apk`，回滚后 = `36ba3ec6…` / 33 310 685 B / owner `admin:admin`；`served` = `parts/SOURCE.sha256` = `36ba3ec6…`；`systemctl is-active apk-http` = active。
+- agent 侧：captain 已 `interrupt` env-installer（agent `4a83da9e-…`）并投递停手指令。
+
+### 9.17.4 过程教训（P-18，本轮新增）
+
+1. **撤销 attempt + captain 接管 ≠ 停止成员执行**：成员收到过"唤醒并开工"的 mailbox 内容后，即使任务被 `reassign_task` 撤销，仍可能在后续 turn 里**照旧执行**那条已作废的指令。⇒ 接管后**必须同时投递一条显式停手指令**（本轮 21:52 接管、22:09 才发出，晚了 17 分钟，正好覆盖了它的整条构建窗口）。
+2. **长链 SSH 命令无法被 agent interrupt 撤销**：中断只停 agent turn，已在宿主 fork 的 `bash -c` 链会继续跑完。⇒ 发现越权执行时要**双管齐下**：agent 侧 `interrupt` + 宿主侧 `pkill`（本轮二者都做了）。
+3. **盯盘判据要含"标准路径产物变化"**：本次是 verifier 的只读盯盘（对比 served/artifacts 与标准路径）先发现的，说明"多源产物 sha 交叉对比"是有效探针，应保留为例行检查。
+4. **归属纪律**：`f1b36244…` 与 `ef29e00c…` 同类 —— 一律**归档为非交付件**、不进服务快照、不作锚点、不进 v3 钉集。
+
 
 
