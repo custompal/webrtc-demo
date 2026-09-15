@@ -1,27 +1,36 @@
-# deploy/ —— 宿主机部署产物的可复现副本（t6 / t12）
+# deploy/ —— 宿主机部署产物的可复现副本（t6 / t12；t79 与现网重新对齐）
 
 本目录把宿主机上**实际生效**的部署文件落库，目的是让「部署可复现」成为可验收证据（而不是只写在报告正文里）。
-`*.service` / `coturn.default` 三个文件是**字节级拷贝**（`cp` 自宿主机 → 仓库，md5 校验一致），不是凭记忆重写：
+
+> **t79 更新（重要）**：`signaling.service` 原先漏了 `-room-grace 90s`（t70 部署时加到宿主机 unit，仓库副本没跟上），
+> 属独立的部署不可复现缺陷（t78 记为 **D-5**）。现已在**有效指令层面**与宿主机逐行对齐并补上该 flag；
+> 仓库副本另外增加了 `#` 说明性注释（含「`-room-grace` 不可省略」的理由），因此**原始 md5 与宿主机不同、有效指令相同**——
+> 这与 `turnserver.conf` 的处理方式一致。核对方法见 §6。
 
 ```
-$ md5sum /etc/systemd/system/signaling.service   deploy/signaling.service
-c9235cb9dddca755e90b1f58cf3aa02b  /etc/systemd/system/signaling.service
-c9235cb9dddca755e90b1f58cf3aa02b  deploy/signaling.service
-$ md5sum /usr/lib/systemd/system/coturn.service   deploy/coturn.service
+# 有效指令（去注释/空行）逐行对照：无输出 = 一致
+$ diff <(ssh … 'cat /etc/systemd/system/signaling.service; exit' | grep -vE '^\s*(#|$)') \
+       <(grep -vE '^\s*(#|$)' deploy/signaling.service)
+$ # ExecStart 整行逐字节对照：一致
+$ ssh … 'grep "^ExecStart" /etc/systemd/system/signaling.service; exit'
+ExecStart=/opt/signaling/signaling -addr :8443 -stun stun:47.238.144.66:3478 -turn turn:47.238.144.66:3478?transport=udp -user demo:demopass -log /var/log/signaling/signaling.log -room-grace 90s
+$ grep "^ExecStart" deploy/signaling.service
+ExecStart=/opt/signaling/signaling -addr :8443 -stun stun:47.238.144.66:3478 -turn turn:47.238.144.66:3478?transport=udp -user demo:demopass -log /var/log/signaling/signaling.log -room-grace 90s
+
+$ md5sum /usr/lib/systemd/system/coturn.service   deploy/coturn.service   # 字节级一致
 3c0efb525dd3c43941fb451e30cc1bd9  /usr/lib/systemd/system/coturn.service
 3c0efb525dd3c43941fb451e30cc1bd9  deploy/coturn.service
-$ md5sum /etc/default/coturn                      deploy/coturn.default
+$ md5sum /etc/default/coturn                      deploy/coturn.default   # 字节级一致
 625edc7c88847746661568e1ae6dfaa5  /etc/default/coturn
 625edc7c88847746661568e1ae6dfaa5  deploy/coturn.default
-$ diff /etc/systemd/system/signaling.service deploy/signaling.service  # 无输出
 $ find . -name "*.service"        # 供 V53(a) 使用
 ./deploy/signaling.service
 ./deploy/coturn.service
 ```
 
-| 仓库文件 | 宿主机来源路径 | md5 | 说明 | 采集时间 (CST) |
+| 仓库文件 | 宿主机来源路径 | 指纹 | 说明 | 采集时间 (CST) |
 |---|---|---|---|---|
-| `signaling.service` | `/etc/systemd/system/signaling.service` | `c9235cb9dddca755e90b1f58cf3aa02b` | 信令服务 unit（t12 创建，字节级拷贝） | 2026-09-13 16:05 |
+| `signaling.service` | `/etc/systemd/system/signaling.service` | 宿主 `md5 3c4e9e731790f8e4a86486c789ebc390` / `sha256 93123554…6ed71b`（431 B, 0644 root:root）· 仓库副本含 `#` 注释故原始 md5 不同（**有效指令逐行相同**，见 §6） | 信令服务 unit（t12 创建 → t70 追加 `-room-grace 90s` → **t79 仓库对齐**） | 2026-09-16 01:5x |
 | `coturn.service` | `/usr/lib/systemd/system/coturn.service` | `3c0efb525dd3c43941fb451e30cc1bd9` | coturn 发行版包自带 unit（**未修改**，来自 `coturn 4.6.1-1build4`，字节级拷贝） | 2026-09-13 16:05 |
 | `coturn.default` | `/etc/default/coturn` | `625edc7c88847746661568e1ae6dfaa5` | 包自带内容 + `TURNSERVER_ENABLED=1`（t6 用 sed 覆盖，字节级拷贝） | 2026-09-13 16:05 |
 | `turnserver.conf` | `/etc/turnserver.conf` | 宿主机 `35ae6301c257e2ab374171905ff0973e` / 本副本 `d954436133cbb29580458ebca7c0cbb9` | coturn 主配置（t6 重写，原文备份 `/etc/turnserver.conf.orig-pkg`）。本副本多 4 行 `#` 说明性注释（含 relay-ip 修正说明），**有效指令逐行相同**（`diff <(grep -v '^#' host) <(grep -v '^#' repo)` 无差异，见 reports/06-coturn.md §3/§4） | 2026-09-13 15:34 |
@@ -107,3 +116,81 @@ node code/webrtc-demo/deploy/turnperm_probe.mjs <turnHost> <port> <user> <pass> 
 ```
 
 背景与完整证据见 `reports/28-turn-permission-403.md`（403 只针对 `0.0.0.0/8` 与 `127.0.0.0/8`；私网/CGNAT/公网对等地址一律放行；`local_relay=0` 归属客户端 15 s 看门狗，见该报告 §6）。
+
+## 6. 与现网 unit 的一致性核对 + 回滚（t79；修 D-5）
+
+### 6.1 为什么要核
+
+`deploy/signaling.service` 是「照仓库即可复现现网部署」的唯一凭据。t78 的 **D-5** 发现：t70 部署时给宿主机 unit 追加了 `-room-grace 90s`，但**仓库副本没跟上** ⇒ 若有人照仓库 unit 重新部署，部署形态与已验收的现网不一致（`-room-grace` 是 t67 房间宽限期修复的行为开关，详见下一节）。已对齐。
+
+### 6.2 核对命令（一条 ssh + 一条 diff）
+
+```bash
+cd /data/dsh/home/workspace/code/webrtc-demo
+
+# ① 取宿主机现网 unit 原文（只读；systemctl cat 会带 "# /etc/..." 头，故用 cat 取纯文件）
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -i /home/node/.ssh/id_ed25519 root@172.21.0.219 -p 5766 \
+    'cat /etc/systemd/system/signaling.service; exit'
+
+# ② 有效指令逐行对照（忽略仓库侧的 `#` 说明注释）：无输出 = 一致
+diff <(ssh ... 'cat /etc/systemd/system/signaling.service; exit' | grep -vE '^\s*(#|$)') \
+     <(grep -vE '^\s*(#|$)' deploy/signaling.service) && echo "OK: 有效指令一致"
+
+# ③ ExecStart 整行逐字节对照（最关键的一行）：
+ssh ... 'grep "^ExecStart" /etc/systemd/system/signaling.service; exit'
+grep "^ExecStart" deploy/signaling.service
+
+# ④ 运行实例的实际参数（比 unit 更硬的一手证据：进程真在用什么参数）
+ssh ... 'tr "\0" " " < /proc/$(systemctl show -p MainPID --value signaling)/cmdline; echo; exit'
+
+# ⑤ 生效值自证（服务自称的宽限期，可与 ④ 交叉）
+curl -s http://47.238.144.66:8443/healthz | grep roomGraceSec    # 期望 "roomGraceSec": 90
+```
+
+> 提示：unit 若被改成含 `#` 注释（本仓库副本即如此），**原始 `md5sum`/`diff` 会报差异**，这是预期的——
+> 用 ② 的方式比较"有效指令"。若要求原始字节一致，可把注释挪到本 README（但这种注释正是"别删这个 flag"的现场提醒，故保留）。
+
+### 6.3 ExecStart 参数说明（逐项）
+
+| 参数 | 现值 | 说明 / 是否可省 |
+|---|---|---|
+| `-addr` | `:8443` | 监听端口；Caddy/安全组按此放行。**显式**（默认值相同，但端口属部署事实） |
+| `-stun` | `stun:47.238.144.66:3478` | 下发给客户端的 STUN（t6 实测公网 IP）。换机/换 IP 必须改 |
+| `-turn` | `turn:47.238.144.66:3478?transport=udp` | 同上（`transport=udp`；TCP 3478 未放行） |
+| `-user` | `demo:demopass` | TURN 凭据（全局共享，`用户名:密码`） |
+| `-log` | `/var/log/signaling/signaling.log` | 日志文件；**契约 C31 冻结为部署事实**，V53 据此核对 |
+| **`-room-grace`** | **`90s`** | **t67 行为开关，不可省略**（见 6.4）。显式写入 ⇒ 不依赖二进制默认值 |
+| `-log-level` | *未写* | 有意省略：二进制默认 `info`（`config.go`），现网日志实测即 info；需要 debug 时临时加 |
+| `-room-expiry` | *未写* | 有意省略：默认 `1800s`（30 分钟无人加入即销毁），与契约一致，无部署差异 |
+| `-pong-wait` | *未写* | 有意省略：默认 `45s`（=3×15s 心跳）；调小会提高弱网误判风险，需与客户端预算一起评估 |
+| `-max-message-bytes` / `-write-timeout` / `-send-timeout` | *未写* | 有意省略：默认值即 doc/09 §1 与设计值（64KB / 10s / 5s），无部署差异 |
+
+> 原则：**只把"部署事实"与"行为开关"写进 unit**；纯默认值参数保持省略，避免同一取值两处维护而漂移。
+> `-room-grace` 属前者（t70 已写进现网、且它决定 t67 修复是否生效），因此必须显式。
+
+### 6.4 为什么 `-room-grace 90s` 不可省略（论证与实测）
+
+- **语义**：WS 瞬断后**保留房间与席位 90 s**——期间不回收房间、不给在线对端发 `peerLeft`，断开者可用原 `roomId` 同身份重连（回 `joined`、拿回原 `peerId`）；宽限期满仍未重连才回收席位并只发一次 `peerLeft`。实现见 `signaling/room/manager.go`（`MarkOffline`/`expireGrace`）与 `reports/35-room-grace.md`。
+- **显式写入 ⇒ 行为不随二进制默认值漂移**：当前二进制默认值也是 90 s（`config.DefaultRoomGrace`），但省略该 flag 时**行为由二进制决定**；写进 unit 后，即便将来默认值被改动，部署形态仍钉在 90 s。（实测：同版本二进制带/不带该 flag，`/healthz` 均为 `roomGraceSec: 90`。）
+- **若部署 t67 之前的二进制**：该二进制不认识此 flag，systemd 启动即失败（`flag provided but not defined: -room-grace`，退出码 2，配合 `Restart=always` 表现为反复重启失败）——**这是"响亮的失败"**；而如果那时 unit 里也**没有**这个 flag，就会**静默退回旧行为**（一人掉线即销毁房间 + 立即 `peerLeft`，即 t67 修掉的真机缺陷）。两者对比，显式 flag 把风险从"静默"变成"可见"。
+- 上述两点均有**本机可复跑实测**（不是推断），原始输出见 `reports/43-deploy-unit-consistency.md` §3。
+
+### 6.5 回滚
+
+```bash
+# ① 回滚 unit（t70 部署时留有备份；命名形如 signaling.service.bak-t70-<UTC时间戳>）
+ssh ... 'ls -l /opt/signaling/signaling.service.bak-* /etc/systemd/system/signaling.service*; exit'
+ssh ... 'cp -a /opt/signaling/signaling.service.bak-t70-20260915T234524 /etc/systemd/system/signaling.service \
+         && systemctl daemon-reload && systemctl restart signaling && systemctl is-active signaling; exit'
+
+# ② 回滚二进制（t70 部署前旧件备份，t9/t12 版 c298235a…）
+ssh ... 'cp -a /opt/signaling/bak-t70-20260915T234518 /opt/signaling/signaling \
+         && systemctl restart signaling && sha256sum /opt/signaling/signaling; exit'
+
+# ③ 复核：unit 与服务状态
+ssh ... 'systemctl cat signaling | grep ExecStart; systemctl is-active signaling; systemctl is-enabled signaling; exit'
+curl -s http://47.238.144.66:8443/healthz | grep -E 'status|roomGraceSec'
+```
+> ⚠️ **回滚到 t67 之前的二进制时，`ExecStart` 必须同时去掉 `-room-grace 90s`**（旧二进制不认识该 flag，否则服务起不来）。
+> 反之，保留 `-room-grace` 就必须配 t67 及以后的二进制——这正是 6.4 的结论。

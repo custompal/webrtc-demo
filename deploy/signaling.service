@@ -1,3 +1,22 @@
+# 仓库侧副本（deploy/signaling.service）——与宿主机现网 unit 逐参数一致（t79 对齐）
+# ---------------------------------------------------------------------------
+# ⚠️ 本文件的有效指令必须与宿主机 /etc/systemd/system/signaling.service **逐参数一致**；
+#    下面的 `#` 行只是仓库侧说明，systemd 会忽略，因此本副本与宿主机文件的
+#    原始 md5 不同（差异仅为注释）。核对方法见 deploy/README.md §6。
+#
+# ⚠️ `-room-grace <duration>` **不可省略、不可改小**（t67 行为开关）：
+#    · 有它  ⇒ WS 瞬断后房间与席位保留 90s：期间不回收房间、不给对端发 peerLeft，
+#              断开者可凭原 roomId 同身份重连（回 joined、拿回原 peerId）；
+#              宽限期满仍未重连才回收席位并只发一次 peerLeft。
+#    · 无它  ⇒ 取决于所部署二进制：t67 起的二进制默认值仍是 90s（DefaultRoomGrace），
+#              但**行为不再由本文件钉住**、会随二进制默认值漂移；而若部署 t67 **之前**的
+#              二进制，则该二进制不认识此 flag（`flag provided but not defined: -room-grace`，
+#              退出码 2）→ 服务起不来；反之若那时 unit 里也没有它，就会**静默退回旧行为**
+#              （一人掉线即销毁房间 + 立即 peerLeft，正是 t67 修掉的真机缺陷）。
+#    · 结论  ⇒ 显式写死 90s，使「照仓库重部署」既不静默退化为旧行为、也不依赖二进制默认值。
+#    依据：t67 实现与实测 reports/35-room-grace.md、t70 部署 reports/38-signaling-grace-deploy.md；
+#          契约侧背景：doc/14 §8.4-1（ROOM_FULL 为 transient）与 C31（部署事实优先）。
+# ---------------------------------------------------------------------------
 [Unit]
 Description=WebRTC Demo Signaling Server
 After=network.target
@@ -6,7 +25,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/signaling
-ExecStart=/opt/signaling/signaling -addr :8443 -stun stun:47.238.144.66:3478 -turn turn:47.238.144.66:3478?transport=udp -user demo:demopass -log /var/log/signaling/signaling.log
+ExecStart=/opt/signaling/signaling -addr :8443 -stun stun:47.238.144.66:3478 -turn turn:47.238.144.66:3478?transport=udp -user demo:demopass -log /var/log/signaling/signaling.log -room-grace 90s
 Restart=always
 RestartSec=3
 LimitNOFILE=65536
