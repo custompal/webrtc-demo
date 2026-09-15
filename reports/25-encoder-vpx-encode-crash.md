@@ -87,6 +87,31 @@ raw_img alloc(480x640) sy=480 su=240 sv=240 owner=1
 ⇒ **配置字段、图像构造、时间基/pts/duration、时序分层矩阵在 x86 C 版 libvpx 上全部正常**，
 崩溃不来自这些（与 captain 建议的二分顺序逐一排除）。
 
+### 2.3 追加对照实验：拆开「尺寸变化」的三种走法（逐条证伪 t50 前的几何假设）
+
+captain 提示的假设是：`640×480 → 480×640` **像素数相同但几何不同**（307200 = 307200），
+`vp9/encoder/vp9_encoder.c:2170-2182` 的「尺寸增大才重分配上下文缓冲」判据可能漏掉这种交换，
+于是 `update_frame_size` 用新几何 memset `mbmi_ext_base` 而缓冲仍是旧几何 ⇒ 越界。
+为此在 harness 里加了 `--path=` 开关，把三条走法**分别**跑 10 帧（宿主、同一份 C libvpx）：
+
+| `--path` | 走法 | 结果 | 日志（`webrtc-build/t55-work/`） |
+| --- | --- | --- | --- |
+| `reinit`（默认，t50 现行代码） | `enc_init(640×480)` → `destroy`+`enc_init(480×640)` | **OK，produced=10** | `pathreini.log`（sha256 `cf0083778f68…`） |
+| `configset`（**pre-t50 原路径**） | `enc_init(640×480)` → **`vpx_codec_enc_config_set(480×640)`** | **OK，produced=10** | `pathconfigse.log`（sha256 `f1c4fffc2f90…`） |
+| `direct480` | **直接** `enc_init(480×640)`（完全不改尺寸） | **OK，produced=10** | `pathdirec480.log`（sha256 `3bba721538b7…`） |
+
+原始输出摘要：
+```
+--path=configset : enc_config_set(480x640) rc=0 OK → 10 帧 pkts=1 → produced=10 bytes=19870
+--path=reinit    : enc_init(480x640) rc=0 OK       → 10 帧 pkts=1 → produced=10 bytes=19870
+--path=direct480 : enc_init(480x640) rc=0 OK       → 10 帧 pkts=1 → produced=10 bytes=19870
+```
+**结论（证伪）**：在纯 C 版 libvpx 上，**连 pre-t50 的 `vpx_codec_enc_config_set` 路径也不崩**
+（含 `cpi->initial_width/height` 与 `update_frame_size` 的旧几何/新几何组合）。
+⇒ 「缓冲未重分配 → 越界」这条几何假设**不成立**（至少不是 x86 C 版上的可复现因素），
+进一步把差异收敛到 §3 的**编译期 SIMD 绑定**上；这与 t50（reinit）与 t50b（自持图像）两次
+真机失败尝试的结论一致：改的都是几何/图像，而问题在库本身。
+
 ---
 
 ## 3. 宿主 vs 真机的差异（acceptance 要求：不崩就必须给出差异）
