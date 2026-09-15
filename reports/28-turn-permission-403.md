@@ -282,8 +282,9 @@ $ journalctl -u coturn --since "-2min" | grep -aE "CREATE_PERMISSION|403"
 
 1. **真机 4G↔WiFi 复测**：本任务只能证明「服务端策略与中继数据路径可用」，最终成功率需要用户两台手机按 A1/A2/A3 改版后实测（无设备）。
 2. **TCP 3478 未放行**：`47.238.144.66:3478` TCP 从外部实测 FAIL（安全组只放行 UDP 3478/49152-49200 与 TCP 8443）⇒ A5 的 TCP 回退需用户开通。
-3. `allowed-peer-ip=169.254.0.0-169.254.255.255` 是否保留待评估：它让中继可访问 link-local（含云元数据 169.254.169.254）。当前保留是为覆盖手机可能产生的 link-local 候选；若安全优先可删除该行（代价：这类候选会 403，不影响正常私网/公网路径）。
-4. `fingerprint` 选项已在宿主生效且不强制客户端；建议同步修订 `doc/01-cloud-infra.md` §5（把 `use-fingerprint` 改为 `fingerprint`）——**本任务未改 doc**。
+3. ~~`allowed-peer-ip=169.254.0.0-169.254.255.255` 是否保留待评估~~ → **已结案（见附录 C）**：captain 裁决不放行 link-local（含云元数据 169.254.169.254）；实测「仅删除 allowed 行并不能恢复 403」（coturn 4.6.1 内建默认不拒绝 link-local），最终改为**显式 `denied-peer-ip=169.254.0.0-169.254.255.255`**，复测 `169.254.169.254 → 403`。
+4. **A5（TURN over TCP 3478）按 captain 裁决暂不做**：需云安全组放行 TCP 3478（外部依赖），保留为「待用户/平台放行后可选的回退路径」。
+5. `fingerprint` 选项已在宿主生效且不强制客户端；建议同步修订 `doc/01-cloud-infra.md` §5（把 `use-fingerprint` 改为 `fingerprint`）——**本任务未改 doc**。
 
 ## 8. 附录：复跑命令与产物
 
@@ -358,3 +359,49 @@ dj-b: 同一轮未见 CREATE_PERMISSION 403（该轮未建到申请权限的阶�
 
 > 上述两条**不改变** t58 的服务端结论：403 仅针对回环地址、私网/CGNAT/公网对等端一律放行、配额无耗尽证据；服务端已无阻塞项，剩余风险在客户端 gather 时序与 UI 可见性。
 > 新证据路径：`/opt/dsh-workspaces/tmp/dj-a/x`、`/opt/dsh-workspaces/tmp/dj-b/x`（本轮）；`di-a/di-b`（正文）、`dl-*`（旧）。
+
+---
+
+## 附录 C：link-local（169.254/16）改为显式拒绝（captain 裁决落地，2026-09-15 20:52）
+
+### C.1 裁决与落地
+
+captain 裁决：**不放行 `169.254/16`**（含云元数据 `169.254.169.254`，放行等于给 SSRF 留后门）；4G↔WiFi 真正需要的只有 `10/8`、`172.16/12`、`192.168/16`、`100.64/10`。
+
+落地过程（含一次**实测修正**）：
+
+1. **先只删 `allowed-peer-ip=169.254.0.0-169.254.255.255`**（备份 `/etc/turnserver.conf.bak-t58b-20260915T205146`）→ 重启后复测：`169.254.169.254` **仍然 SUCCESS**。
+   ⇒ **结论修正**：coturn 4.6.1 的内建默认拒绝表**只含** `0.0.0.0/8` 与 `127.0.0.0/8`，**不拒绝 link-local**；因此「删掉 allowed 行」并不能恢复 403，原以为的"默认拒绝"不存在。要真正挡住 SSRF，必须**显式拒绝**。
+2. **补加 `denied-peer-ip=169.254.0.0-169.254.255.255`**（备份 `/etc/turnserver.conf.bak-t58c-20260915T205217`）→ `systemctl restart coturn` → `active`/`enabled`。
+   （man 页语义："同一地址同时出现在 allowed 与 denied 时按 allowed 处理" ⇒ 已删 allowed，故 deny 生效。）
+
+### C.2 复测矩阵（20:52:20，最终配置）
+
+```
+TURN 172.21.0.219:3478  user=demo  ALLOCATE ok  relay=47.238.144.66:49175
+
+0.0.0.0            ERROR   403  this-network 0/8        CreatePermission 被拒 (403)   ← 设计保留
+127.0.0.1          ERROR   403  loopback 127/8          CreatePermission 被拒 (403)   ← 设计保留
+169.254.169.254    ERROR   403  link-local/元数据        CreatePermission 被拒 (403)   ← 本次目标 ✅
+169.254.1.1        ERROR   403  link-local/元数据        CreatePermission 被拒 (403)
+10.0.0.5 / 172.16.0.1 / 172.21.0.219 / 192.168.1.101  SUCCESS   RFC1918 私网（4G↔WiFi 必需）
+100.64.0.1         SUCCESS  -   CGNAT 100.64/10
+224.0.0.1          SUCCESS  -   multicast 224/4
+8.8.8.8 / 47.238.144.66   SUCCESS  -   public 公网
+```
+
+**私网 peer 端到端复测（最终配置）**：`turnutils_peer -p 3480` + `turnutils_uclient -n 5 -e 172.21.0.219 -r 3480` → `tot_send_msgs=10, tot_recv_msgs=10`、**`Total lost packets 0 (0.000000%)`**；coturn 侧 `CREATE_PERMISSION processed, success`。
+
+### C.3 备份与回滚
+
+| 备份 | 内容 | 回滚命令 |
+|---|---|---|
+| `/etc/turnserver.conf.bak-t58-20260915T204512` | **t58 之前**的原始配置（611 B） | `cp -a /etc/turnserver.conf.bak-t58-20260915T204512 /etc/turnserver.conf && systemctl restart coturn` |
+| `/etc/turnserver.conf.bak-t58b-20260915T205146` | 删掉 169.254 allowed 行之后（1 928 B） | 同上替换文件名 |
+| `/etc/turnserver.conf.bak-t58c-20260915T205217` | **加 deny 之前的最终态**（2 136 B） | 同上替换文件名 |
+
+### C.4 与其它裁决的关系
+
+- 回环（`127.0.0.0/8`、`::1`）**继续拒绝**；A2/A3（客户端侧过滤回环候选）由 android-dev 承接 —— 与本附录一致。
+- A5（`turn:…?transport=tcp`）按裁决**暂不做**，保留为"待用户/平台放行 TCP 3478 后可选的回退路径"。
+- 仓库副本 `deploy/turnserver.conf` 已同步为最终配置（`diff` 与宿主机逐字节一致）。
