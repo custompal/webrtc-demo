@@ -84,11 +84,23 @@ class CallSession(
         /** stats 采样间隔（§7.4 冻结 2 s）。 */
         const val STATS_INTERVAL_MS = 2_000L
 
-        /** 看门狗第一档：15 s 打 WARN（含候选类型计数）。 */
-        const val ICE_WARN_MS = 15_000L
+        /**
+         * 看门狗第一档（t60/A1①：由 15 s 放宽到 **30 s**）。
+         *
+         * 依据 t58 §6.3 A1：`4G↔WiFi + 走中继` 场景下中继候选实测可能 >15 s 才到位
+         * （真机 dj-a 先 `local=-` 约 13 s 才拿到 relay 候选），15 s 固定窗口会把
+         * "正在正常收集"误判为"连不上"。
+         */
+        const val ICE_WARN_MS = 30_000L
 
-        /** 看门狗第二档：30 s 打 ERROR 并上报 UI（含「强制中继」提示）。 */
-        const val ICE_FAIL_MS = 30_000L
+        /** 看门狗第二档（t60/A1①：由 30 s 放宽到 **45 s**）：确认为失败并上报 UI。 */
+        const val ICE_FAIL_MS = 45_000L
+
+        /** 【t60/A1③】超时后先做 ICE restart 的尝试上限（而不是立刻判失败）。 */
+        const val MAX_ICE_RESTARTS = 2
+
+        /** 【t60/A1②】看门狗在"TURN 已配置但中继候选还没 gather 到"时的顺延档（每次 +15 s）。 */
+        const val ICE_DEFER_STEP_MS = 15_000L
 
         private const val CODEC_VP9 = "VP9"
 
@@ -162,6 +174,39 @@ class CallSession(
 
     /** 仅带 `session` + `evt` 的关键事件字段（t53）。 */
     private fun keyOnly(): Map<String, String> = emptyMap<String, String>().withKey()
+
+    // ======================= t60：中继健壮性（A2/A3/A4/A7） =======================
+
+    /** 本会话是否配置了 TURN（决定"未 gather 到中继候选"是否算异常，A7）。 */
+    @Volatile
+    private var turnConfigured = false
+
+    /** 本会话使用的 ICE 配置（ICE restart 时用 `setConfiguration` 重新应用以触发重新 gathering）。 */
+    private var iceConfig: IceServerConfig? = null
+
+    /** `start()` 时的 forceRelay 开关（重新应用配置时保持一致的强制中继语义）。 */
+    @Volatile
+    private var forceRelayConfig = false
+
+    /** `restartIce` 已尝试次数（A1③/A4 的上限控制）。 */
+    @Volatile
+    private var iceRestartAttempts = 0
+
+    /** 收到的 TURN 相关候选错误计数（A4：`701 TURN_allocate_request_timed_out` 等）。 */
+    @Volatile
+    private var turnErrorCount = 0
+
+    /** 被过滤掉的 loopback **本端**候选数（A2）。 */
+    @Volatile
+    private var filteredLocalLoopback = 0
+
+    /** 被过滤掉的 loopback **对端**候选数（A3）。 */
+    @Volatile
+    private var filteredRemoteLoopback = 0
+
+    /** ICE 收集完成时刻（A1②：中继场景下超时锚点后移的依据）。 */
+    @Volatile
+    private var gatheringCompleteAtMs = 0L
 
     // ======================= t44 诊断与竞态兜底状态 =======================
 
@@ -243,6 +288,16 @@ class CallSession(
                 mapOf("ice_servers" to iceSummary, "force_relay" to forceRelay.toString()).withKey(),
             )
             val config = WebRtcConfig.build(ice, forceRelay)
+            // 【t60/A4/A7】配了 TURN ⇒ 打开**持续 gathering**：中继候选实测可能晚到
+            // （真机 dj-a 约 13 s 才拿到 relay），GATHER_ONCE 在首次收集结束后不会再补，
+            // 网络切换/中继恢复后也拿不到新候选；GATHER_CONTINUALLY 允许后续继续补候选，
+            // 并在 [restartIce] 里通过 `setConfiguration` 再次应用以**主动触发重新 gathering**。
+            iceConfig = ice
+            forceRelayConfig = forceRelay
+            turnConfigured = ice?.turnUrl?.isNotBlank() == true
+            if (turnConfigured) {
+                config.continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            }
             val observer = PeerConnectionObserverImpl(events)
             val connection = factory.createPeerConnection(config, observer)
             if (connection == null) {
@@ -509,6 +564,23 @@ class CallSession(
         }
         // 【t44】对端候选的类型/地址/端口必须落盘：这是判断"对端把什么候选送到了本端"的唯一证据
         val info = IceCandidateInfo.parse(candidate)
+        // 【t60/A3】对端的**回环候选**同样丢弃：真机对端会把自己机器的 `127.0.0.1`/`::1` host 候选
+        // 发过来，灌进 libwebrtc 后本端会为其建立权限并尝试连接 → coturn `403 Forbidden IP`（t58）。
+        // 必须在**解析后、计数/暂存之前**过滤，避免它进入 t53 的暂存队列被回放。
+        if (LoopbackCandidates.isLoopback(info.address)) {
+            filteredRemoteLoopback++
+            AppLog.w(
+                TAG,
+                "ice_candidate_filtered",
+                mapOf(
+                    "direction" to "remote",
+                    "reason" to "loopback",
+                    "remote" to info.summary(),
+                    "n" to filteredRemoteLoopback.toString(),
+                ).withKey(),
+            )
+            return
+        }
         candidateCounter.addRemote(info)
         // 【t53】候选同样走闸门：PC 未发布时暂存（并在同一把锁内记录队列长度）。
         var queued = 0
@@ -713,6 +785,23 @@ class CallSession(
             // 【t44】本端候选类型/地址/端口落盘（判断是否真的 gather 到 host/srflx/relay）
             val info = IceCandidateInfo.parse(candidate.sdp)
             candidateCounter.addLocal(info)
+            // 【t60/A2】回环候选**不发送**：真机两台设备都在广播 `127.0.0.1`/`::1` 的 host 候选
+            // （t58 §2.1 合计 63+176+177+4 条），对端把回环地址当 peer 去建权限会被 coturn
+            // 以 `403 Forbidden IP` 拒绝（t58 §2.2 探针矩阵），既浪费信令又污染对端诊断。
+            if (LoopbackCandidates.isLoopback(info.address)) {
+                filteredLocalLoopback++
+                AppLog.w(
+                    TAG,
+                    "ice_candidate_filtered",
+                    mapOf(
+                        "direction" to "local",
+                        "reason" to "loopback",
+                        "local" to info.summary(),
+                        "n" to filteredLocalLoopback.toString(),
+                    ).withKey(),
+                )
+                return
+            }
             AppLog.i(
                 TAG,
                 "ice_candidate_local",
@@ -724,6 +813,12 @@ class CallSession(
             )
             signaling.sendIce(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex)
             emitEvent(IceEventType.CANDIDATE, "mid=${candidate.sdpMid} idx=${candidate.sdpMLineIndex} ${info.summary()}")
+            // 【t60/A1②】**首个 relay 候选到位**即刻重新校准看门狗（不等下一档定时器）：
+            // 契约要求"首个 relay 候选到位或 iceGatheringState==COMPLETE 后再起算"，
+            // 这里在候选到达瞬间补一次检查，使"等到 relay 再判"真正生效。
+            if (info.type == IceCandidateInfo.TYPE_RELAY) {
+                rearmWatchdogOnRelay(info.summary())
+            }
         }
 
         override fun onIceConnectionState(state: PeerConnection.IceConnectionState) {
@@ -740,12 +835,22 @@ class CallSession(
         override fun onIceGatheringState(state: PeerConnection.IceGatheringState) {
             emitEvent(IceEventType.ICE_GATHERING, state.name)
             if (state == PeerConnection.IceGatheringState.COMPLETE) {
+                // 【t60/A1②】记录收集完成时刻：中继场景下它是看门狗超时的**锚点**
+                if (gatheringCompleteAtMs == 0L) {
+                    gatheringCompleteAtMs = System.currentTimeMillis()
+                }
                 // 新增事件名（t44，已在 reports/15-connection-defect.md 登记）：
                 // 收集结束时一次性给出**按类型的候选计数**，这是"到底 gather 到什么"的直接证据。
                 AppLog.i(
                     TAG,
                     "ice_gathering_complete",
-                    mapOf("local" to candidateCounter.localSummary(), "relay" to candidateCounter.localRelayCount().toString()),
+                    mapOf(
+                        "local" to candidateCounter.localSummary(),
+                        "relay" to candidateCounter.localRelayCount().toString(),
+                        "turn_configured" to turnConfigured.toString(),
+                        "turn_errors" to turnErrorCount.toString(),
+                        "filtered_loopback" to (filteredLocalLoopback + filteredRemoteLoopback).toString(),
+                    ),
                 )
                 emitEvent(IceEventType.END_OF_CANDIDATES, "complete local=${candidateCounter.localSummary()}")
             }
@@ -774,6 +879,27 @@ class CallSession(
                 "ice_candidate_error url=${event.url ?: "-"} addr=${event.address ?: "-"}:${event.port} " +
                     "code=${event.errorCode} text=${event.errorText ?: "-"}",
             )
+            // 【t60/A4】TURN 相关错误（真机：`code=701 TURN_allocate_request_timed_out`，与 STUN 同端口双超时）
+            // 旧实现只打一行日志、不重试，最终直接 FAILED。现在：计次 + 主动**重新 gathering**。
+            val url = event.url ?: ""
+            if (url.startsWith("turn", ignoreCase = true) || url.startsWith("turns", ignoreCase = true)) {
+                turnErrorCount++
+                AppLog.w(
+                    TAG,
+                    "ice_turn_error",
+                    mapOf(
+                        "code" to event.errorCode.toString(),
+                        "text" to (event.errorText ?: "-"),
+                        "url" to url,
+                        "count" to turnErrorCount.toString(),
+                        "local_relay" to candidateCounter.localRelayCount().toString(),
+                    ).withKey(),
+                )
+                if (candidateCounter.localRelayCount() == 0) {
+                    // 中继候选一个都没拿到 ⇒ 中继路径不可用，立刻尝试重新 gathering（不等看门狗超时）
+                    restartIce("turn_error_${event.errorCode}")
+                }
+            }
         }
 
         override fun onSignalingState(state: PeerConnection.SignalingState) {
@@ -872,10 +998,15 @@ class CallSession(
     }
 
     /**
-     * ICE/DTLS 连通性看门狗（t44）。
+     * ICE/DTLS 连通性看门狗（t44；t60 按 t58 §6.3 A1 重新标定口径）。
      *
-     * 目的：把"停在正在连接会议"从**不可诊断**变成**一次复测即可定因** ——
-     * 15 s 打 WARN（含本端/对端候选类型计数），30 s 打 ERROR 并**上报 UI**（含「强制中继」提示）。
+     * 目的：把"停在正在连接会议"从**不可诊断**变成**一次复测即可定因**。
+     *
+     * 【t60 口径变化】
+     *  * 第一档由 15 s 放宽到 **30 s**、第二档由 30 s 放宽到 **45 s**（中继 gather 实测可 >15 s）；
+     *  * 若"配了 TURN 但还没 gather 到中继候选且收集未完成" ⇒ **顺延一档**（并主动重新 gathering），
+     *    而不是判失败（A1②）；
+     *  * 第二档先尝试 **ICE restart**，用尽重启次数才上报失败（A1③）。
      * 若期间 ICE/传输已 CONNECTED，则取消（记 `ice_watchdog_ok`）。
      */
     private fun startConnectivityWatchdog(connection: PeerConnection) {
@@ -892,12 +1023,20 @@ class CallSession(
             connectivityWatchdog = timer
             connectivityWatchdogStartMs = System.currentTimeMillis()
         }
-        AppLog.i(TAG, "ice_watchdog_started", mapOf("timeout_ms" to ICE_WARN_MS.toString()).withKey())
+        AppLog.i(
+            TAG,
+            "ice_watchdog_started",
+            mapOf(
+                "timeout_ms" to ICE_WARN_MS.toString(),
+                "fail_ms" to ICE_FAIL_MS.toString(),
+                "turn_configured" to turnConfigured.toString(),
+            ).withKey(),
+        )
         timer.schedule({ checkConnectivity(connection, ICE_WARN_MS) }, ICE_WARN_MS, TimeUnit.MILLISECONDS)
         timer.schedule({ checkConnectivity(connection, ICE_FAIL_MS) }, ICE_FAIL_MS, TimeUnit.MILLISECONDS)
     }
 
-    /** 连通性仍未建立时的诊断/上报；[afterMs] 区分 WARN（15 s）与 ERROR（30 s）两档。 */
+    /** 连通性仍未建立时的诊断/上报；[afterMs] 区分 WARN（30 s）与 ERROR（45 s）两档。 */
     private fun checkConnectivity(connection: PeerConnection, afterMs: Long) {
         if (closed) return
         val iceState = try {
@@ -916,24 +1055,169 @@ class CallSession(
             stopConnectivityWatchdog(ifConnected = true)
             return
         }
+        val relayCount = candidateCounter.localRelayCount()
+        val relayMissing = turnConfigured && relayCount == 0
+        // 【t60/A1②】中继场景下"还没收集完"就不该判失败：等 relay 候选到位或收集完成再起算。
+        // 真机 dj-a 先 `local=-` 约 13 s 才拿到 relay 候选，15 s 固定窗口必然误报。
+        if (afterMs < ICE_FAIL_MS && relayMissing && gatheringCompleteAtMs == 0L && !closed) {
+            val deferred = afterMs + ICE_DEFER_STEP_MS
+            AppLog.w(
+                TAG,
+                "ice_watchdog_rearmed",
+                mapOf(
+                    "after_ms" to afterMs.toString(),
+                    "next_ms" to deferred.toString(),
+                    "reason" to "awaiting_relay",
+                    "turn_configured" to turnConfigured.toString(),
+                ).withKey(),
+            )
+            // 顺延一档再查（并主动触发一次重新 gathering，见 A4/A7）
+            restartIce("watchdog_defer")
+            val timer = connectivityWatchdog
+            if (timer != null) {
+                timer.schedule({ checkConnectivity(connection, deferred) }, ICE_DEFER_STEP_MS, TimeUnit.MILLISECONDS)
+            }
+            return
+        }
         val fields = mapOf(
             "after_ms" to afterMs.toString(),
             "ice_state" to (iceState?.name ?: "-"),
             "transport" to (transportState?.name ?: "-"),
             "local_candidates" to candidateCounter.localSummary(),
             "remote_candidates" to candidateCounter.remoteSummary(),
-            "local_relay" to candidateCounter.localRelayCount().toString(),
+            "local_relay" to relayCount.toString(),
+            "turn_configured" to turnConfigured.toString(),
+            "turn_errors" to turnErrorCount.toString(),
+            "relay_missing" to relayMissing.toString(),
+            "filtered_loopback" to (filteredLocalLoopback + filteredRemoteLoopback).toString(),
+            "ice_restarts" to iceRestartAttempts.toString(),
             "remote_desc_set" to remoteDescriptionSet.toString(),
         )
         if (afterMs >= ICE_FAIL_MS) {
+            // 【t60/A1③】先尝试 ICE restart（而不是直接 FAILED）；重启次数用尽才上报失败。
+            if (relayMissing && restartIce("ice_timeout")) {
+                AppLog.w(TAG, "ice_timeout_restarting", fields)
+                val timer = connectivityWatchdog
+                if (timer != null && !closed) {
+                    val deferred = afterMs + ICE_DEFER_STEP_MS
+                    timer.schedule({ checkConnectivity(connection, deferred) }, ICE_DEFER_STEP_MS, TimeUnit.MILLISECONDS)
+                }
+                return
+            }
             AppLog.e(TAG, "ice_timeout", fields)
             listener.onError(
-                "ICE 未连通（本端候选 ${candidateCounter.localSummary()}；" +
-                    "对端候选 ${candidateCounter.remoteSummary()}）。" +
-                    "可在诊断页打开「强制中继」后重试，并立即导出日志",
+                if (relayMissing) {
+                    // 【t60/A7】显式区分"中继不可用"与"单纯没配上候选对"，复测时可直接定因
+                    "未获取到中继候选（TURN ${if (turnErrorCount > 0) "报错 $turnErrorCount 次" else "无响应"}）——" +
+                        "本端候选 ${candidateCounter.localSummary()}；对端候选 ${candidateCounter.remoteSummary()}。" +
+                        "可在通话页点「重试」重建中继，或在诊断页打开「强制中继」后重试，并立即导出日志"
+                } else {
+                    "ICE 未连通（本端候选 ${candidateCounter.localSummary()}；" +
+                        "对端候选 ${candidateCounter.remoteSummary()}）。" +
+                        "可在诊断页打开「强制中继」后重试，并立即导出日志"
+                },
             )
         } else {
             AppLog.w(TAG, "ice_not_connected", fields)
+            if (relayMissing) {
+                // 中继一个都没到：第一档就主动重新 gathering（A7）
+                restartIce("relay_missing_warn")
+            }
+        }
+    }
+
+    /**
+     * 主动 ICE restart + 重新 gathering（t60/A1③、A4、A7）。
+     *
+     * 做两件事：
+     *  1. `PeerConnection.restartIce()`：标记下一次 offer 带 `ice-restart`（由上层决定何时重发 offer）；
+     *  2. `setConfiguration(再次应用 GATHER_CONTINUALLY)`：**立即触发重新收集**中继候选 —— 这是
+     *     "有 TURN 配置但 `local_relay==0`"时唯一能在 ICE 层自救的动作（不重建 PeerConnection）。
+     *
+     * @param reason `turn_error_701` / `watchdog_defer` / `relay_missing_warn` / `ice_timeout` / `no_relay_candidate`。
+     * @return true 表示本次确实发起了 restart（调用方可据此顺延判定，而不是直接判失败）。
+     */
+    fun restartIce(reason: String): Boolean {
+        if (closed) return false
+        if (iceRestartAttempts >= MAX_ICE_RESTARTS) {
+            AppLog.w(
+                TAG,
+                "ice_restart_exhausted",
+                mapOf("reason" to reason, "attempts" to iceRestartAttempts.toString()).withKey(),
+            )
+            return false
+        }
+        val connection = peerConnection ?: return false
+        iceRestartAttempts++
+        var accepted = false
+        try {
+            connection.restartIce()
+            accepted = true
+        } catch (t: Throwable) {
+            AppLog.w(TAG, "ice_restart_failed", mapOf("reason" to (t.message ?: "-")).withKey())
+        }
+        // 再次应用配置以触发重新 gathering（配了 TURN 才需要）
+        if (turnConfigured) {
+            try {
+                val config = WebRtcConfig.build(iceConfig, forceRelayConfig).apply {
+                    continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+                }
+                connection.setConfiguration(config)
+            } catch (t: Throwable) {
+                AppLog.w(TAG, "ice_regather_failed", mapOf("reason" to (t.message ?: "-")).withKey())
+            }
+        }
+        AppLog.i(
+            TAG,
+            "ice_restart_requested",
+            mapOf(
+                "reason" to reason,
+                "attempt" to iceRestartAttempts.toString(),
+                "accepted" to accepted.toString(),
+                "local_relay" to candidateCounter.localRelayCount().toString(),
+                "turn_errors" to turnErrorCount.toString(),
+            ).withKey(),
+        )
+        return accepted
+    }
+
+    /** 是否"配了 TURN 但本会话一个中继候选都没有"（t60/A7：UI 侧显式子原因的依据）。 */
+    fun relayMissing(): Boolean = turnConfigured && candidateCounter.localRelayCount() == 0
+    /** 本会话已 gather 到的中继候选数（诊断用）。 */
+    fun localRelayCandidateCount(): Int = candidateCounter.localRelayCount()
+
+    /** TURN 相关候选错误计数（诊断用）。 */
+    fun turnErrorCount(): Int = turnErrorCount
+
+    /** 已过滤的回环候选数（A2+A3，诊断用）。 */
+    fun filteredLoopbackCount(): Int = filteredLocalLoopback + filteredRemoteLoopback
+
+    /**
+     * 首个 relay 候选到位 ⇒ 立刻重新校准看门狗（t60/A1②）。
+     *
+     * 契约口径："首个 relay 候选到位或 `iceGatheringState==COMPLETE` 后**再起算**"。
+     * 这里在候选到达瞬间补一次检查（以看门狗启动起的**实际耗时**为 `afterMs`），
+     * 使"等 relay 再判"不必依赖下一档定时器；同时落 `ice_watchdog_rearmed` 供复测自证。
+     *
+     * @param candidateSummary 触发本次重新校准的候选摘要（诊断用）。
+     */
+    private fun rearmWatchdogOnRelay(candidateSummary: String) {
+        if (closed) return
+        val connection = peerConnection ?: return
+        val elapsed = System.currentTimeMillis() - connectivityWatchdogStartMs
+        AppLog.i(
+            TAG,
+            "ice_watchdog_rearmed",
+            mapOf(
+                "reason" to "relay_candidate",
+                "elapsed_ms" to elapsed.toString(),
+                "relay" to candidateCounter.localRelayCount().toString(),
+                "candidate" to candidateSummary,
+            ).withKey(),
+        )
+        // 已经 CRITICAL（relay 到位但还没连上）：按当前耗时立即复核一次
+        if (elapsed >= ICE_WARN_MS) {
+            checkConnectivity(connection, maxOf(elapsed, ICE_WARN_MS))
         }
     }
 
@@ -1115,4 +1399,47 @@ class SessionLifecycle {
     /** 是否已就绪（= `pc_created` 已落盘、可安全应答）。 */
     val isReady: Boolean
         get() = phase == SessionPhase.READY
+}
+
+// ============================================================================
+// 【t60】回环候选判定（A2/A3；纯 Kotlin，无 Android / org.webrtc 依赖）
+// ----------------------------------------------------------------------------
+// 为什么必须过滤：真机两台设备都把 `127.0.0.1` / `::1` 的 host 候选写进 SDP 互发
+// （t58 §2.1：di-a 63 处 `addr=127.0.0.1`、di-b 176+177+4 条），对端把它当 peer 去
+// CREATE_PERMISSION 时被 coturn 以 `403 Forbidden IP` 拒绝（t58 §2.2 探针矩阵：
+// 只有 0/8 与 127/8 被拒），既浪费信令、又把对端日志污染成"有候选却连不上"。
+// 单测见 app/src/test/kotlin/com/example/webrtcdemo/webrtc/LoopbackCandidatesTest.kt。
+// ============================================================================
+
+/**
+ * 回环候选判定。
+ *
+ * 覆盖：IPv4 `127.0.0.0/8`、IPv6 `::1`（含展开写法）以及 IPv4-mapped 写法
+ * （`::ffff:127.0.0.1`）。**不**过滤私网/链路本地/CGNAT（那是服务端策略，t58 附录 C 已裁决），
+ * 未知/空地址一律**不过滤**（保守：宁可多发一条候选，也不能因解析失败丢掉可用路径）。
+ */
+object LoopbackCandidates {
+
+    /**
+     * @param address 候选地址（`IceCandidateInfo.address`，可能为空串或畸形）。
+     * @return true 表示该地址是回环地址，应丢弃（A2 发送前 / A3 接收后）。
+     */
+    fun isLoopback(address: String): Boolean {
+        val addr = address.trim().trim('[', ']').lowercase()
+        if (addr.isEmpty()) return false
+        if (addr == "::1" || addr == "0:0:0:0:0:0:0:1") return true
+        // IPv4-mapped（::ffff:127.0.0.1）与 IPv4
+        val v4 = when {
+            addr.startsWith("::ffff:") -> addr.removePrefix("::ffff:")
+            else -> addr
+        }
+        val parts = v4.split('.')
+        if (parts.size != 4) return false
+        val first = parts[0].toIntOrNull() ?: return false
+        for (part in parts) {
+            val value = part.toIntOrNull() ?: return false
+            if (value < 0 || value > 255) return false
+        }
+        return first == 127
+    }
 }

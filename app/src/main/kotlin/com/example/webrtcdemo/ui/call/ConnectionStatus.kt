@@ -39,8 +39,17 @@ enum class ConnReason {
     /** 无失败/无中断。 */
     NONE,
 
-    /** 超时：15 s 内始终没有选中的候选对（`stats_sample local=- mode=-`）。 */
+    /** 超时：在阈值内始终没有选中的候选对（`stats_sample local=- mode=-`）。 */
     TIMEOUT_NO_PAIR,
+
+    /**
+     * 超时且**配了 TURN 却没有 gather 到任何中继候选**（`local_relay=0`）。
+     *
+     * 【t60 / t58 §6.3 A7】这是 `TIMEOUT_NO_PAIR` 的**显式子原因**：真机 4G↔WiFi 失败会话的特征就是
+     * "有 TURN 配置但 `local_relay=0`"（中继 allocate/权限失败），必须与"单纯没配对"区分开，
+     * 否则复测时无法判断到底是 NAT 打洞失败还是中继不可用。
+     */
+    NO_RELAY_CANDIDATE,
 
     /** 曾连上但 ICE/DTLS 掉线，且在宽限期内未能自动恢复。 */
     CONNECTION_LOST,
@@ -50,6 +59,43 @@ enum class ConnReason {
 
     /** 本地建会话失败（PeerConnection 创建失败等）。 */
     SESSION_START_FAILED,
+}
+
+/**
+ * 一次 stats 样本能提供的**连通证据**（t60：判活口径的唯一定义）。
+ *
+ * 【硬要求，来源 t58 §6.3 附录 B.4 + captain 邮件】判活**绝对不能用 `up_bps`**：
+ * 真机在没有选中候选对（`mode=- local=-`）时 `up_bps` 仍 ≈49 kbps（编码器被压到最低码率持续产出、
+ * 字节交给 ICE 层即计入 `bytesSent`），而 `down_bps=0`。
+ */
+enum class LivenessEvidence {
+    /** 有选中的候选对（`mode=P2P|RELAY`）。 */
+    SELECTED_PAIR,
+
+    /** 真的在收（`down_bps > 0`）——唯一能证明端到端路径打通的信号。 */
+    DOWNLINK,
+
+    /** 无任何连通证据（**即使 `up_bps` 很大**）。 */
+    NONE,
+}
+
+/**
+ * 由一次 stats 样本判定连通证据（纯函数，可单测）。
+ *
+ * @param hasSelectedPair `stats_sample mode` 非空（= 存在可解析的选中候选对）。
+ * @param downBitrateBps 下行码率（`down_bps`）。
+ * @param upBitrateBps 上行码率（`up_bps`）——**刻意保留在签名里但永不参与判定**，
+ *        目的是把"不得用它判活"这条纪律变成**可被单测直接钉住**的行为契约
+ *        （见 `upstreamOnlySamplesNeverReachConnected` / `livenessNeverUsesUpstreamBitrate`）。
+ */
+fun livenessEvidence(
+    hasSelectedPair: Boolean,
+    downBitrateBps: Int,
+    upBitrateBps: Int,
+): LivenessEvidence = when {
+    hasSelectedPair -> LivenessEvidence.SELECTED_PAIR
+    downBitrateBps > 0 -> LivenessEvidence.DOWNLINK
+    else -> LivenessEvidence.NONE
 }
 
 /**
@@ -73,6 +119,10 @@ data class ConnStatus(
     val remoteFrameReady: Boolean = false,
     val remoteFrameStalled: Boolean = false,
     val retryCount: Int = 0,
+    /** 【t60】已过"可重试提示"档位（15 s）：由 [ConnectionStatusTracker.onTick] 置位。 */
+    val retryHintReached: Boolean = false,
+    /** 【t60】配了 TURN 但本会话 relay 候选数仍为 0（A7 的子原因判定依据）。 */
+    val relayMissing: Boolean = false,
 ) {
     /** 是否需要中央状态卡（未连上 / 已失败）。 */
     val showOverlay: Boolean
@@ -87,9 +137,15 @@ data class ConnStatus(
     val remoteDimmed: Boolean
         get() = phase != ConnPhase.CONNECTED || !remoteFrameReady
 
-    /** 是否可一键重试（仅失败态）。 */
+    /**
+     * 是否可一键重试。
+     *
+     * 【t60 两档口径】① 失败态（`FAILED`）必然可重试；② **未连上但已过 15 s**（[retryHintReached]）
+     * 也允许重试 —— 满足 t59 验收"15 s 内未 CONNECTED 即给出可操作提示并支持一键重试"，
+     * 同时把"判定失败"推迟到 30–45 s（t58 §6.3 A1：中继 gather 实测可 >15 s，过早判失败会误报）。
+     */
     val canRetry: Boolean
-        get() = phase == ConnPhase.FAILED
+        get() = phase == ConnPhase.FAILED || (phase == ConnPhase.CONNECTING && retryHintReached)
 
     /** 已用秒数（向上取整，供"已等待 N 秒"文案与单测）。 */
     val elapsedSeconds: Long
@@ -116,6 +172,7 @@ data class ConnStatus(
 
             ConnPhase.FAILED -> when (reason) {
                 ConnReason.TIMEOUT_NO_PAIR -> "连接失败"
+                ConnReason.NO_RELAY_CANDIDATE -> "中继不可用"
                 ConnReason.CONNECTION_LOST -> "连接已断开"
                 ConnReason.REMOTE_FRAME_STALLED -> "画面已中断"
                 ConnReason.SESSION_START_FAILED -> "会话创建失败"
@@ -130,12 +187,20 @@ data class ConnStatus(
             ConnPhase.CONNECTING -> when (reason) {
                 ConnReason.CONNECTION_LOST -> "已中断 $sinceLossSeconds 秒，等待自动恢复"
                 ConnReason.REMOTE_FRAME_STALLED -> "已中断 $sinceLossSeconds 秒，等待画面恢复"
-                else -> "已等待 $elapsedSeconds 秒"
+                // 【t60】15 s 后可重试的中途提示（尚未判失败）
+                else -> if (retryHintReached) {
+                    "已等待 $elapsedSeconds 秒，仍未建立媒体通道（可点击重试）"
+                } else {
+                    "已等待 $elapsedSeconds 秒"
+                }
             }
 
             ConnPhase.FAILED -> when (reason) {
                 ConnReason.TIMEOUT_NO_PAIR ->
                     "${elapsedSeconds} 秒内未能建立媒体通道（NAT/防火墙可能阻断了候选对）"
+
+                ConnReason.NO_RELAY_CANDIDATE ->
+                    "${elapsedSeconds} 秒内未获取到中继候选（TURN 不可用或放行策略拒绝）"
 
                 ConnReason.CONNECTION_LOST -> "连接中断后未能自动恢复"
                 ConnReason.REMOTE_FRAME_STALLED -> "连接仍在，但未收到对端画面"
@@ -240,6 +305,7 @@ class ConnectionStatusTracker(
     private val connectTimeoutMs: Long = DEFAULT_CONNECT_TIMEOUT_MS,
     private val frameStallMs: Long = DEFAULT_FRAME_STALL_MS,
     private val lostGraceMs: Long = DEFAULT_LOST_GRACE_MS,
+    private val retryHintMs: Long = DEFAULT_RETRY_HINT_MS,
 ) {
 
     /** 当前状态快照。 */
@@ -256,6 +322,14 @@ class ConnectionStatusTracker(
     private var retries = 0
 
     /**
+     * ICE 收集完成时刻（`iceGatheringState == COMPLETE`）。
+     *
+     * 【t60 / A1②】超时**锚点**：中继 gather 实测可能 >15 s（真机 dj-a 先 `local=-` 约 13 s 才拿到
+     * relay 候选），从进房起算会误判。收集完成后锚点后移，即"A1 的第二种口径"。
+     */
+    private var gatheringCompleteAtMs = 0L
+
+    /**
      * 是否"曾经看到过新鲜远端媒体"。
      *
      * 不用 `lastFreshMediaMs > 0` 当哨兵：`0` 是合法时刻（单测直接以 0 为起点），
@@ -270,7 +344,19 @@ class ConnectionStatusTracker(
         lastFreshMediaMs = 0L
         hasFreshMedia = false
         lostAtMs = 0L
+        gatheringCompleteAtMs = 0L
         status = ConnStatus(phase = ConnPhase.CONNECTING, retryCount = retries)
+        return status
+    }
+
+    /**
+     * ICE 收集完成（`END_OF_CANDIDATES` / `iceGatheringState == COMPLETE`）。
+     *
+     * 【t60】只把**超时锚点**后移到此刻（不小于进房时刻）；已连上/已失败时不改状态。
+     */
+    fun onGatheringComplete(nowMs: Long): ConnStatus {
+        if (!active) return status
+        gatheringCompleteAtMs = maxOf(nowMs, startedAtMs)
         return status
     }
 
@@ -319,10 +405,19 @@ class ConnectionStatusTracker(
         return status
     }
 
-    /** 每 ~1 s 的心跳：推进时长、判定超时与帧停滞。 */
-    fun onTick(nowMs: Long): ConnStatus {
+    /**
+     * 每 ~1 s 的心跳：推进时长、判定"可重试提示"档位、超时与帧停滞。
+     *
+     * @param relayMissing 【t60/A7】是否"配了 TURN 但本会话 relay 候选数仍为 0"：
+     *        决定超时后的子原因（[ConnReason.NO_RELAY_CANDIDATE] vs [ConnReason.TIMEOUT_NO_PAIR]）。
+     */
+    fun onTick(nowMs: Long, relayMissing: Boolean = false): ConnStatus {
         if (!active) return status
         val elapsed = nowMs - startedAtMs
+        // 【t60/A1②】超时锚点：收集完成（若有）后才起算
+        val anchor = maxOf(startedAtMs, gatheringCompleteAtMs)
+        val sinceAnchor = nowMs - anchor
+        val retryHint = elapsed >= retryHintMs
         when (status.phase) {
             ConnPhase.CONNECTED -> {
                 // 画面停滞：曾就绪但超过阈值没有新的远端帧/下行字节
@@ -338,37 +433,55 @@ class ConnectionStatusTracker(
                         remoteFrameReady = false,
                         remoteFrameStalled = true,
                         elapsedMs = elapsed,
+                        retryHintReached = retryHint,
+                        relayMissing = relayMissing,
                     )
                 } else {
-                    status = status.copy(elapsedMs = elapsed)
+                    status = status.copy(
+                        elapsedMs = elapsed,
+                        retryHintReached = retryHint,
+                        relayMissing = relayMissing,
+                    )
                 }
             }
 
             ConnPhase.CONNECTING -> {
                 val loss = if (lostAtMs > 0L) nowMs - lostAtMs else 0L
                 val timedOut = when (status.reason) {
-                    // 从未连上：自进入通话起 connectTimeoutMs
-                    ConnReason.NONE -> elapsed >= connectTimeoutMs
+                    // 从未连上：自**锚点**（收集完成或进房，取较晚者）起算 connectTimeoutMs
+                    ConnReason.NONE -> sinceAnchor >= connectTimeoutMs
                     // 中断类：自中断起 lostGraceMs（期间允许自动恢复）
                     else -> loss >= lostGraceMs
                 }
                 status = if (timedOut) {
                     status.copy(
                         phase = ConnPhase.FAILED,
-                        reason = if (status.reason == ConnReason.NONE) {
-                            ConnReason.TIMEOUT_NO_PAIR
-                        } else {
-                            status.reason
+                        reason = when {
+                            status.reason != ConnReason.NONE -> status.reason
+                            // 【t60/A7】有 TURN 配置但一个 relay 候选都没有 ⇒ 显式子原因
+                            relayMissing -> ConnReason.NO_RELAY_CANDIDATE
+                            else -> ConnReason.TIMEOUT_NO_PAIR
                         },
                         elapsedMs = elapsed,
                         sinceLossMs = loss,
+                        retryHintReached = true,
+                        relayMissing = relayMissing,
                     )
                 } else {
-                    status.copy(elapsedMs = elapsed, sinceLossMs = loss)
+                    status.copy(
+                        elapsedMs = elapsed,
+                        sinceLossMs = loss,
+                        retryHintReached = retryHint,
+                        relayMissing = relayMissing,
+                    )
                 }
             }
 
-            ConnPhase.FAILED -> status = status.copy(elapsedMs = elapsed)
+            ConnPhase.FAILED -> status = status.copy(
+                elapsedMs = elapsed,
+                retryHintReached = true,
+                relayMissing = relayMissing,
+            )
         }
         return status
     }
@@ -381,6 +494,7 @@ class ConnectionStatusTracker(
         lastFreshMediaMs = 0L
         hasFreshMedia = false
         lostAtMs = 0L
+        gatheringCompleteAtMs = 0L
         status = ConnStatus(phase = ConnPhase.CONNECTING, retryCount = retries)
         return status
     }
@@ -412,8 +526,18 @@ class ConnectionStatusTracker(
     }
 
     companion object {
-        /** 进入通话后未连上的失败阈值（验收要求 15 s）。 */
-        const val DEFAULT_CONNECT_TIMEOUT_MS = 15_000L
+        /**
+         * 未连上的**硬失败**阈值（t58 §6.3 A1：取 30–45 s，中继 gather 实测可 >15 s）。
+         *
+         * 另见 [DEFAULT_RETRY_HINT_MS]：15 s 先给"可重试"提示，但不判失败。
+         */
+        const val DEFAULT_CONNECT_TIMEOUT_MS = 30_000L
+
+        /**
+         * "可重试提示"档位：未连上满 15 s 即给出可操作提示 + 重试入口（t59 验收要求），
+         * 但**不**判定失败（避免中继 gather 慢时误报，见 t58 §6.3 A1）。
+         */
+        const val DEFAULT_RETRY_HINT_MS = 15_000L
 
         /** 远端媒体停滞阈值（stats 采样间隔 2 s，取 2 个采样周期）。 */
         const val DEFAULT_FRAME_STALL_MS = 4_000L

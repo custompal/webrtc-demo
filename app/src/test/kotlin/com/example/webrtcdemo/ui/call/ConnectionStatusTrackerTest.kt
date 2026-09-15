@@ -50,23 +50,120 @@ class ConnectionStatusTrackerTest {
         assertFalse(tracker.active)
     }
 
-    /** 15 s 内始终没有选中候选对 ⇒ FAILED(TIMEOUT_NO_PAIR) 且可一键重试。 */
+    /**
+     * 【t60 两档口径】15 s ⇒ 出现"可重试"提示但**仍 CONNECTING**（不误判失败，t58 §6.3 A1）；
+     * 30 s（硬超时，取 30–45 s 区间下沿）⇒ `FAILED(TIMEOUT_NO_PAIR)` + 可重试。
+     */
     @Test
-    fun noSelectedPairTimesOutToFailedAndOffersRetry() {
+    fun retryHintAt15sThenHardFailAt30s() {
         val tracker = ConnectionStatusTracker()
         tracker.onCallStarted(0L)
 
         tracker.onTick(14_000L)
         assertEquals(ConnPhase.CONNECTING, tracker.status.phase)
+        assertFalse(tracker.status.retryHintReached)
         assertFalse(tracker.status.canRetry)
 
+        // 15 s：给出可操作提示 + 重试入口（t59 验收），但**不**判失败
         tracker.onTick(15_000L)
+        assertEquals(ConnPhase.CONNECTING, tracker.status.phase)
+        assertTrue(tracker.status.retryHintReached)
+        assertTrue(tracker.status.canRetry)
+        assertTrue(tracker.status.detail.contains("15 秒"))
+        assertTrue(tracker.status.detail.contains("可点击重试"))
+
+        tracker.onTick(29_000L)
+        assertEquals(ConnPhase.CONNECTING, tracker.status.phase)
+
+        // 30 s：硬失败
+        tracker.onTick(30_000L)
+        assertEquals(ConnPhase.FAILED, tracker.status.phase)
+        assertEquals(ConnReason.TIMEOUT_NO_PAIR, tracker.status.reason)
+        assertEquals("连接失败", tracker.status.title)
+        assertTrue(tracker.status.canRetry)
+        assertFalse(tracker.status.hasSelectedPair)
+    }
+
+    /**
+     * 【t60 硬要求（captain 邮件 + t58 §6.6 A7）】判活**绝不能用 `up_bps`**：
+     * 给定真机形态的样本序列（`mode=- / up_bps≈49k / down_bps=0`，持续 30 s），
+     * 状态机**不得**进入 `CONNECTED`，最终必须落到失败态 + 可重试。
+     */
+    @Test
+    fun upstreamOnlySamplesNeverReachConnected() {
+        val tracker = ConnectionStatusTracker()
+        tracker.onCallStarted(0L)
+
+        // 15 次 stats 采样（每 2 s 一条），恒定：无选中候选对、上行 ≈49 kbps、下行 0
+        var everConnected = false
+        var now = 0L
+        repeat(15) {
+            now += 2_000L
+            val evidence = livenessEvidence(
+                hasSelectedPair = false,
+                downBitrateBps = 0,
+                upBitrateBps = 49_000,
+            )
+            assertEquals(LivenessEvidence.NONE, evidence)
+            if (evidence != LivenessEvidence.NONE) everConnected = true
+            tracker.onTick(now)
+        }
+
+        assertFalse("up_bps 不得把状态推成已连接", everConnected)
         assertEquals(ConnPhase.FAILED, tracker.status.phase)
         assertEquals(ConnReason.TIMEOUT_NO_PAIR, tracker.status.reason)
         assertTrue(tracker.status.canRetry)
-        assertEquals("连接失败", tracker.status.title)
-        assertTrue(tracker.status.detail.contains("15 秒"))
         assertFalse(tracker.status.hasSelectedPair)
+        assertFalse(tracker.status.remoteFrameReady)
+    }
+
+    /** 判活口径的单元断言：只有"选中候选对"或"下行字节"才算证据，`up_bps` 永不参与。 */
+    @Test
+    fun livenessNeverUsesUpstreamBitrate() {
+        assertEquals(LivenessEvidence.NONE, livenessEvidence(hasSelectedPair = false, downBitrateBps = 0, upBitrateBps = 0))
+        assertEquals(LivenessEvidence.NONE, livenessEvidence(hasSelectedPair = false, downBitrateBps = 0, upBitrateBps = 49_000))
+        assertEquals(LivenessEvidence.NONE, livenessEvidence(hasSelectedPair = false, downBitrateBps = 0, upBitrateBps = 5_000_000))
+        assertEquals(LivenessEvidence.SELECTED_PAIR, livenessEvidence(hasSelectedPair = true, downBitrateBps = 0, upBitrateBps = 0))
+        assertEquals(LivenessEvidence.DOWNLINK, livenessEvidence(hasSelectedPair = false, downBitrateBps = 1, upBitrateBps = 0))
+    }
+
+    /** 【t60/A7】"配了 TURN 但没有中继候选"必须是**显式子原因**，而不能与 TIMEOUT_NO_PAIR 混同。 */
+    @Test
+    fun relayMissingIsExplicitFailureReason() {
+        val tracker = ConnectionStatusTracker()
+        tracker.onCallStarted(0L)
+
+        tracker.onTick(30_000L, relayMissing = true)
+
+        assertEquals(ConnPhase.FAILED, tracker.status.phase)
+        assertEquals(ConnReason.NO_RELAY_CANDIDATE, tracker.status.reason)
+        assertTrue(tracker.status.relayMissing)
+        assertEquals("中继不可用", tracker.status.title)
+        assertTrue(tracker.status.detail.contains("中继候选"))
+        assertTrue(tracker.status.canRetry)
+
+        // 反之：单纯没配上候选对 ⇒ TIMEOUT_NO_PAIR
+        val other = ConnectionStatusTracker()
+        other.onCallStarted(0L)
+        other.onTick(30_000L, relayMissing = false)
+        assertEquals(ConnReason.TIMEOUT_NO_PAIR, other.status.reason)
+    }
+
+    /** 【t60/A1②】收集完成是超时**锚点**：收集完成得晚 ⇒ 硬超时相应后移（不误判）。 */
+    @Test
+    fun gatheringCompleteAnchorsTimeout() {
+        val tracker = ConnectionStatusTracker()
+        tracker.onCallStarted(0L)
+
+        // 20 s 才收集完成（真机中继候选可晚到）
+        tracker.onGatheringComplete(20_000L)
+
+        tracker.onTick(49_000L)
+        assertEquals(ConnPhase.CONNECTING, tracker.status.phase)
+
+        tracker.onTick(50_000L)
+        assertEquals(ConnPhase.FAILED, tracker.status.phase)
+        assertEquals(ConnReason.TIMEOUT_NO_PAIR, tracker.status.reason)
     }
 
     /** 选中候选对（`stats_sample mode=RELAY`）⇒ CONNECTED；此时不再显示状态卡。 */
@@ -203,11 +300,11 @@ class ConnectionStatusTrackerTest {
     fun retryResetsToConnectingAndCounts() {
         val tracker = ConnectionStatusTracker()
         tracker.onCallStarted(0L)
-        tracker.onTick(16_000L)
+        tracker.onTick(31_000L)
         assertEquals(ConnPhase.FAILED, tracker.status.phase)
         assertEquals(0, tracker.status.retryCount)
 
-        tracker.onRetry(20_000L)
+        tracker.onRetry(40_000L)
 
         assertEquals(ConnPhase.CONNECTING, tracker.status.phase)
         assertEquals(ConnReason.NONE, tracker.status.reason)
@@ -216,7 +313,7 @@ class ConnectionStatusTrackerTest {
         assertFalse(tracker.status.hasSelectedPair)
         assertFalse(tracker.status.remoteFrameReady)
         // 重试后仍不连通 ⇒ 再次失败并可再重试
-        tracker.onTick(36_000L)
+        tracker.onTick(71_000L)
         assertEquals(ConnPhase.FAILED, tracker.status.phase)
         assertEquals(1, tracker.status.retryCount)
         assertTrue(tracker.status.canRetry)

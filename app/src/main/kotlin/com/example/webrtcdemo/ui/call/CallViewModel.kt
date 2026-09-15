@@ -156,6 +156,9 @@ class CallViewModel(application: Application) :
     /** 重试后是否有"延迟重发 offer"待执行（收到对端 offer/answer 即取消）。 */
     private var retryReofferPending = false
 
+    /** 【t60/A7】本世代是否已自动做过"中继不可用 ⇒ 重新 gathering"（每世代最多一次）。 */
+    private var autoRegatherDone = false
+
     init {
         // 编码目标码率：来自 Vp9VideoEncoder.setRateAllocation（§7.4，本地直通）
         viewModelScope.launch {
@@ -194,7 +197,10 @@ class CallViewModel(application: Application) :
             while (true) {
                 delay(CONN_TICK_MS)
                 if (callEnded || !connTracker.active) continue
-                publishConnStatus(connTracker.onTick(System.currentTimeMillis()))
+                // 【t60/A7】把"配了 TURN 但没有中继候选"传给状态机 ⇒ 超时时给出**显式子原因**
+                // NO_RELAY_CANDIDATE（而不是笼统的 TIMEOUT_NO_PAIR）。
+                val relayMissing = session?.relayMissing() == true
+                publishConnStatus(connTracker.onTick(System.currentTimeMillis(), relayMissing))
             }
         }
     }
@@ -319,6 +325,7 @@ class CallViewModel(application: Application) :
             if (reason == REASON_RETRY) connTracker.onRetry(startedAt) else connTracker.onCallStarted(startedAt),
         )
         lastNoPairLogMs = 0L
+        autoRegatherDone = false
         val app = getApplication<Application>()
 
         // 【t59】重试不重置信令身份：房间与对端都没变，清掉反而会让 UI 丢失对端 ID
@@ -704,13 +711,35 @@ class CallViewModel(application: Application) :
         _iceEvents.update { current -> current + event }
         // 【t59】把 ICE/传输状态变化接入 UI 连接状态机 —— 旧实现只把事件堆进诊断列表，
         // 因此"曾连上又断掉"（真机 `pc_ice_connection_state state=DISCONNECTED`）对主界面完全不可见。
-        if (event.type == IceEventType.ICE_CONNECTION) {
-            val now = System.currentTimeMillis()
-            when (parseConnSignal(event.detail)) {
-                ConnSignal.CONNECTED -> publishConnStatus(connTracker.onTransportConnected(now))
-                ConnSignal.DISCONNECTED, ConnSignal.FAILED -> publishConnStatus(connTracker.onConnectionLost(now))
-                ConnSignal.IN_PROGRESS, ConnSignal.IGNORED -> Unit
+        when (event.type) {
+            IceEventType.ICE_CONNECTION -> {
+                val now = System.currentTimeMillis()
+                when (parseConnSignal(event.detail)) {
+                    ConnSignal.CONNECTED -> publishConnStatus(connTracker.onTransportConnected(now))
+                    ConnSignal.DISCONNECTED, ConnSignal.FAILED -> publishConnStatus(connTracker.onConnectionLost(now))
+                    ConnSignal.IN_PROGRESS, ConnSignal.IGNORED -> Unit
+                }
             }
+
+            // 【t60/A1②】收集完成 ⇒ 后移超时锚点，并落盘"到底 gather 到什么"（中继是否到位）
+            IceEventType.END_OF_CANDIDATES -> {
+                val current = session
+                AppLog.i(
+                    TAG,
+                    "ice_relay_state",
+                    mapOf(
+                        "relay" to (current?.localRelayCandidateCount()?.toString() ?: "-"),
+                        "turn_errors" to (current?.turnErrorCount()?.toString() ?: "-"),
+                        "filtered_loopback" to (current?.filteredLoopbackCount()?.toString() ?: "-"),
+                        "relay_missing" to (current?.relayMissing()?.toString() ?: "-"),
+                        "seq" to callSeq.toString(),
+                        "session" to "s$sessionId",
+                    ),
+                )
+                publishConnStatus(connTracker.onGatheringComplete(System.currentTimeMillis()))
+            }
+
+            else -> Unit
         }
     }
 
@@ -730,15 +759,16 @@ class CallViewModel(application: Application) :
         //         _uiState.update { it.copy(isConnecting = false) }
         // `encoderImplementation`（真机 `SelfVp9Libvpx`）在**没有选中候选对**时同样非空
         // （编码器照样被驱动、`up_bps` 照样增长），于是"连接中"遮罩在进房约 1 s 后就被错误关闭，
-        // 用户只看到一帧静止画面且没有任何提示。现在只认：
+        // 用户只看到一帧静止画面且没有任何提示。
+        // 【t60】判活口径收敛为 `livenessEvidence(...)` 的**唯一实现**（`ui/call/ConnectionStatus.kt`）：
         //   ① `connectionType` 非空（`mode=P2P|RELAY` = 有选中的候选对）；
-        //   ② `down_bps > 0`（**下行字节**是唯一能证明路径打通的信号；无候选对时 `up_bps` 仍会
-        //      增长到 ≈49 kbps，绝不可用作判活）。
+        //   ② `down_bps > 0`（**下行字节**是唯一能证明路径打通的信号）；
+        //   ③ `up_bps` **永不参与判定**（真机 `mode=-` 时 `up_bps`≈49 kbps，是"交给 ICE 层的字节"）。
         val now = System.currentTimeMillis()
-        if (snapshot.connectionType.isNotEmpty()) {
-            publishConnStatus(connTracker.onSelectedPair(now))
-        } else if (snapshot.downBitrateBps > 0) {
-            publishConnStatus(connTracker.onRemoteFrame(now))
+        when (livenessEvidence(snapshot.connectionType.isNotEmpty(), snapshot.downBitrateBps, snapshot.upBitrateBps)) {
+            LivenessEvidence.SELECTED_PAIR -> publishConnStatus(connTracker.onSelectedPair(now))
+            LivenessEvidence.DOWNLINK -> publishConnStatus(connTracker.onRemoteFrame(now))
+            LivenessEvidence.NONE -> Unit
         }
     }
 
@@ -855,6 +885,55 @@ class CallViewModel(application: Application) :
         }
         if (status.phase == ConnPhase.FAILED && status.reason == ConnReason.TIMEOUT_NO_PAIR) {
             maybeLogNoSelectedPair(status)
+        }
+        // 【t60/A7】"配了 TURN 却没有中继候选" ⇒ 失败时**自动**做一次 ICE restart + 重新 gathering
+        // 并重新协商（而不是让用户只能点重试）。
+        if (status.phase == ConnPhase.FAILED && status.reason == ConnReason.NO_RELAY_CANDIDATE) {
+            maybeLogNoSelectedPair(status)
+            maybeAutoRegather(status)
+        }
+    }
+
+    /**
+     * 一次性自动"重新 gathering"（t60/A4/A7）。
+     *
+     * 触发条件：连接判定失败且原因为 [ConnReason.NO_RELAY_CANDIDATE]（有 TURN 配置但 `local_relay==0`）。
+     * 动作：`CallSession.restartIce()`（`restartIce()` + 重新 `setConfiguration(GATHER_CONTINUALLY)`
+     * 触发重新收集）⇒ 若被接受，再按角色重新协商（host 立刻重发 offer / joiner 延迟重发，
+     * 复用 t59 的 [scheduleRetryReoffer] 与防 glare 机制）。每个世代最多自动一次，
+     * 之后由用户用「点击重试」（世代化重建）继续。
+     */
+    private fun maybeAutoRegather(status: ConnStatus) {
+        if (autoRegatherDone || callEnded) return
+        val current = session ?: return
+        if (current.isClosed()) return
+        autoRegatherDone = true
+        val accepted = current.restartIce("no_relay_candidate")
+        AppLog.w(
+            TAG,
+            "ice_regather_invoked",
+            mapOf(
+                "reason" to status.reason.name.lowercase(),
+                "accepted" to accepted.toString(),
+                "local_relay" to current.localRelayCandidateCount().toString(),
+                "turn_errors" to current.turnErrorCount().toString(),
+                "filtered_loopback" to current.filteredLoopbackCount().toString(),
+                "elapsed_ms" to status.elapsedMs.toString(),
+                "seq" to callSeq.toString(),
+                "session" to "s$sessionId",
+            ),
+        )
+        if (!accepted) return
+        val peerKnown = SignalingIdentity.remotePeerId.value.isNotBlank()
+        when (retryNegotiationFor(role, peerKnown, sawRemoteNegotiationSinceRetry = false)) {
+            RetryNegotiation.OFFER_NOW -> {
+                peerJoined = true
+                maybeCreateOffer()
+            }
+
+            RetryNegotiation.OFFER_DELAYED -> scheduleRetryReoffer()
+
+            RetryNegotiation.NONE -> Unit
         }
     }
 
