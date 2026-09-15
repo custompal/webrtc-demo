@@ -123,6 +123,12 @@ data class ConnStatus(
     val retryHintReached: Boolean = false,
     /** 【t60】配了 TURN 但本会话 relay 候选数仍为 0（A7 的子原因判定依据）。 */
     val relayMissing: Boolean = false,
+    /** 【t63】最近一次"媒体存活"证据的来源：`sink`（每帧时间戳）/`down_bps`/`none`。 */
+    val mediaSource: String = MEDIA_SOURCE_NONE,
+    /** 【t63】最近一帧的帧龄（ms）；从未收到过帧时为 -1。 */
+    val mediaAgeMs: Long = -1L,
+    /** 【t63】ICE/传输是否已离开 CONNECTED（仅诊断；界面展示以**媒体存活**为准）。 */
+    val iceDown: Boolean = false,
 ) {
     /** 是否需要中央状态卡（未连上 / 已失败）。 */
     val showOverlay: Boolean
@@ -213,6 +219,15 @@ data class ConnStatus(
         private const val MILLIS_PER_SECOND = 1_000L
     }
 }
+
+/** 【t63】媒体存活来源：每帧时间戳（`VideoSink.onFrame`）。 */
+const val MEDIA_SOURCE_SINK = "sink"
+
+/** 【t63】媒体存活来源：下行字节（`down_bps > 0`）。 */
+const val MEDIA_SOURCE_DOWN_BPS = "down_bps"
+
+/** 【t63】无媒体存活证据。 */
+const val MEDIA_SOURCE_NONE = "none"
 
 /** 从 `onIceEvent(ICE_CONNECTION, detail)` 的 detail 解析出的连通性信号（t59，纯函数、可单测）。 */
 enum class ConnSignal {
@@ -306,6 +321,7 @@ class ConnectionStatusTracker(
     private val frameStallMs: Long = DEFAULT_FRAME_STALL_MS,
     private val lostGraceMs: Long = DEFAULT_LOST_GRACE_MS,
     private val retryHintMs: Long = DEFAULT_RETRY_HINT_MS,
+    private val stallDebounceTicks: Int = DEFAULT_STALL_DEBOUNCE_TICKS,
 ) {
 
     /** 当前状态快照。 */
@@ -337,6 +353,18 @@ class ConnectionStatusTracker(
      */
     private var hasFreshMedia = false
 
+    /** 【t63】最近一次媒体存活证据的来源（`sink`/`down_bps`/`none`）。 */
+    private var mediaSource: String = MEDIA_SOURCE_NONE
+
+    /** 【t63】帧龄（ms；无帧时 -1），仅用于诊断展示。 */
+    private var mediaAgeMs: Long = -1L
+
+    /** 【t63】ICE/传输是否已离开 CONNECTED（用于失败归因；**不**直接驱动界面跳变）。 */
+    private var iceDown = false
+
+    /** 【t63】停滞去抖：连续多少个 tick 超过阈值才判停滞。 */
+    private var staleTicks = 0
+
     /** 进入通话（新世代开始 / 重试后重新计时）。 */
     fun onCallStarted(nowMs: Long): ConnStatus {
         active = true
@@ -345,6 +373,10 @@ class ConnectionStatusTracker(
         hasFreshMedia = false
         lostAtMs = 0L
         gatheringCompleteAtMs = 0L
+        mediaSource = MEDIA_SOURCE_NONE
+        mediaAgeMs = -1L
+        iceDown = false
+        staleTicks = 0
         status = ConnStatus(phase = ConnPhase.CONNECTING, retryCount = retries)
         return status
     }
@@ -378,7 +410,10 @@ class ConnectionStatusTracker(
     fun onSelectedPair(nowMs: Long): ConnStatus = markConnected(nowMs, viaFrame = false)
 
     /** 观察到传输层 CONNECTED（`pc_connection_state dtls=true state=CONNECTED`）。 */
-    fun onTransportConnected(nowMs: Long): ConnStatus = markConnected(nowMs, viaFrame = false)
+    fun onTransportConnected(nowMs: Long): ConnStatus {
+        iceDown = false
+        return markConnected(nowMs, viaFrame = false)
+    }
 
     /**
      * 收到远端帧（首帧回调）或观察到下行字节（`down_bps > 0`）。
@@ -386,21 +421,69 @@ class ConnectionStatusTracker(
      * 远端帧是"媒体确实打通"的**充分证据**，故这里也直接判定为已连接
      * （即使 stats 的 `mode` 字段因故滞后）。
      */
-    fun onRemoteFrame(nowMs: Long): ConnStatus = markConnected(nowMs, viaFrame = true)
+    fun onRemoteFrame(nowMs: Long): ConnStatus = onMediaFrame(nowMs, MEDIA_SOURCE_DOWN_BPS)
 
-    /** ICE/传输掉线（`DISCONNECTED`/`FAILED`）。 */
+    /**
+     * 【t63】**媒体存活**（画面确实在更新）——与"是否已连接"解耦的独立通道。
+     *
+     * 触发源必须是"**每帧**都会触发"的路径（`VideoSink.onFrame` 时间戳，[MEDIA_SOURCE_SINK]）
+     * 或"真的在收"的持续判定（`down_bps > 0`，[MEDIA_SOURCE_DOWN_BPS]）；
+     * **不得**使用 `onFrameResolutionChanged` 这类稀疏回调（真机实测：视频正常流动时它几乎不触发，
+     * 导致 `frame=false` 长期成立、状态在 connected/connecting 间反复跳）。
+     *
+     * @param source [MEDIA_SOURCE_SINK] / [MEDIA_SOURCE_DOWN_BPS]。
+     * @param ageMs 该证据的"帧龄"（ms）；未知时传 -1（仅诊断展示）。
+     */
+    fun onMediaFrame(nowMs: Long, source: String, ageMs: Long = -1L): ConnStatus {
+        if (!active) return status
+        mediaSource = source
+        mediaAgeMs = ageMs
+        staleTicks = 0
+        return markConnected(nowMs, viaFrame = true)
+    }
+
+    /**
+     * ICE/传输掉线（`DISCONNECTED`/`FAILED`）。
+     *
+     * 【t63 纪律】`connection_lost` **只能**由 ICE/传输真的离开 CONNECTED 触发（不得由帧信号推断）；
+     * 但**媒体仍在流动时不得立刻把界面打成"连接中断"** —— 4G 中继路径会周期性 ﬂap
+     * （真机 dk-a：`pc_ice_connection_state FAILED` 每 ~16 s 一次，而同刻 `down_bps` 稳定 645k–680k、
+     * 画面持续更新）。此时只记录 [iceDown] 供失败归因，界面保持 connected；
+     * 一旦媒体也停了，则停滞原因归类为 [ConnReason.CONNECTION_LOST]。
+     */
     fun onConnectionLost(nowMs: Long): ConnStatus {
         if (!active) return status
-        if (status.phase != ConnPhase.CONNECTED) return status
-        lostAtMs = nowMs
-        lastFreshMediaMs = 0L
+        iceDown = true
+        if (status.phase != ConnPhase.CONNECTED) {
+            status = status.copy(iceDown = true)
+            return status
+        }
+        // 媒体仍新鲜 ⇒ 抑制界面跳变（只落盘，由 ViewModel 记 ice_flap_suppressed）
+        if (hasFreshMedia && nowMs - lastFreshMediaMs <= frameStallMs) {
+            status = status.copy(iceDown = true, mediaSource = mediaSource, mediaAgeMs = mediaAgeMs)
+            return status
+        }
+        return markLost(nowMs, ConnReason.CONNECTION_LOST)
+    }
+
+    /**
+     * 进入"已中断/停滞"状态（统一入口，保证字段一致）。
+     *
+     * @param lossStartMs 中断**起点**（可能是"帧龄刚越过阈值"的时刻，早于当前 tick）。
+     */
+    private fun markLost(lossStartMs: Long, reason: ConnReason): ConnStatus {
+        lostAtMs = lossStartMs
         hasFreshMedia = false
+        staleTicks = 0
         status = status.copy(
             phase = ConnPhase.CONNECTING,
-            reason = ConnReason.CONNECTION_LOST,
+            reason = reason,
             sinceLossMs = 0L,
             remoteFrameReady = false,
             remoteFrameStalled = true,
+            iceDown = iceDown,
+            mediaSource = mediaSource,
+            mediaAgeMs = mediaAgeMs,
         )
         return status
     }
@@ -418,31 +501,27 @@ class ConnectionStatusTracker(
         val anchor = maxOf(startedAtMs, gatheringCompleteAtMs)
         val sinceAnchor = nowMs - anchor
         val retryHint = elapsed >= retryHintMs
+        // 【t63】帧龄（供诊断与停滞判定）：无帧来源时用"距上次新鲜媒体"的时长
+        val age = if (hasFreshMedia) nowMs - lastFreshMediaMs else -1L
         when (status.phase) {
             ConnPhase.CONNECTED -> {
-                // 画面停滞：曾就绪但超过阈值没有新的远端帧/下行字节
-                if (status.remoteFrameReady &&
-                    hasFreshMedia &&
-                    nowMs - lastFreshMediaMs > frameStallMs
-                ) {
-                    lostAtMs = lastFreshMediaMs + frameStallMs
-                    status = status.copy(
-                        phase = ConnPhase.CONNECTING,
-                        reason = ConnReason.REMOTE_FRAME_STALLED,
-                        sinceLossMs = nowMs - lostAtMs,
-                        remoteFrameReady = false,
-                        remoteFrameStalled = true,
-                        elapsedMs = elapsed,
-                        retryHintReached = retryHint,
-                        relayMissing = relayMissing,
-                    )
-                } else {
-                    status = status.copy(
-                        elapsedMs = elapsed,
-                        retryHintReached = retryHint,
-                        relayMissing = relayMissing,
-                    )
+                // 【t63】画面停滞：曾就绪 且（有每帧时间戳/下行证据时）超过阈值，**且连续 N 个 tick 确认**
+                // （滞回去抖：单个采样抖动不得判停滞）。原因按 ICE 事实归类：
+                // ICE 真的掉了 ⇒ CONNECTION_LOST；ICE 正常但没帧 ⇒ REMOTE_FRAME_STALLED。
+                val overThreshold = hasFreshMedia && age > frameStallMs
+                if (overThreshold) staleTicks++ else staleTicks = 0
+                if (overThreshold && staleTicks >= stallDebounceTicks) {
+                    // 中断起点 = 帧龄刚越过阈值的时刻（宽限期从"看起来断了"起算）
+                    return markLost(lastFreshMediaMs + frameStallMs, if (iceDown) ConnReason.CONNECTION_LOST else ConnReason.REMOTE_FRAME_STALLED)
                 }
+                status = status.copy(
+                    elapsedMs = elapsed,
+                    retryHintReached = retryHint,
+                    relayMissing = relayMissing,
+                    mediaSource = mediaSource,
+                    mediaAgeMs = age,
+                    iceDown = iceDown,
+                )
             }
 
             ConnPhase.CONNECTING -> {
@@ -466,6 +545,9 @@ class ConnectionStatusTracker(
                         sinceLossMs = loss,
                         retryHintReached = true,
                         relayMissing = relayMissing,
+                        mediaSource = mediaSource,
+                        mediaAgeMs = age,
+                        iceDown = iceDown,
                     )
                 } else {
                     status.copy(
@@ -473,6 +555,9 @@ class ConnectionStatusTracker(
                         sinceLossMs = loss,
                         retryHintReached = retryHint,
                         relayMissing = relayMissing,
+                        mediaSource = mediaSource,
+                        mediaAgeMs = age,
+                        iceDown = iceDown,
                     )
                 }
             }
@@ -481,6 +566,9 @@ class ConnectionStatusTracker(
                 elapsedMs = elapsed,
                 retryHintReached = true,
                 relayMissing = relayMissing,
+                mediaSource = mediaSource,
+                mediaAgeMs = age,
+                iceDown = iceDown,
             )
         }
         return status
@@ -521,6 +609,10 @@ class ConnectionStatusTracker(
             // 只有帧/下行字节才能把"画面就绪"置真；仅凭候选对不算拿到画面
             remoteFrameReady = status.remoteFrameReady || viaFrame,
             remoteFrameStalled = false,
+            // 【t63】诊断字段同步（帧存活来源/帧龄/ICE 事实）
+            mediaSource = mediaSource,
+            mediaAgeMs = mediaAgeMs,
+            iceDown = iceDown,
         )
         return status
     }
@@ -544,5 +636,13 @@ class ConnectionStatusTracker(
 
         /** 掉线/停滞后的自动恢复宽限期。 */
         const val DEFAULT_LOST_GRACE_MS = 8_000L
+
+        /**
+         * 【t63】停滞去抖：**连续**多少个 1 s tick 仍无新鲜媒体才判"画面停滞"。
+         *
+         * 取 2 ⇒ 有效阈值 ≈ 帧龄阈值 + 1–2 s，可吸收单次采样抖动；真机"画面在动却报停滞"
+         * 的误报正是被这一层与"每帧时间戳"共同消除的。
+         */
+        const val DEFAULT_STALL_DEBOUNCE_TICKS = 2
     }
 }

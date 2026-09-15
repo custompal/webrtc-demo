@@ -156,8 +156,16 @@ class CallViewModel(application: Application) :
     /** 重试后是否有"延迟重发 offer"待执行（收到对端 offer/answer 即取消）。 */
     private var retryReofferPending = false
 
-    /** 【t60/A7】本世代是否已自动做过"中继不可用 ⇒ 重新 gathering"（每世代最多一次）。 */
+    /** 【t60】本世代是否已自动做过"中继不可用 ⇒ 重新 gathering"（每世代最多一次）。 */
     private var autoRegatherDone = false
+
+    // ===================== t63：帧存活（每帧时间戳）诊断状态 =====================
+
+    /** 上一次 `remote_frame_liveness` 记录的来源（变化即立刻落盘）。 */
+    private var lastFrameLivenessSource: String = MEDIA_SOURCE_NONE
+
+    /** 上一次 `remote_frame_liveness` 落盘时刻（按 [FRAME_LIVENESS_LOG_INTERVAL_MS] 限频）。 */
+    private var lastFrameLivenessLogMs = 0L
 
     init {
         // 编码目标码率：来自 Vp9VideoEncoder.setRateAllocation（§7.4，本地直通）
@@ -200,9 +208,51 @@ class CallViewModel(application: Application) :
                 // 【t60/A7】把"配了 TURN 但没有中继候选"传给状态机 ⇒ 超时时给出**显式子原因**
                 // NO_RELAY_CANDIDATE（而不是笼统的 TIMEOUT_NO_PAIR）。
                 val relayMissing = session?.relayMissing() == true
-                publishConnStatus(connTracker.onTick(System.currentTimeMillis(), relayMissing))
+                // 【t63】媒体存活：优先用**每帧都会触发**的 `VideoSink.onFrame` 时间戳（renderer 池），
+                // 次选 `down_bps > 0`（真的在收）。二者都不新鲜才算"画面没在更新"。
+                val now = System.currentTimeMillis()
+                val liveness = WebRtcEngine.rendererPool()?.remoteFrameLiveness(now)
+                val frameAge = liveness?.ageMs ?: Long.MAX_VALUE
+                val downBps = lastStats?.downBitrateBps ?: 0
+                val source = when {
+                    frameAge <= FRAME_ALIVE_MS -> MEDIA_SOURCE_SINK
+                    downBps > 0 -> MEDIA_SOURCE_DOWN_BPS
+                    else -> MEDIA_SOURCE_NONE
+                }
+                if (source != MEDIA_SOURCE_NONE) {
+                    publishConnStatus(connTracker.onMediaFrame(now, source, frameAge))
+                }
+                logFrameLivenessIfNeeded(now, source, frameAge, liveness?.frames ?: 0L, downBps)
+                publishConnStatus(connTracker.onTick(now, relayMissing))
             }
         }
+    }
+
+    /**
+     * 【t63】落盘帧存活诊断（`remote_frame_liveness source=… age_ms=N frames=… down_bps=…`）。
+     *
+     * 只在来源变化或每 [FRAME_LIVENESS_LOG_INTERVAL_MS] 记一条 —— 下一轮复测时**一行就能判定**
+     * "到底有没有每帧时间戳"（这是本缺陷最容易再次误判的地方）。
+     */
+    private fun logFrameLivenessIfNeeded(now: Long, source: String, ageMs: Long, frames: Long, downBps: Int) {
+        val sourceChanged = source != lastFrameLivenessSource
+        if (!sourceChanged && now - lastFrameLivenessLogMs < FRAME_LIVENESS_LOG_INTERVAL_MS) return
+        lastFrameLivenessSource = source
+        lastFrameLivenessLogMs = now
+        AppLog.i(
+            TAG,
+            "remote_frame_liveness",
+            mapOf(
+                "source" to source,
+                "age_ms" to if (ageMs == Long.MAX_VALUE) "-1" else ageMs.toString(),
+                "frames" to frames.toString(),
+                "down_bps" to downBps.toString(),
+                "phase" to connStatus.value.phase.name.lowercase(),
+                "view" to connStatus.value.remoteFrameReady.toString(),
+                "seq" to callSeq.toString(),
+                "session" to "s$sessionId",
+            ),
+        )
     }
 
     /**
@@ -506,7 +556,8 @@ class CallViewModel(application: Application) :
             )
             return
         }
-        publishConnStatus(connTracker.onRemoteFrame(System.currentTimeMillis()))
+        // 【t63】首帧本身也是"媒体存活"证据（此后由 renderer 池的每帧时间戳持续刷新）
+        publishConnStatus(connTracker.onMediaFrame(System.currentTimeMillis(), MEDIA_SOURCE_SINK))
     }
 
     /**
@@ -716,7 +767,27 @@ class CallViewModel(application: Application) :
                 val now = System.currentTimeMillis()
                 when (parseConnSignal(event.detail)) {
                     ConnSignal.CONNECTED -> publishConnStatus(connTracker.onTransportConnected(now))
-                    ConnSignal.DISCONNECTED, ConnSignal.FAILED -> publishConnStatus(connTracker.onConnectionLost(now))
+                    ConnSignal.DISCONNECTED, ConnSignal.FAILED -> {
+                        val before = connStatus.value
+                        val after = connTracker.onConnectionLost(now)
+                        publishConnStatus(after)
+                        // 【t63】ICE 掉了但媒体仍在流动 ⇒ **不让界面跳变**（4G 中继会周期性 flap），
+                        // 只落盘供失败归因；真正的中断由"帧龄 + 去抖"判定后可归因为 connection_lost。
+                        if (before.phase == ConnPhase.CONNECTED && after.phase == ConnPhase.CONNECTED) {
+                            AppLog.w(
+                                TAG,
+                                "ice_flap_suppressed",
+                                mapOf(
+                                    "detail" to event.detail,
+                                    "media_source" to after.mediaSource,
+                                    "age_ms" to after.mediaAgeMs.toString(),
+                                    "seq" to callSeq.toString(),
+                                    "session" to "s$sessionId",
+                                ),
+                            )
+                        }
+                    }
+
                     ConnSignal.IN_PROGRESS, ConnSignal.IGNORED -> Unit
                 }
             }
@@ -767,8 +838,15 @@ class CallViewModel(application: Application) :
         val now = System.currentTimeMillis()
         when (livenessEvidence(snapshot.connectionType.isNotEmpty(), snapshot.downBitrateBps, snapshot.upBitrateBps)) {
             LivenessEvidence.SELECTED_PAIR -> publishConnStatus(connTracker.onSelectedPair(now))
-            LivenessEvidence.DOWNLINK -> publishConnStatus(connTracker.onRemoteFrame(now))
+            // 无候选对但真的在收 ⇒ 路径确实打通（同样视为已连接）
+            LivenessEvidence.DOWNLINK -> publishConnStatus(connTracker.onSelectedPair(now))
             LivenessEvidence.NONE -> Unit
+        }
+        // 【t63】**媒体存活**是独立通道，与"是否已连接"解耦：`down_bps > 0` 必须参与存活判定，
+        // 不能因为 `mode` 非空（健康时必然非空！）就被 `SELECTED_PAIR` 分支吃掉 ——
+        // 这正是真机 `frame=false` 全程成立、状态反复跳的直接原因之一。
+        if (snapshot.downBitrateBps > 0) {
+            publishConnStatus(connTracker.onMediaFrame(now, MEDIA_SOURCE_DOWN_BPS))
         }
     }
 
@@ -877,6 +955,10 @@ class CallViewModel(application: Application) :
                     "pair" to status.hasSelectedPair.toString(),
                     "frame" to status.remoteFrameReady.toString(),
                     "stalled" to status.remoteFrameStalled.toString(),
+                    // 【t63】帧存活的来源与帧龄：一行即可判定"到底有没有每帧时间戳"
+                    "media_source" to status.mediaSource,
+                    "media_age_ms" to status.mediaAgeMs.toString(),
+                    "ice_down" to status.iceDown.toString(),
                     "retry" to status.retryCount.toString(),
                     "seq" to callSeq.toString(),
                     "session" to "s$sessionId",
@@ -1132,6 +1214,17 @@ class CallViewModel(application: Application) :
 
         /** 【t53/t59】世代化开启原因：用户一键重试。 */
         const val REASON_RETRY = "retry"
+
+        /**
+         * 【t63】帧存活阈值：`VideoSink.onFrame` 时间戳在此时长内即视为"画面在更新"。
+         *
+         * 取 1.5 s ⇒ 即使 4G 抖动导致某一秒没有新帧回调，也不会立刻判定"没在更新"；
+         * 真正的停流由状态机的帧龄阈值（4 s）+ 去抖（连续 2 tick）判定。
+         */
+        const val FRAME_ALIVE_MS = 1_500L
+
+        /** 【t63】`remote_frame_liveness` 诊断的限频间隔（来源变化时立即落盘）。 */
+        const val FRAME_LIVENESS_LOG_INTERVAL_MS = 15_000L
 
         /**
          * 终态结束提示（doc/14 §8.5 指定的文案）。

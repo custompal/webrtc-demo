@@ -6,6 +6,7 @@ import com.example.webrtcdemo.log.AppLog
 import org.webrtc.EglBase
 import org.webrtc.RendererCommon
 import org.webrtc.SurfaceViewRenderer
+import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 
 // ============================================================================
@@ -73,6 +74,25 @@ class VideoRendererPool(private val eglBase: EglBase) {
 
     @Volatile
     private var lastRemoteFrameAtNs: Long = Long.MIN_VALUE
+
+    // ======================= t63：远端帧存活（每帧都会触发） =======================
+    // 为什么单独加一条通道：`lastRemoteFrameAtNs` 只在**稀疏回调**（`onFirstFrameRendered` /
+    // `onFrameResolutionChanged`）里更新 —— 视频正常流动时分辨率几乎不变 ⇒ 该时间戳长期不动，
+    // 用它判活必然误报"画面停滞"（真机 dk-a：首帧 13:36:06.692 → 13:36:11.259 判 stalled，
+    // 间隔 4.57 s ≈ 阈值；而同刻 `down_bps` 稳定 645k–680k，画面确实在更新）。
+    // 现在把**远端渲染器**的 sink 包一层：`VideoSink.onFrame` **每帧**都会调用 ⇒ 计数 + 墙上时刻。
+
+    /** 远端 `VideoSink.onFrame` 的实际挂载对象（计数包装，转发给渲染器；detach 时移除的是它）。 */
+    @Volatile
+    private var remoteSinkWrapper: VideoSink? = null
+
+    /** 远端累计渲染帧数（每帧 +1；仅诊断用）。 */
+    @Volatile
+    private var remoteFrameCount: Long = 0L
+
+    /** 远端最近一帧的**墙上时刻**（`System.currentTimeMillis()`；0 表示尚未收到任何帧）。 */
+    @Volatile
+    private var lastRemoteFrameAtMs: Long = 0L
 
     @Volatile
     private var localSurfaceAlive: Boolean = false
@@ -225,10 +245,30 @@ class VideoRendererPool(private val eglBase: EglBase) {
             AppLog.w(TAG, "renderer_attach_rejected", mapOf("which" to WHICH_REMOTE, "reason" to "released"))
             return
         }
-        track.addSink(renderer)
+        // 【t63】多包一层 VideoSink：`onFrame` **每帧**触发 ⇒ 计数 + 墙上时刻（帧存活判定的唯一真源）。
+        // 渲染器本身照常收到帧（包装层原样转发），渲染生命周期/顺序完全不变。
+        val wrapper = VideoSink { frame ->
+            remoteFrameCount++
+            lastRemoteFrameAtMs = System.currentTimeMillis()
+            try {
+                renderer.onFrame(frame)
+            } catch (t: Throwable) {
+                AppLog.w(TAG, "renderer_on_frame_failed", mapOf("which" to WHICH_REMOTE, "reason" to (t.message ?: "-")))
+            }
+        }
+        remoteSinkWrapper = wrapper
+        track.addSink(wrapper)
         remoteTrack = track
         remoteRenderer = renderer
-        AppLog.i(TAG, "renderer_attached", mapOf("which" to WHICH_REMOTE, "surface" to surfaceAlive(WHICH_REMOTE).toString()))
+        AppLog.i(
+            TAG,
+            "renderer_attached",
+            mapOf(
+                "which" to WHICH_REMOTE,
+                "surface" to surfaceAlive(WHICH_REMOTE).toString(),
+                "frame_sink" to "wrapped",
+            ),
+        )
     }
 
     /** 解绑本地（**只 removeSink，不 release**：renderer 生命周期归 Compose 视图）。 */
@@ -253,11 +293,15 @@ class VideoRendererPool(private val eglBase: EglBase) {
     fun detachRemote() {
         val track = remoteTrack
         val renderer = remoteRenderer
+        val wrapper = remoteSinkWrapper
         remoteTrack = null
         remoteRenderer = null
-        if (track != null && renderer != null) {
+        remoteSinkWrapper = null
+        // 【t63】移除的是**包装层**（挂上去的那个对象），不是渲染器本身；渲染器生命周期仍归 Compose 视图
+        val sink: VideoSink? = wrapper ?: renderer
+        if (track != null && sink != null) {
             try {
-                track.removeSink(renderer)
+                track.removeSink(sink)
             } catch (t: Throwable) {
                 AppLog.w(TAG, "renderer_detach_failed", mapOf("which" to WHICH_REMOTE, "reason" to (t.message ?: "-")))
             }
@@ -318,6 +362,42 @@ class VideoRendererPool(private val eglBase: EglBase) {
     @Synchronized
     fun frameSeenSince(which: String, sinceNs: Long): Boolean = lastFrameAtNs(which) >= sinceNs
 
+    // ======================= t63：远端帧存活查询 =======================
+
+    /**
+     * 远端最近一帧的墙上时刻（`System.currentTimeMillis()`；从未收到帧时为 0）。
+     *
+     * 【t63】这是"画面是否在更新"的**唯一可靠真源**：由 `VideoSink.onFrame` 每帧刷新，
+     * 不像 `lastFrameAtNs` 那样只在首帧/分辨率变化等稀疏回调里更新。
+     */
+    fun remoteLastFrameAtMs(): Long = lastRemoteFrameAtMs
+
+    /** 远端累计渲染帧数（每帧 +1；诊断用）。 */
+    fun remoteFrameCount(): Long = remoteFrameCount
+
+    /**
+     * 远端帧存活快照（诊断/状态机用）。
+     *
+     * @param nowMs 当前时刻（便于调用方一次性拿到"帧龄"）。
+     */
+    fun remoteFrameLiveness(nowMs: Long): FrameLiveness {
+        val last = lastRemoteFrameAtMs
+        return FrameLiveness(
+            frames = remoteFrameCount,
+            lastFrameAtMs = last,
+            ageMs = if (last > 0L) maxOf(0L, nowMs - last) else NO_FRAME_AGE_MS,
+        )
+    }
+
+    /**
+     * 帧存活快照。
+     *
+     * @property frames 累计帧数。
+     * @property lastFrameAtMs 最近一帧墙上时刻（0 = 从未收到）。
+     * @property ageMs 帧龄（未收到过任何帧时为 [NO_FRAME_AGE_MS]）。
+     */
+    data class FrameLiveness(val frames: Long, val lastFrameAtMs: Long, val ageMs: Long)
+
     /** surface 是否存活（`surfaceCreated` 与 `surfaceDestroyed` 之间）。 */
     @Synchronized
     fun surfaceAlive(which: String): Boolean =
@@ -345,6 +425,9 @@ class VideoRendererPool(private val eglBase: EglBase) {
 
         /** §9.1 模块标签（stats）。 */
         private const val TAG = "stats"
+
+        /** 【t63】从未收到过远端帧时 [remoteFrameLiveness] 返回的帧龄（视为"很旧"）。 */
+        const val NO_FRAME_AGE_MS: Long = Long.MAX_VALUE
     }
 }
 
