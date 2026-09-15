@@ -2044,3 +2044,74 @@ classes6.dex … 相同；classes9/11/12/14 字节不同而结构相同；classe
 - **附带登记（非 t43 验收项，独立验证附带发现）**：
   - `doc/14:518`「`g_w`/`g_h` | InitEncode 传入（对齐到偶数；**rotation 90/270 时交换**）」**当前实现未落地**：`app/src/main/cpp/encoder/vp9_encoder.cpp:419-426` 仅**校验** `rotation_degrees`（非法值记 WARN 并**按 0 处理**），**无宽高交换**；全仓亦无 swap 实现 ⇒ **t39 的修复只是恢复 rotation 信号送达 native，并未实现该交换**。建议：或另立任务实现 `§518`，或在 `reports/13-device-defect-fix.md` 收窄「缺陷②」表述为"契约信号恢复（当前消费端仅校验）"。
   - `reports/13-device-defect-fix.md:94` 的结论句「`app/src/main/kotlin` 内**不再有任何位置把 rotation 强制置 0**」**字面不成立**：`encoder/Vp9VideoEncoder.kt:361` 存在 `.setRotation(0)`（作用于 `EncodedImage.builder()`，即**输出侧编码帧元数据**，语义正确、非采集帧 rotation）；该文件 §1.4 的 rotation 审计表未列此条 ⇒ 建议补列并收窄结论为"**采集帧 rotation 无第二处置 0；输出侧 `EncodedImage.setRotation(0)` 属编码输出元数据**"。
+
+---
+
+## 15. t78 最终交付核验附录（2026-09-16 01:39–01:45，**独立验证**，verdict = `pass`）
+
+> 本节点为**追加**，不改写任何历史节。完整证据、原始输出与逐任务明细见 `reports/42-delivery-verification.md`。验证纪律：未跑 Gradle、未改源码/产物/服务端配置、未 `git commit`（工作树全程 `git status --porcelain -uall` = 0）。
+
+### 15.1 独立重算产物身份（不引用成员自述哈希）
+| 交付面 | 值 | 等级 |
+|---|---|---|
+| 公网 `http://47.238.144.66:8080/app-debug.apk`（全量下载 33 436 269 B） | `ff93c2e4c4037c0ba1746a445edef5344e2f8817ef951b67ad2adb9052ce8871` | **第一手** |
+| 构建输出 `app/build/outputs/apk/debug/app-debug.apk` | 同值 | **第一手** |
+| 归档 `artifacts/app-debug-ff93c2e4.apk` | 同值 | **第一手** |
+| `parts/` 四片拼接 + `parts/SOURCE.sha256` | 声明同值 | **非第一手**（HTTP `GET /parts/SOURCE.sha256`、`/parts/` = **404**，服务只暴露 APK；宿主路径容器不可见） |
+- **HTTP 协议面（第一手）**：`HEAD` → **200** + `Content-Length: 33436269` + `Accept-Ranges: bytes` + `ETag "1fe326d-18d58f31aa5ebf0e"` + `Last-Modified: Tue, 15 Sep 2026 17:37:50 GMT`；`Range: 0-1023` → **206** + `Content-Range: bytes 0-1023/33436269`（实收 1024 B）。
+- **分片方案替代性第一手证据**：按声明尺寸（8 388 608×3 + 8 270 445）用 Range 独立取回四段并拼接 ⇒ sha256 = `ff93c2e4…8871`（分片边界自洽、served 面可无损重组）；**宿主 `parts/` 实际文件与 `SOURCE.sha256` 未第一手复核**。
+- **APK 内取证（Go stdlib 独立解析，来源 = 公网下载件）**：条目 **165**；四 `.so` `LOAD p_align` **全 0x4000**（`libjingle 757cef81…` / `libc++_shared c9dbf4ec…` / `libwebrtcdemo_native d49eafc3…426212a5` / `androidx.path 41e9a793…`）；dex 字面量 `signaling_lost`=2、`restart_ice`=2、`rejoin_offer_received`=1、`initiator=host`=1、`initiator=rejoiner`=1、`offer_timeout`=1、`rejoinBudgetMs`=2；**`MAX_RECONNECT_ATTEMPTS`=0**、`rejoin_ice_restart`=0（旧常量/旧主键确已消失）。
+- **固定件未变**：jar `0c776934…`、aar `8e8f2baf…`、libjingle `757cef81…`、libc++_shared `c9dbf4ec…`（T0=T2）。
+- **与上一锚点 t72 `f694a103…` 逐条目**：165/165、**相同 158 / 不同 7**（`classes{3,5,6,9,11,12,14}.dex`）、四 `.so`+`resources.arsc`+`AndroidManifest.xml` 逐字节相同 ⇒ 差异声明**复现一致**。
+
+### 15.2 构建证据复核（我自行解析）
+- `app/build/test-results/testDebugUnitTest/*.xml` = **18 类 / 180 用例 / failures 0 / errors 0 / skipped 0**（awk 逐类求和；`bc` 容器内不存在，已用 awk 等价替代）⇒ 闸门（≥18 类且 ≥180 例、失败=0）**PASS**。附时点限制：`app/build/**` 属易失目录（P-16），本读数为 2026-09-16 01:39 快照，归属由 `reports/37-t76-build-publish.md` + `reports/10-*` 承担。
+- 提交 `5b7efe0`：`96 files changed, 10030 insertions(+), 317 deletions(-)`，`git status --porcelain` **= 0**。
+
+### 15.3 代码级逐条取证（真实现 vs 仅声称）
+| # | 声明 | file:line（我读到） | 判定 |
+|---|---|---|---|
+| ① | 先 `restartIce("rejoin")` 再发 offer | `ui/call/CallViewModel.kt:1343 restartIce("rejoin")` → `:1360 sendOfferInternal()` → `:1367 createOffer()`（同一函数 `:1332-1361`） | **真实现** |
+| ② | `Joined` 侧不发起重协商 | `maybeRestartIceAfterRejoin` **0 命中**；`CallViewModel.kt:859-875` 仅置 `:873 awaitingPeerOfferAfterRejoin`+计时；`:868 maybeCreateOffer()` 内含 `:1298-1301 if (role != ROLE_HOST …) return` | **真实现** |
+| ③ | 8 s 兜底 + 既有 1 s 心跳评估 | `CallSurvivability.kt:147 REJOIN_OFFER_FALLBACK_MS=8_000`、`:162-173 shouldRejoinerFallbackOffer()`；`CallViewModel.kt:284-296`（心跳内）→ `:1376-1388`，`:1386` 一次性自锁，**无新增 sleep/协程** | **真实现** |
+| ④ | 63 s 预算复用 `rejoinDelayMs` + 断言 `<75_000` | `SignalingClient.kt:142/145/156/163`；**生产接线** `:681-705 scheduleRejoinRetry`（`:683 MAX_REJOIN_ATTEMPTS`、`:704 rejoinDelayMs`）；`ReconnectBudgetTest.kt:50 = 63_000`、`:52 < 75_000`、`:58 = 10`、`grep 90_000`=0 | **真实现（非仅测试口径）** |
+| ⑤ | `SIGNAL_LOST` 按 `mediaAlive` 分派 + 媒体存活期抑制文案 | `CallViewModel.kt:757-761`（`signalLostAction(everConnectedInGeneration, mediaAlive)`）、`:754-782 KEEP_CALL` 分支；`CallSurvivability.kt:105-106`、`:185-190 shouldSurfaceError()`，调用点 `CallViewModel.kt:1218-1219` | **真实现** |
+
+### 15.4 服务端现网独立验证
+- **二进制**：仓库构建产物 `signaling/dist/signaling-linux-amd64` = `8708629ee152eb6b70367f32cee793aad16d56b6aaa6db2a648508b3585a62f5`（8 166 823 B，**我第一手**）= t70 声明的安装值；**宿主 `/opt/signaling/signaling` 本体不可见**（非第一手）。注：`signaling/dist/` 被 `.gitignore:50` 忽略 ⇒ **未入库**。
+- **`/healthz`（公网，两时点）**：`roomGraceSec = 90`（**第一手**）；我的活体重放使其 `roomsCreated 5→6`、**`seatTakeovers 3→4`**、`totalConns 13→16` ⇒ **`seat_takeover` 的服务端计数增量由我本次重放触发（第一手）**。
+- **活体重放（自有最小 RFC6455 客户端，raw `net`，硬断开不发 close 帧）**：`create`（`roomId=SA6ABK`）→ `join`（`peerId=peer-002`）→ 在线方收 `peerJoined` → **硬断开后 12 s 内在线方 `peerLeft` 计数 = 0** → 同房间 rejoin 得 `joined`（**同 `peerId=peer-002` ⇒ 席位保留/接管**）→ 在线方再收 `peerJoined`。**全部第一手通过**。
+
+### 15.5 契约偏差（errata）登记
+| ID | 偏差 | 依据 | 影响面 |
+|---|---|---|---|
+| **D-1** | 重连口径：doc/09 §6 仍写「等待 3 秒 / 最多 3 次」，实现 = **1/2/4/8 s 封顶 ×10 = 63 s** | `doc/09:386-387` vs `SignalingClient.kt:142-165`、`:681-705`、`ReconnectBudgetTest.kt:28-61` | 按文档实现会短于服务端 90 s 宽限期 ⇒ 误退房重演 |
+| **D-2** | **旋转语义**：doc/14`:489` 写传 `rotationDegrees(frame.rotation)`、`:490` 输出 `.setRotation(0)`；实现**未烘旋转**（`cpp/encoder/vp9_encoder.cpp:63 kBakeRotationInEncoder = false` ⇒ `:531-533 rotation = 0`、`:547-548` 不换宽高），Kotlin 仍传 `normalizeRotation()`（`Vp9VideoEncoder.kt:204/422`）并输出 `.setRotation(0)`（`:371-374`，注释称"已烘进像素"）；而 doc/14`:523-529` 与 native 注释明确"**必须**烘进像素" | 同上 + `doc/14:518/:523-529/:635` | **像素未旋转 + 输出帧标注 rotation 0 ⇒ 真机 rotation 非 0 时远端画面可能整体旋转 90/270**（真机未测）；**既有**偏差（t46 引入 flag），本轮 t75/t76 未触碰 |
+| **D-3** | coturn 配置名：doc/01`:51`、doc/14`:790` 写 `use-fingerprint`，实际只认 `fingerprint` | `deploy/turnserver.conf:12-13`（含 4.6.1 报 Bad configuration format 的说明） | 照文档重装 coturn ⇒ 配置报错/校验缺失 |
+| **D-4** | doc/14`:692`「rotation 已烘进 I420」被上游源码证伪（`TextureBufferImpl.java:110-114` 无旋转；`VideoFrameDrawer.java:204 preRotate(getRotation())`） | `doc/14:692`（sha 仍 `b3b67438…`）；登记于本报告 §14（t43 轮） | 文档误导采集层实现（t39 已按正确口径修复，doc 为冻结件只登记） |
+| **D-5** | **部署不可从仓库复现**：仓库 `deploy/signaling.service`（tracked）**不含** `-room-grace 90s`，运行实例却以 90 s 工作 | `deploy/signaling.service` vs `/healthz roomGraceSec=90` + `reports/38` §3 | 按仓库 unit 重新部署 ⇒ 退回旧行为（无 90 s 宽限期） |
+| **D-6** | 下载面发布件与二进制在仓外：`parts/`、`SHA256SUMS`、`SOURCE.sha256`、发布脚本、`/opt/apk-http/README.md` 均宿主侧；`signaling/dist/` 被 `.gitignore:50` 忽略 | HTTP `GET /parts/SOURCE.sha256` = **404**；`git check-ignore signaling/dist/signaling-linux-amd64` 命中 | 下载面/服务端二进制**无法仅凭仓库重建**（须依赖宿主状态） |
+
+### 15.6 逐任务汇总（本阶段）
+| 任务 | 目标 | 关键改动（file:line） | 证据 | 未验证项 |
+|---|---|---|---|---|
+| t67 | 服务端房间/席位宽限期（瞬断不退房） | `signaling/main.go:45/:95`、`server.go:104/:117-119`、`room/manager.go` | `/healthz roomGraceSec=90`；硬断开 12 s 内 `peerLeft=0`；同身份 rejoin 成功 | 90 s 期满退房时序；`graceExpired` 语义 |
+| t68 | 消除"信令断即退房 / ICE 误报" | `SignalingClient.kt:699/744/808`、`CallSurvivability.kt:105-106/185-190`、`CallViewModel.kt:754-782/1218-1219` | 代码取证 ⑤ | 真机 63 s 断网后 UI 停留与文案抑制 |
+| t70 | t67 修复编译并部署宿主机 signaling | `signaling/dist/signaling-linux-amd64`=`8708629e…`；宿主 unit 追加 `-room-grace 90s` | repo dist 哈希（第一手）；`/healthz` 90 s + `version 0.1.0` | 宿主二进制本体、unit 文本、MainPID/重启次数 |
+| t71 | 重连预算复用 rejoin 口径（去平行常量） | `SignalingClient.kt:120-165`、`:681-705` | 63 s 算式 + 生产接线；APK dex `MAX_RECONNECT_ATTEMPTS`=0、`rejoinBudgetMs`=2 | 真机 >63 s 长抖动是否走 `SIGNAL_LOST` 而非退房 |
+| t74 | 预算断言收紧 `< 75 s` | `ReconnectBudgetTest.kt:50/:52/:58` | 断言文本；18/180/0 含该类 5 例 | 其 old-red 对照（我未复跑离线 kotlinc） |
+| t75 | ICE restart 顺序 + 防 glare + 8 s 兜底 | `CallViewModel.kt:1332-1361/859-875/1298-1301/284-296/1376-1388`、`CallSurvivability.kt:147/162-173` | 代码取证 ①②③；APK dex `initiator=host/rejoiner`、`restart_ice`、`offer_timeout` 均在 | **offer 实测带 `iceRestart`**、双端无 glare、8 s 兜底不误触（真机/抓包） |
+| t76 | 用 t75 源码第三次重编并发布 | 产物 `ff93c2e4…`；固定件不变；四 `.so` `p_align 0x4000` | 公网拉包=构建输出=归档=锚点；165 条目；14 dex 全表；18/180/0；`5b7efe0`+clean | 宿主 `parts/`、`SOURCE.sha256`、served 文件本体（非第一手） |
+| t77 | `/opt/apk-http` 属主移交 + 发布提交点固化 | 宿主 README/脚本（仓外）；`SOURCE.sha256` 最后写 | served = 新锚点、HEAD 200/Range 206 | 脚本/README 本体（仓外）；**D-6** |
+
+### 15.7 真机待验证清单（**不得写成已验证**）
+1. 断线重连后 offer **确带 `iceRestart`**、旧候选对被替换；
+2. 双端同时重连**无 glare**（仅在线侧发 offer，重连侧只 answer）；
+3. **8 s 兜底不误触**（健康通话不触发，仅"信令恢复但画面黑"触发一次）；
+4. **长抖动（30–90 s）不自退**：走 `KEEP_CALL`、重连后自动补 offer/answer；
+5. **对端退出回等待态**（真实 `leave` / 宽限期满 `peerLeft` 后停表、可再入会）；
+6. **画面旋转**（**D-2 的直接后果**）：本地预览与远端画面朝向各测一次；
+7. 承接 t43 的既有未验证面：`JNI_OnLoad` 运行期注册、Camera2 首帧、日志导出、手机安装与首呼。
+
+### 15.8 判决
+**verdict = `pass`**（就 t78 验收面）：产物身份、构建证据、五条代码级主张、服务端现网与活体行为**逐条第一手复现**，未发现"声称与事实不符"。§15.5 的 D-1…D-6 为**登记项**，其中 **D-2（旋转语义）**与 **D-5（仓库 unit 缺 `-room-grace`）**具实质风险，建议各开一个小任务；§15.7 与宿主不可见面**一律不写作已验证**。
