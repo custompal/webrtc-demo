@@ -82,9 +82,9 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 		readErr = err
 	})
 
-	// ---- 断开清理 ----
+	// ---- 断开清理（t67：WS 断开 ≠ 离开房间；默认进入宽限期，保留席位、不通知对端）----
 	reason, level := classifyReadError(peer, readErr)
-	roomRef, other, destroyed := s.manager.Detach(peer)
+	roomRef, other, grace, immediate := s.manager.MarkOffline(peer)
 	peer.Close()
 	left := s.activeConns.Add(-1)
 
@@ -102,7 +102,11 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	if roomRef != nil {
 		fields["room"] = roomRef.ID
-		fields["room_destroyed"] = destroyed
+		fields["seat_kept"] = !immediate
+		fields["room_destroyed"] = immediate && other == nil
+		if !immediate {
+			fields["grace_ms"] = grace.Milliseconds()
+		}
 	}
 	entry := s.log.WithFields(fields)
 	switch {
@@ -114,8 +118,21 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 		entry.Info("ws_close")
 	}
 
+	if immediate {
+		// 宽限期已关闭（-room-grace 0）或席位已被并发移除：沿用旧语义立即通知对端
+		if other != nil {
+			s.sendPeerLeft(other, peer.ID(), roomRef)
+		}
+		return
+	}
+	// 宽限期路径：**不**给对端发 peerLeft；对端会继续通话，等待其重连。
 	if other != nil {
-		s.sendPeerLeft(other, peer.ID(), roomRef)
+		s.log.WithFields(logrus.Fields{
+			"tag":      logging.TagSignaling,
+			"room":     roomRef.ID,
+			"peer":     peer.ID(),
+			"grace_ms": grace.Milliseconds(),
+		}).Warn("room_peer_offline_grace")
 	}
 }
 
@@ -474,9 +491,34 @@ func (s *Server) handleRoomExpired(r *room.Room, peers []*room.Peer) {
 	}
 }
 
+// handleGraceExpired 由房间管理器在锁外回调：某个席位的宽限期满、且确实被回收。
+//
+// t67：这是「宽限期内未重连」的唯一出口——此时才给仍在线对端**下发一次** peerLeft
+// （沿用 doc/09 §3.9 的既有消息类型与语义，不新增消息）。
+func (s *Server) handleGraceExpired(r *room.Room, offline *room.Peer, other *room.Peer) {
+	if r == nil || offline == nil || other == nil {
+		return
+	}
+	s.log.WithFields(logrus.Fields{
+		"tag":      logging.TagRoom,
+		"room":     r.ID,
+		"peer":     offline.ID(),
+		"grace_ms": s.cfg.RoomGrace.Milliseconds(),
+	}).Warn("grace_expired_notify_peer_left")
+	s.sendPeerLeft(other, offline.ID(), r)
+}
+
 // sendPeerLeft 向对端下发 peerLeft（doc/09 §3.9）。
 func (s *Server) sendPeerLeft(other *room.Peer, leftPeerID string, r *room.Room) {
 	if other == nil {
+		return
+	}
+	if other.Closed() {
+		// t67：对端可能自身处于宽限期（连接已死），无需也无处投递
+		s.log.WithFields(logrus.Fields{
+			"tag":       logging.TagRoom,
+			"left_peer": leftPeerID,
+		}).Debug("peer_left_skip_closed_peer")
 		return
 	}
 	if err := other.SendMessage(protocol.PeerLeftNotify{

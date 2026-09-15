@@ -112,6 +112,7 @@ symbol_level=0 rtc_dlog_always_on=true
 - 工具链：**NDK 26.1.10909125** standalone（`CHOST=aarch64-linux-android`、`CC/CXX=…-clang(++)`、API 21），**未使用** webrtc 的 custom-libcxx 工具链。
 - **接口修正（doc/08 已过期）**：现代 libvpx 移除了 `--sdk-path` 与 `armv8-android-gcc`，正确用法为 `--target=arm64-android-gcc` + NDK 环境变量。
 - configure：`--enable-vp9 --enable-vp9-encoder --enable-vp9-decoder --disable-vp8-* --enable-static --disable-shared --disable-examples --disable-tools --disable-unit-tests --disable-runtime-cpu-detect --enable-pic`。
+  - **⚠️ 该口径已于 2026-09-15 被 t56 修订**（改为 `--enable-runtime-cpu-detect --disable-sve --disable-sve2`）：`--disable-runtime-cpu-detect` 使 rtcd 退化为**编译期直连**，直接导致真机首帧 SIGILL 崩溃。原因、证据、现行哈希与验收脚本见 **`reports/26-libvpx-runtime-cpu-detect.md`**（另见本文 §18）。本节其余内容保留为 t5 期历史口径。
 
 **§4.4 硬约束实测核验**：
 
@@ -993,3 +994,17 @@ native-dev 指出我"这 3 个类全树未编译、须用 `compliment.jar` 单�
 
 ### 17.4 哈希口径（第三次提醒，跨成员）
 native-dev §3 复核的是 **`7dbe8400…`（mtime 10:53）**，即**中间版**；**现行 live = `dc5f89193d55c97152a7dd1331f3f7d111f8dd099d4c970e9142231ea79f8915`（mtime 2026-09-14 11:05:10）**，AAR = `e066e456…`。两者**内容等价**（508/508 逐字节相同，**时间戳 508 条全部不同**（更正：早前写“仅 4 条”有误；`7dbe8400…` 既有条目沿用构建固定 epoch 2001-01-01、4 个新编译类用构建时刻；`dc5f8919…` 归一后把全部条目重标为 2026-01-01。可复算：`/tmp/pre-deploy.jar`=7dbe8400… vs `/opt/dsh-workspaces/tmp/jni-merge/libwebrtc-java.jar`=dc5f8919…)）。**跨成员对账请统一用现行值。**
+
+---
+
+## 18. t56 追加（2026-09-15）：arm64 libvpx 重建 —— 开启运行时 CPU 探测（修真机 SIGILL）
+
+> 本节由 **webrtc-builder** 在 t56 追加。**§5 / §12 / §14 / §17 中关于 `libvpx.a` 的哈希与 configure 口径均为 t5–t23 期历史值**；现行口径与全部原始证据见 **`reports/26-libvpx-runtime-cpu-detect.md`**。
+
+- **新交付件**：`third_party/libvpx/lib/libvpx.a` = **`2607d1cfd38fc34ab5772d85d4dbcb735746adc2baca68be24ca4a150f22b323`**（**1 956 632 B**，154 成员，替换于 2026-09-15 12:27:05）；新增交付件 `third_party/libvpx/include/vpx_config.h` = `8ea46c68af0f2ab518edde4bcc435eee25b2135a912c75296f24c41ab7d69305`（3 214 B）。
+- **口径**：`--enable-runtime-cpu-detect`（显式）**且** `--disable-sve --disable-sve2`（显式）；其余与 §5 逐字一致（NDK 26.1.10909125 / `--target=arm64-android-gcc` / `--disable-vp8-*` / 静态 / `--enable-pic`）。已固化进 `scripts/t5-libwebrtc-libvpx-build.sh`，并新增**口径自检**（`SVE 成员数==0` 且 `CONFIG_RUNTIME_CPU_DETECT==1`，否则 FATAL 返回非 0）。
+- **为什么**：旧口径 `--disable-runtime-cpu-detect` 使 `vp9_rtcd.h` / `vpx_dsp_rtcd.h` 退化为**编译期 #define 直连**（`vp9_block_error(_fp) → _sve`；`vpx_dsp_rtcd.h` 直连 `_neon_dotprod` **72** / `_neon_i8mm` **6** / `_sve` **1** 条），core encoder TU 直接 `U vp9_block_error_sve` ⇒ 无 SVE 真机首帧关键帧 RD 执行即 **SIGILL**（t55 定位、t56 复现并修复）。行内 `_neon_dotprod`/`_neon_i8mm` 直连同类隐患亦由运行时派发一并消除。
+- **旧件归档（不覆盖历史证据）**：`e280b11bcc9eff8c…`（1 929 142 B）→ `/opt/dsh-workspaces/tmp/t56/libvpx.a.pre-t56-e280b11b`（容器同一路径）；并发写者落位件 `a983dba3828d9673…`（1 961 000 B）→ 同目录 `libvpx.a.pre-t56-a983dba3`。
+- **验收**：新增 `scripts/t56-libvpx-verify-runtime-cpu-detect.sh` → 现行件 **PASS**、旧件与并发件 **FAIL**（原始输出 `reports/26-t56-verify.log`）；构建原始输出 `reports/26-t56-build.log`；证据合集 `reports/26-t56-evidence.log`。
+- **未受影响**：`third_party/libwebrtc/**` 本轮实测哈希未变（jar `0c776934…`、AAR `8e8f2baf…`、`libjingle_peerconnection_so.so` `757cef81…`、`libc++_shared.so` `c9dbf4ec…`）；`app/src/**`、`doc/**` 未动。
+- **未验证（不得写成通过）**：真机首帧不崩（`encode_vpx_done` / `encoded_bytes>0`）、通话 ≥10 s 无重启、双端出画面 —— 且须先由 captain 的合并构建窗口**重链 APK**（APK 内 `libwebrtcdemo_native.so` 是静态链入旧 `.a`，仅换 `.a` 不改变已装 APK 行为）。

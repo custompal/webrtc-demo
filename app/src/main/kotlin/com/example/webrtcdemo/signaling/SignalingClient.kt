@@ -78,12 +78,51 @@ class SignalingClient(val url: String) {
         /** 心跳发送间隔（doc/09 §6 冻结）。 */
         const val PING_INTERVAL_MS = 15_000L
 
-        /** pong 超时（发送 ping 后 5 s 未收到视为断线）。 */
+        /** pong 单窗口超时（发送 ping 后 5 s 未收到该窗口的 pong）。 */
         const val PONG_TIMEOUT_MS = 5_000L
 
-        /** 断线重连等待与上限（doc/09 §6 冻结）。 */
-        const val RECONNECT_DELAY_MS = 3_000L
-        const val MAX_RECONNECT_ATTEMPTS = 3
+        /**
+         * 【t68】容忍的**连续** pong 丢失窗口数（默认 4 ⇒ 有效阈值 ≈ 20 s）。
+         *
+         * 真机缺陷（dl-b 15:27:45.779）：单次 `ws_pong_timeout`（5 s）即判断线 ⇒ 服务端回收房间、
+         * 对端收到 peerLeft、本端重连得 ROOM_NOT_FOUND ⇒ **媒体明明还在流却自动退房**。
+         * 现在：单次丢失只记 `pong_miss` 并继续等（重发 ping），连续 [PONG_MISS_TOLERANCE] 次才断线。
+         */
+        const val PONG_MISS_TOLERANCE = 4
+
+        /** 【t68】有效判活阈值（= [PONG_TIMEOUT_MS] × [PONG_MISS_TOLERANCE]，验收要求 ≥20 s）。 */
+        const val PONG_FAIL_AFTER_MS = PONG_TIMEOUT_MS * PONG_MISS_TOLERANCE
+
+        /**
+         * 【t68】某个存活窗口是否已丢 pong（**纯函数**，可 JVM 单测）。
+         *
+         * @param nowMs 当前时刻。
+         * @param pingSentAtMs 该窗口发出 ping 的时刻（0 = 无待回应 ping）。
+         * @param lastPongAtMs 最近一次收到 pong 的时刻。
+         * @param timeoutMs 单窗口超时。
+         */
+        fun pongMissed(
+            nowMs: Long,
+            pingSentAtMs: Long,
+            lastPongAtMs: Long,
+            timeoutMs: Long = PONG_TIMEOUT_MS,
+        ): Boolean = pingSentAtMs > 0L && nowMs - pingSentAtMs > timeoutMs && lastPongAtMs < pingSentAtMs
+
+        /**
+         * 【t68】连续丢失是否已达到断线阈值（**纯函数**，可 JVM 单测）。
+         *
+         * @param consecutiveMisses 已连续丢失的窗口数。
+         * @param tolerance 容忍上限（默认 [PONG_MISS_TOLERANCE]）。
+         */
+        fun pongTimeoutReached(consecutiveMisses: Int, tolerance: Int = PONG_MISS_TOLERANCE): Boolean =
+            consecutiveMisses >= tolerance
+
+        // socket 重连**不另设次数常量**（t71 契约①："复用既有 rejoinDelayMs 口径，不造平行常量"）：
+        // `scheduleReconnect` 直接使用 MAX_REJOIN_ATTEMPTS（10 次，1/2/4/8 s 封顶）
+        // ⇒ 总预算 rejoinBudgetMs() = **63 s**（≥60 s 且 < 服务端 90 s 宽限期）。
+        // 历史：修复前为"固定 3 s × 3 次 ≈ 9–12 s"（RECONNECT_DELAY_MS + 独立上限 3），3 次失败即把
+        // DISCONNECTED 当终态 ⇒ 服务端仍保留席位（对端未收到 peerLeft）、RTP 仍在流时客户端
+        // **自杀式退房**（t71 缺口①）。旧常量已删除，防止回退成第二套口径。
 
         private const val TAG = "signaling"
         private const val WS_CLOSE_NORMAL = 1000
@@ -93,13 +132,16 @@ class SignalingClient(val url: String) {
          * 最多 [MAX_REJOIN_ATTEMPTS] 次 ≈ 63 s，覆盖服务端约 45 s 的读超时回收窗口。
          *
          * 处置依据见 [SignalingErrorPolicy]（ROOM_FULL 在此语境下是暂时性的）。
+         *
+         * 【t71】socket 断线重连（[scheduleReconnect]）**共用**本退避函数与次数上限 ——
+         * 口径统一为"1/2/4/8 s 封顶、10 次 ≈63 s"，不再维护第二套常量。
          */
         const val REJOIN_RETRY_BASE_MS = 1_000L
 
         /** 单次重试间隔上限（8 s），避免长尾时对服务端过密。 */
         const val REJOIN_RETRY_MAX_MS = 8_000L
 
-        /** 重试次数上限：累计等待 ≈ 63 s（> 45 s 窗口）。 */
+        /** 重试次数上限：累计等待 ≈ 63 s（> 45 s 窗口，< 90 s 宽限期）。 */
         const val MAX_REJOIN_ATTEMPTS = 10
 
         /**
@@ -115,6 +157,13 @@ class SignalingClient(val url: String) {
             var delay = REJOIN_RETRY_BASE_MS
             repeat((attempt - 1).coerceAtLeast(0)) { delay = (delay * 2).coerceAtMost(REJOIN_RETRY_MAX_MS) }
             return delay
+        }
+
+        /** rejoin 重试的**累计**等待（ms）—— 诊断用（`ws_rejoin_give_up budget_ms=…`）。 */
+        fun rejoinBudgetMs(maxAttempts: Int = MAX_REJOIN_ATTEMPTS): Long {
+            var total = 0L
+            for (attempt in 1..maxAttempts) total += rejoinDelayMs(attempt)
+            return total
         }
 
         /** 无监听器期间最多缓冲的消息数（含 send 方向的 SDP 消息）。 */
@@ -169,6 +218,34 @@ class SignalingClient(val url: String) {
     @Volatile
     private var rejoinAttempt: Int = 0
 
+    /**
+     * 【t68】最近一次进入 `DISCONNECTED` 的**来源**。
+     *
+     * 真机缺陷（dl-a:7516-7520 / dl-b:9717-9720）：`peerLeft` 与"重连期房间丢失"都会把状态推到
+     * `DISCONNECTED`，上层（通话页）随即把它当作**传输层终态**自动挂断 —— 而当时媒体仍在流动
+     * （dl-a `down_bps=2047967`、dl-b `down_bps=326398`）。
+     * 因此把"这次掉线是否仍可由上层按事件去留"作为**显式信号**暴露给监听者：
+     * 见 [disconnectCause] / [DisconnectCause.survivable]。
+     *
+     * **每个** `setState(DISCONNECTED)` 调用点都必须先写本字段（含 `leave()` / `shutdown()` /
+     * 重连耗尽等终态路径，写 [DisconnectCause.FATAL]），否则会读到上一次的陈旧值。
+     */
+    @Volatile
+    private var disconnectCause: DisconnectCause = DisconnectCause.FATAL
+
+    /** 【t68】最近一次 `DISCONNECTED` 的来源（驱动通话页"是否自动结束"的判定）。 */
+    val lastDisconnectCause: DisconnectCause
+        get() = disconnectCause
+
+    /**
+     * 【t68】当前是否处于"**曾经在房内、断线后重连**"的语境。
+     *
+     * 由 [scheduleReconnect] 在"已有 roomId 却掉线"时置真、[onRoomEstablished] 置假。
+     * 通话页用它判定 `ROOM_NOT_FOUND` 属于"房间被回收（可重建）"还是"首次入房就找不到房间"。
+     */
+    val isRejoinContext: Boolean
+        get() = rejoinAfterDrop
+
     /** 最近一次发出 ping 的时刻；0 表示没有待回应的 ping。 */
     @Volatile
     private var pingSentAtMs: Long = 0L
@@ -176,6 +253,15 @@ class SignalingClient(val url: String) {
     /** 最近一次收到 pong 的时刻。 */
     @Volatile
     private var lastPongAtMs: Long = 0L
+
+    /**
+     * 【t68】连续丢失的 pong 窗口数。
+     *
+     * 单次丢失不再直接判断线（真机缺陷：5 s 抖动即被回收房间）；连续 [PONG_MISS_TOLERANCE] 次才断线。
+     * 收到任何 pong 即归零。
+     */
+    @Volatile
+    private var consecutivePongMisses: Int = 0
 
     private val socketListener = object : WebSocketListener() {
 
@@ -201,6 +287,8 @@ class SignalingClient(val url: String) {
             if (message is SignalingMessage.Pong) {
                 lastPongAtMs = System.currentTimeMillis()
                 pingSentAtMs = 0L
+                // 【t68】收到 pong ⇒ 清零"连续丢失"计数
+                consecutivePongMisses = 0
             }
             logIncoming(message)
             advanceStateOnIncoming(message)
@@ -330,6 +418,8 @@ class SignalingClient(val url: String) {
         if (_state.value != ConnectionState.DISCONNECTED) {
             send(SignalingMessage.Leave)
         }
+        // 【t68】用户主动离开 = 传输层终态（通话页已由 hangup() 的 callEnded 闸门接管）
+        disconnectCause = DisconnectCause.FATAL
         setState(ConnectionState.DISCONNECTED)
         webSocket?.close(WS_CLOSE_NORMAL, null)
         webSocket = null
@@ -341,6 +431,7 @@ class SignalingClient(val url: String) {
         scheduler.shutdownNow()
         webSocket?.close(WS_CLOSE_NORMAL, null)
         webSocket = null
+        disconnectCause = DisconnectCause.FATAL
         setState(ConnectionState.DISCONNECTED)
     }
 
@@ -430,6 +521,25 @@ class SignalingClient(val url: String) {
                             currentRoomId = null
                         }
                         AppLog.w(TAG, "ws_reconnect_suppressed", mapOf("code" to message.code))
+                        // 【t68】"重连期房间被回收" ⇒ 可存活（上层应给可恢复态，**不得**自动退出通话页）；
+                        // 其余终态码（报文非法等）仍为传输层终态。
+                        disconnectCause = if (rejoinAfterDrop &&
+                            SignalingErrorPolicy.isRoomLossCode(message.code)
+                        ) {
+                            DisconnectCause.ROOM_LOST
+                        } else {
+                            DisconnectCause.FATAL
+                        }
+                        AppLog.w(
+                            TAG,
+                            "disconnect_cause",
+                            mapOf(
+                                "cause" to disconnectCause.name.lowercase(),
+                                "code" to message.code,
+                                "rejoin" to rejoinAfterDrop.toString(),
+                                "room" to (currentRoomId ?: "-"),
+                            ),
+                        )
                     }
 
                     SignalingErrorPolicy.Action.SURFACE -> {
@@ -442,6 +552,14 @@ class SignalingClient(val url: String) {
 
             is SignalingMessage.PeerLeft -> {
                 SignalingIdentity.clearRemote()
+                // 【t68】对端离开 ≠ 传输层终态：连接本身仍然健康（"等待对方加入"是合法状态），
+                // 去留由上层按"是否曾连上过 / 媒体是否存活"判定（见 CallSurvivability.peerLeftAction）。
+                disconnectCause = DisconnectCause.PEER_LEFT
+                AppLog.w(
+                    TAG,
+                    "disconnect_cause",
+                    mapOf("cause" to disconnectCause.name.lowercase(), "peer_left" to "true"),
+                )
                 setState(ConnectionState.DISCONNECTED)
             }
             else -> Unit
@@ -506,19 +624,43 @@ class SignalingClient(val url: String) {
             PING_INTERVAL_MS,
             TimeUnit.MILLISECONDS,
         )
-        // 存活检查：发出 ping 后 5 s 内未收到 pong → 判定断线（doc/09 §6）
+        // 存活检查（t68 口径变化）：单次 pong 丢失**不再**判断线 —— 记 `pong_miss` 并重发 ping 继续等；
+        // 仅当连续丢失达到 PONG_MISS_TOLERANCE（默认 4 ⇒ ≈20 s）才取消连接并重连。
         scheduler.scheduleWithFixedDelay(
             {
                 val sentAt = pingSentAtMs
-                if (sentAt > 0L && System.currentTimeMillis() - sentAt > PONG_TIMEOUT_MS &&
-                    lastPongAtMs < sentAt
-                ) {
-                    AppLog.w(TAG, "ws_pong_timeout", mapOf("timeout_ms" to PONG_TIMEOUT_MS.toString()))
-                    pingSentAtMs = 0L
-                    webSocket?.cancel()
-                    webSocket = null
-                    listener?.onTransportFailure("pong_timeout", null)
-                    if (!closedByUser) scheduleReconnect("pong_timeout")
+                if (SignalingClient.pongMissed(System.currentTimeMillis(), sentAt, lastPongAtMs)) {
+                    consecutivePongMisses += 1
+                    AppLog.w(
+                        TAG,
+                        "pong_miss",
+                        mapOf(
+                            "count" to consecutivePongMisses.toString(),
+                            "tolerance" to PONG_MISS_TOLERANCE.toString(),
+                            "timeout_ms" to PONG_TIMEOUT_MS.toString(),
+                            "fail_after_ms" to PONG_FAIL_AFTER_MS.toString(),
+                        ),
+                    )
+                    if (SignalingClient.pongTimeoutReached(consecutivePongMisses)) {
+                        AppLog.w(
+                            TAG,
+                            "ws_pong_timeout",
+                            mapOf(
+                                "timeout_ms" to PONG_TIMEOUT_MS.toString(),
+                                "misses" to consecutivePongMisses.toString(),
+                            ),
+                        )
+                        pingSentAtMs = 0L
+                        consecutivePongMisses = 0
+                        webSocket?.cancel()
+                        webSocket = null
+                        listener?.onTransportFailure("pong_timeout", null)
+                        if (!closedByUser) scheduleReconnect("pong_timeout")
+                    } else {
+                        // 容忍期内：重发一个 ping，把"窗口"推进到下一段（避免同一窗口被重复计数）
+                        pingSentAtMs = System.currentTimeMillis()
+                        send(SignalingMessage.Ping(pingSentAtMs))
+                    }
                 }
             },
             PONG_TIMEOUT_MS,
@@ -539,11 +681,22 @@ class SignalingClient(val url: String) {
     private fun scheduleRejoinRetry() {
         val attempt = rejoinAttempt + 1
         if (attempt > MAX_REJOIN_ATTEMPTS) {
-            AppLog.e(TAG, "ws_rejoin_give_up", mapOf("attempts" to attempt.toString()))
+            AppLog.e(
+                TAG,
+                "ws_rejoin_give_up",
+                mapOf(
+                    "attempts" to attempt.toString(),
+                    "budget_ms" to rejoinBudgetMs().toString(),
+                    "room" to (currentRoomId ?: "-"),
+                ),
+            )
             reconnectSuppressed = true
             pendingCreate = false
             pendingRoomId = null
             currentRoomId = null
+            // 【t68 收尾】rejoin（ROOM_FULL）重试耗尽同样**不等于通话结束**：房间意图虽被清空，
+            // 但服务端宽限期内对端并未收到 peerLeft ⇒ 交给上层按媒体存活判定（SIGNAL_LOST）。
+            disconnectCause = DisconnectCause.SIGNAL_LOST
             setState(ConnectionState.DISCONNECTED)
             return
         }
@@ -571,16 +724,41 @@ class SignalingClient(val url: String) {
             return
         }
         // 曾在房内 → 标记为「掉线后重连」：这决定了 ROOM_FULL 是否有界重试、以及 join(roomId) 语义
-        if (currentRoomId != null) rejoinAfterDrop = true
+        val inRoomBeforeDrop = currentRoomId != null
+        if (inRoomBeforeDrop) rejoinAfterDrop = true
         val attempt = reconnectAttempts.incrementAndGet()
-        if (attempt > MAX_RECONNECT_ATTEMPTS) {
-            AppLog.e(TAG, "ws_reconnect_give_up", mapOf("attempts" to attempt.toString()))
+        if (attempt > MAX_REJOIN_ATTEMPTS) {
+            AppLog.e(
+                TAG,
+                "ws_reconnect_give_up",
+                mapOf(
+                    "attempts" to attempt.toString(),
+                    "budget_ms" to SignalingClient.rejoinBudgetMs().toString(),
+                    "in_room_before_drop" to inRoomBeforeDrop.toString(),
+                    "room" to (currentRoomId ?: "-"),
+                ),
+            )
+            // 【t68 收尾】重连预算耗尽**不等于通话结束**：服务端按 t67 保留席位 90 s 且未发 peerLeft，
+            // 此时媒体（RTP）往往仍在流 ⇒ 交给上层按"曾连上过 / 媒体是否存活"判定
+            // （CallSurvivability.signalLostAction），不得在这里当作终态。
+            disconnectCause = DisconnectCause.SIGNAL_LOST
             setState(ConnectionState.DISCONNECTED)
             return
         }
-        AppLog.w(TAG, "ws_reconnect_scheduled", mapOf("attempt" to attempt.toString(), "reason" to reason))
+        val delayMs = SignalingClient.rejoinDelayMs(attempt)
+        AppLog.w(
+            TAG,
+            "ws_reconnect_scheduled",
+            mapOf(
+                "attempt" to attempt.toString(),
+                "reason" to reason,
+                "delay_ms" to delayMs.toString(),
+                "budget_ms" to SignalingClient.rejoinBudgetMs().toString(),
+                "max_attempts" to MAX_REJOIN_ATTEMPTS.toString(),
+            ),
+        )
         setState(ConnectionState.CONNECTING)
-        scheduler.schedule({ openSocket() }, RECONNECT_DELAY_MS, TimeUnit.MILLISECONDS)
+        scheduler.schedule({ openSocket() }, delayMs, TimeUnit.MILLISECONDS)
     }
 
     private fun setState(newState: ConnectionState) {
@@ -592,6 +770,42 @@ class SignalingClient(val url: String) {
     }
 
     private fun typeName(message: SignalingMessage): String = message::class.simpleName ?: "unknown"
+}
+
+// ============================================================================
+// DISCONNECTED 的来源（t68，纯逻辑，可 JVM 单测）
+// ----------------------------------------------------------------------------
+// 真机缺陷根因（dl-a:7516-7520 / dl-b:9717-9720）：`peerLeft` 与"重连期 ROOM_NOT_FOUND"都会把
+// 信令状态推到 DISCONNECTED，而通话页把 DISCONNECTED 一律当作**传输层终态**自动挂断/退出房间 ——
+// 当时媒体仍在流动（dl-a down_bps=2047967、dl-b down_bps=326398）。
+// 因此把"这次掉线是否仍可由上层按事件去留"显式建模，避免上层再按状态名猜语义。
+// ============================================================================
+
+/**
+ * 最近一次 `DISCONNECTED` 的来源（t68）。
+ *
+ * @property survivable 是否**不得**被上层当作传输层终态自动结束通话
+ *   （真正的结束仍可由用户显式操作，或由 `FAILED`/重连耗尽等终态路径触发）。
+ */
+enum class DisconnectCause(val survivable: Boolean) {
+    /** 用户主动离开、进程退出等：通话必须结束。 */
+    FATAL(survivable = false),
+
+    /** 对端离开（`peerLeft`）：连接健康，去留由上层按"是否曾连上过/媒体是否存活"判定。 */
+    PEER_LEFT(survivable = true),
+
+    /** 重连期房间被回收（`ROOM_NOT_FOUND`/`ROOM_EXPIRED`）：给可恢复态 + 显式重建入口。 */
+    ROOM_LOST(survivable = true),
+
+    /**
+     * 【t68 收尾】信令链路丢失且**重连预算耗尽**（`ws_reconnect_give_up` / `ws_rejoin_give_up`）。
+     *
+     * 与 [FATAL] 的区别：服务端按 t67 保留席位 90 s、宽限期内**不发 peerLeft**，因此"重连不上"只说明
+     * **本端信令**断了，**不说明对端已离开**；此时 RTP 往往仍在流（dl-b：`down_bps=326398`）。
+     * 上层必须用 `CallSurvivability.signalLostAction` 判定：本世代曾连上过或有媒体证据 ⇒ 保留通话页
+     * （会话不销毁）+ 可恢复态入口；否则才结束通话（避免"半死不活"的页面）。
+     */
+    SIGNAL_LOST(survivable = true),
 }
 
 // ============================================================================
@@ -670,6 +884,40 @@ object SignalingErrorPolicy {
      * @return `true` 表示应结束通话并退出通话页。
      */
     fun endsCall(code: String): Boolean = code in TERMINAL_CODES
+
+    /**
+     * 【t68】"房间确已丢失"的错误码集合（**只**含房间被回收这一类，可由"重新创建房间"恢复）。
+     *
+     * 与 [TERMINAL_CODES] 的区别：`INVALID_MESSAGE`/`NOT_IN_ROOM` 属于客户端报文问题，
+     * 不是房间丢失，**不得**因为它们给用户"重新创建房间"的可恢复态。
+     */
+    val ROOM_LOSS_CODES: Set<String> = setOf("ROOM_NOT_FOUND", "ROOM_EXPIRED")
+
+    /**
+     * 【t68】该错误码是否属于"房间确已丢失"（= 可重建；去留再由上层按语境/媒体判定）。
+     *
+     * 真机缺陷（dl-b 15:28:02.248）：pong 单次丢失 ⇒ 服务端回收房间 ⇒ 本端重连得 `ROOM_NOT_FOUND`
+     * ⇒ 旧实现直接按 [endsCall] **自动退房**，而当时 `down_bps=326398`、画面仍在更新。
+     * 现在由调用方组合本函数与 `CallSurvivability.roomLostAction(rejoinContext, mediaAlive)`：
+     * 只有"曾连上过 / 仍在重连语境 / 媒体仍存活"才保持通话页并给出显式重建入口。
+     *
+     * @param code 服务端 error.code。
+     */
+    fun isRoomLossCode(code: String): Boolean = code in ROOM_LOSS_CODES
+
+    /**
+     * 【t68】通话可存活化判定：该错误码在"曾经在房内"的语境下应**保持通话页**还是结束通话。
+     *
+     * 与 [endsCall] 的关系：[endsCall] 保持**首次入房**的语义不变（找不到房间 ⇒ 结束），
+     * 本函数是它之前的"重连语境闸门"；两者在同一语境下会给出**不同**结论，这正是本缺陷的修复点
+     * （见 `CallSurvivabilityTest` / `SignalingErrorPolicyTest` 的 old-red/new-green 对照用例）。
+     *
+     * @param code 服务端 error.code。
+     * @param rejoinContext 是否处于"曾经在房内（等待/通话/重连）"的语境。
+     * @param mediaAlive 是否有可用媒体证据（媒体仍在流时必须保持通话页）。
+     */
+    fun keepsCallOnRoomLoss(code: String, rejoinContext: Boolean, mediaAlive: Boolean): Boolean =
+        isRoomLossCode(code) && (rejoinContext || mediaAlive)
 }
 
 // ============================================================================

@@ -63,6 +63,7 @@ func NewServer(cfg *config.Config, log *logrus.Logger) *Server {
 		},
 	}
 	s.manager.SetExpiredHandler(s.handleRoomExpired)
+	s.manager.SetGraceExpiredHandler(s.handleGraceExpired) // t67：席位宽限期满才通知 peerLeft
 	return s
 }
 
@@ -100,6 +101,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 // HandleHealthz 返回服务状态 JSON，供部署/联调探活。
 func (s *Server) HandleHealthz(w http.ResponseWriter, r *http.Request) {
 	created, destroyed := s.manager.Stats()
+	takeovers, graceExpired := s.manager.StatsGrace()
 	body := map[string]interface{}{
 		"status":           "ok",
 		"version":          Version,
@@ -112,6 +114,9 @@ func (s *Server) HandleHealthz(w http.ResponseWriter, r *http.Request) {
 		"roomsCreated":     created,
 		"roomsDestroyed":   destroyed,
 		"roomExpirySec":    s.cfg.RoomExpirySec,
+		"roomGraceSec":     int(s.cfg.RoomGrace.Seconds()),
+		"seatTakeovers":    takeovers,
+		"graceExpired":     graceExpired,
 		"maxMessageBytes":  s.cfg.MaxMessageSize,
 		"stunUrl":          s.cfg.StunURL,
 		"turnUrl":          s.cfg.TurnURL,

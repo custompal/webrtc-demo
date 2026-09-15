@@ -1,0 +1,252 @@
+############################################################
+# t56 证据合集（三支脚本原始输出 + 调用方普查）
+# 输入：A=原始 t5 件 e280b11b（交付前）; B=并发落位件 a983dba3; C=t56 新件 2607d1cf
+# 采集合成时间: 2026-09-15T04:27:42Z
+############################################################
+
+[2026-09-15T04:26:00Z] t56 evidence start
+
+======== A. 原始 t5 件 e280b11b（并发写者 12:22:04 归档） ========
+path: /opt/dsh-workspaces/tmp/libvpx-old-20260915-122204.a
+e280b11bcc9eff8c5be20f35023c79319eeb374a5277d1972c0eb310fe3215f7  /opt/dsh-workspaces/tmp/libvpx-old-20260915-122204.a
+size=1929142 mtime=2026-09-15 12:22:04.369755081 +0800
+ar members: 156
+ar members matching 'sve': 2
+   member: sum_squares_sve.c.o
+   member: vp9_error_sve.c.o
+nm lines matching 'sve': 10
+-- nm vp9_block_error* --
+   0000000000000000 T vp9_block_error_c
+   0000000000000194 T vp9_block_error_fp_c
+                    U vp9_block_error_sve
+                    U vp9_block_error_fp_sve
+                    U vp9_block_error_sve
+   0000000000000060 T vp9_block_error_fp_neon
+   0000000000000000 T vp9_block_error_neon
+   0000000000000044 T vp9_block_error_fp_sve
+   0000000000000000 T vp9_block_error_sve
+-- nm cpu-detect (arm_cpu_caps | vpx_get_cpu_flags) --
+                    U arm_cpu_caps
+   0000000000000000 T arm_cpu_caps
+                    U arm_cpu_caps
+                    U arm_cpu_caps
+-- objdump whole-archive 'sdot' instruction count --
+568
+-- objdump whole-archive SVE z-register instruction sample (first 3) --
+         38: 44c10020     	sdot	z0.d, z1.h, z1.h
+         3c: 44c20040     	sdot	z0.d, z2.h, z2.h
+         a0: 44c40082     	sdot	z2.d, z4.h, z4.h
+
+======== B. 并发落位件 a983dba3（12:22:38，非本项目产出） ========
+path: /opt/dsh-workspaces/tmp/t56/libvpx.a.pre-t56-a983dba3
+a983dba3828d9673ec9cd8736b2e2125cc14c472d3d23a1f00189278720a2a6d  /opt/dsh-workspaces/tmp/t56/libvpx.a.pre-t56-a983dba3
+size=1961000 mtime=2026-09-15 12:23:53.752343070 +0800
+ar members: 156
+ar members matching 'sve': 2
+   member: sum_squares_sve.c.o
+   member: vp9_error_sve.c.o
+nm lines matching 'sve': 8
+-- nm vp9_block_error* --
+   0000000000000000 B vp9_block_error
+   0000000000000008 B vp9_block_error_fp
+                    U vp9_block_error_fp_neon
+                    U vp9_block_error_fp_sve
+                    U vp9_block_error_neon
+                    U vp9_block_error_sve
+                    U vp9_block_error
+   0000000000000000 T vp9_block_error_c
+   0000000000000194 T vp9_block_error_fp_c
+                    U vp9_block_error_fp
+                    U vp9_block_error
+   0000000000000060 T vp9_block_error_fp_neon
+   0000000000000000 T vp9_block_error_neon
+   0000000000000044 T vp9_block_error_fp_sve
+   0000000000000000 T vp9_block_error_sve
+-- nm cpu-detect (arm_cpu_caps | vpx_get_cpu_flags) --
+                    U arm_cpu_caps
+   0000000000000000 T arm_cpu_caps
+                    U arm_cpu_caps
+                    U arm_cpu_caps
+-- objdump whole-archive 'sdot' instruction count --
+568
+-- objdump whole-archive SVE z-register instruction sample (first 3) --
+         38: 44c10020     	sdot	z0.d, z1.h, z1.h
+         3c: 44c20040     	sdot	z0.d, z2.h, z2.h
+         a0: 44c40082     	sdot	z2.d, z4.h, z4.h
+
+======== C. t56 新件（本文交付） ========
+path: /opt/dsh-workspaces/webrtc-build/t56-libvpx-output/lib/libvpx.a
+2607d1cfd38fc34ab5772d85d4dbcb735746adc2baca68be24ca4a150f22b323  /opt/dsh-workspaces/webrtc-build/t56-libvpx-output/lib/libvpx.a
+size=1956632 mtime=2026-09-15 12:24:57.458091775 +0800
+ar members: 154
+ar members matching 'sve': 0
+nm lines matching 'sve': 0
+-- nm vp9_block_error* --
+   0000000000000000 T vp9_block_error_c
+   0000000000000194 T vp9_block_error_fp_c
+                    U vp9_block_error_neon
+                    U vp9_block_error_fp_neon
+                    U vp9_block_error_neon
+   0000000000000060 T vp9_block_error_fp_neon
+   0000000000000000 T vp9_block_error_neon
+-- nm cpu-detect (arm_cpu_caps | vpx_get_cpu_flags) --
+                    U arm_cpu_caps
+   0000000000000000 T arm_cpu_caps
+                    U arm_cpu_caps
+                    U arm_cpu_caps
+-- objdump whole-archive 'sdot' instruction count --
+552
+-- objdump whole-archive SVE z-register instruction sample (first 3) --
+
+======== 配置证据：vpx_config.h ========
+-- OLD（webrtc-build/libvpx-src, 旧 configure 产物）--
+22:#define HAVE_NEON_DOTPROD 1
+23:#define HAVE_NEON_I8MM 1
+24:#define HAVE_SVE 1
+25:#define HAVE_SVE2 1
+66:#define CONFIG_RUNTIME_CPU_DETECT 0
+-- NEW（t56 重建）--
+22:#define HAVE_NEON_DOTPROD 1
+23:#define HAVE_NEON_I8MM 1
+24:#define HAVE_SVE 0
+25:#define HAVE_SVE2 0
+66:#define CONFIG_RUNTIME_CPU_DETECT 1
+
+======== 分派证据：vp9_rtcd.h ========
+-- OLD: block_error 宏 --
+56:#define vp9_block_error vp9_block_error_sve
+61:#define vp9_block_error_fp vp9_block_error_fp_sve
+OLD 直连 _sve 绑定数: 2
+OLD 直连 _neon_i8mm 绑定数: 3
+OLD 直连 _neon_dotprod 绑定数: 0
+-- NEW: block_error 宏 --
+55:#define vp9_block_error vp9_block_error_neon
+59:#define vp9_block_error_fp vp9_block_error_fp_neon
+NEW 直连 _sve 绑定数: 0
+NEW 直连 _neon_i8mm 绑定数: 0
+NEW 直连 _neon_dotprod 绑定数: 0
+NEW: vp9_block_error 相关声明（前 6 行）
+53:int64_t vp9_block_error_c(const tran_low_t *coeff, const tran_low_t *dqcoeff, intptr_t block_size, int64_t *ssz);
+54:int64_t vp9_block_error_neon(const tran_low_t *coeff, const tran_low_t *dqcoeff, intptr_t block_size, int64_t *ssz);
+55:#define vp9_block_error vp9_block_error_neon
+57:int64_t vp9_block_error_fp_c(const tran_low_t *coeff, const tran_low_t *dqcoeff, int block_size);
+58:int64_t vp9_block_error_fp_neon(const tran_low_t *coeff, const tran_low_t *dqcoeff, int block_size);
+59:#define vp9_block_error_fp vp9_block_error_fp_neon
+
+======== 交付件未受影响核验（jar/AAR/.so）========
+0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757  /opt/dsh-workspaces/code/webrtc-demo/third_party/libwebrtc/java/libwebrtc-java.jar
+8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099  /opt/dsh-workspaces/code/webrtc-demo/third_party/libwebrtc/java/libwebrtc-arm64.aar
+c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36  /opt/dsh-workspaces/code/webrtc-demo/app/src/main/jniLibs/arm64-v8a/libc++_shared.so
+757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e  /opt/dsh-workspaces/code/webrtc-demo/app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so
+[2026-09-15T04:26:10Z] t56 evidence end
+
+[2026-09-15T04:26:47Z] evidence2 start
+
+======== OLD(e280b11b) SVE/dotprod 指令普查 ========
+SVE z-register 指令数: 16
+sdot 总数(v/s 形态均含): 568
+sdot 落在 v 寄存器(NEON dotprod): 552
+sdot 落在 z 寄存器(SVE): 16
+
+======== NEW(2607d1cf) SVE/dotprod 指令普查 ========
+SVE z-register 指令数: 0
+sdot 总数(v/s 形态均含): 552
+sdot 落在 v 寄存器(NEON dotprod): 552
+sdot 落在 z 寄存器(SVE): 0
+
+======== 新件分派机制（vpx_dsp_rtcd.h）========
+-- 直连 _sve 绑定: 0
+-- 直连 _neon_i8mm 绑定: 0
+-- 直连 _neon_dotprod 绑定: 0
+-- vpx_convolve8_horiz 相关行（前 6）--
+74:void vpx_convolve8_horiz_c(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+75:void vpx_convolve8_horiz_neon(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+76:void vpx_convolve8_horiz_neon_dotprod(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+77:void vpx_convolve8_horiz_neon_i8mm(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+78:RTCD_EXTERN void (*vpx_convolve8_horiz)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+1070:    vpx_convolve8_horiz = vpx_convolve8_horiz_neon;
+-- 分派指针声明样例（前 8 行含 RTCD / extern 的行）--
+16:#define RTCD_EXTERN
+18:#define RTCD_EXTERN extern
+54:RTCD_EXTERN void (*vpx_convolve8)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+60:RTCD_EXTERN void (*vpx_convolve8_avg)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+66:RTCD_EXTERN void (*vpx_convolve8_avg_horiz)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+72:RTCD_EXTERN void (*vpx_convolve8_avg_vert)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+78:RTCD_EXTERN void (*vpx_convolve8_horiz)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+84:RTCD_EXTERN void (*vpx_convolve8_vert)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+
+======== 旧件分派机制（webrtc-build/libvpx-src/vpx_dsp_rtcd.h）========
+-- 直连 _sve 绑定: 1
+-- 直连 _neon_i8mm 绑定: 6
+-- 直连 _neon_dotprod 绑定: 72
+-- vpx_convolve8_horiz 相关行（前 4）--
+74:void vpx_convolve8_horiz_c(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+75:void vpx_convolve8_horiz_neon(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+76:void vpx_convolve8_horiz_neon_dotprod(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+77:void vpx_convolve8_horiz_neon_i8mm(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const InterpKernel *filter, int x0_q4, int x_step_q4, int y0_q4, int y_step_q4, int w, int h);
+
+======== 符号层面：分派表是否进入 .a（新件）========
+0000000000000000 T vpx_convolve8_horiz_c
+0000000000000000 T vpx_convolve8_horiz_neon
+                 U vpx_convolve8_horiz_neon
+0000000000000000 T vpx_convolve8_horiz_neon_dotprod
+0000000000000000 T vpx_convolve8_horiz_neon_i8mm
+vpx_dsp_rtcd.c.o:
+0000000000000020 B vpx_convolve8_horiz
+                 U vpx_convolve8_horiz_neon
+                 U vpx_convolve8_horiz_neon_dotprod
+                 U vpx_convolve8_horiz_neon_i8mm
+0000000000000000 T vpx_dsp_rtcd
+                 U vpx_convolve8_horiz
+
+======== 旧件 93 个 i8mm/dotprod + 3 个 _sve 符号复核（t55 数据）========
+OLD nm i8mm/dotprod 行数: 203
+OLD nm sve 行数: 10
+NEW nm i8mm/dotprod 行数: 200
+NEW nm sve 行数: 0
+[2026-09-15T04:26:59Z] evidence2 end
+
+======== 调用方普查：谁在引用 *_sve（旧件=编译期直连，新件应=0）========
+-- OLD(e280b11b) 引用(U) *_sve 的全部行 --
+   /opt/dsh-workspaces/tmp/libvpx-old-20260915-122204.a:vp9_encodemb.c.o:                  U vpx_sum_squares_2d_i16_sve
+   /opt/dsh-workspaces/tmp/libvpx-old-20260915-122204.a:vp9_rdopt.c.o:                  U vp9_block_error_sve
+   /opt/dsh-workspaces/tmp/libvpx-old-20260915-122204.a:vp9_rdopt.c.o:                  U vpx_sum_squares_2d_i16_sve
+   /opt/dsh-workspaces/tmp/libvpx-old-20260915-122204.a:vp9_pickmode.c.o:                  U vp9_block_error_fp_sve
+   /opt/dsh-workspaces/tmp/libvpx-old-20260915-122204.a:vp9_tpl_model.c.o:                  U vp9_block_error_sve
+-- OLD 汇总(-->成员: 次数) --
+         1 vp9_encodemb.c.o
+         1 vp9_pickmode.c.o
+         2 vp9_rdopt.c.o
+         1 vp9_tpl_model.c.o
+-- NEW(2607d1cf) 引用(U) *_sve 的全部行（期望空）--
+   NEW 计数: 0
+
+======== 调用方普查：谁在引用 *_neon_i8mm/_neon_dotprod（新件应仅分派器 + 变体内部）========
+-- NEW 汇总(-->成员: 次数) --
+         8 subpel_variance_neon_dotprod.c.o
+         6 vp9_rtcd.c.o
+         3 vp9_temporal_filter_neon_dotprod.c.o
+         3 vp9_temporal_filter_neon_i8mm.c.o
+        84 vpx_dsp_rtcd.c.o
+-- NEW 分派器侧指针表符号 --
+   0000000000000020 B vpx_convolve8_horiz
+
+======== 交付落位后核验 ========
+2607d1cfd38fc34ab5772d85d4dbcb735746adc2baca68be24ca4a150f22b323  /opt/dsh-workspaces/code/webrtc-demo/third_party/libvpx/lib/libvpx.a
+8ea46c68af0f2ab518edde4bcc435eee25b2135a912c75296f24c41ab7d69305  /opt/dsh-workspaces/code/webrtc-demo/third_party/libvpx/include/vpx_config.h
+   /opt/dsh-workspaces/code/webrtc-demo/third_party/libvpx/lib/libvpx.a size=1956632 owner=admin:admin mtime=2026-09-15 12:27:05.777685382 +0800
+   /opt/dsh-workspaces/code/webrtc-demo/third_party/libvpx/include/vpx_config.h size=3214 owner=admin:admin mtime=2026-09-15 12:27:05.797687501 +0800
+   22:#define HAVE_NEON_DOTPROD 1
+   23:#define HAVE_NEON_I8MM 1
+   24:#define HAVE_SVE 0
+   25:#define HAVE_SVE2 0
+   66:#define CONFIG_RUNTIME_CPU_DETECT 1
+
+======== 归档件 ========
+   e280b11bcc9eff8c5be20f35023c79319eeb374a5277d1972c0eb310fe3215f7  /opt/dsh-workspaces/tmp/t56/libvpx.a.pre-t56-e280b11b
+   a983dba3828d9673ec9cd8736b2e2125cc14c472d3d23a1f00189278720a2a6d  /opt/dsh-workspaces/tmp/t56/libvpx.a.pre-t56-a983dba3
+   total 29040
+   -rw-r--r-- 1 admin admin  1961000 Sep 15 12:23 libvpx.a.pre-t56-a983dba3
+   -rw-r--r-- 1 admin admin  1929142 Sep 15 12:27 libvpx.a.pre-t56-e280b11b
+   -rw-r--r-- 1 admin admin 25845760 Sep 15 12:23 libvpx-src-d2413e2c.tar
+2026-09-15T04:27:42Z evidence3 end

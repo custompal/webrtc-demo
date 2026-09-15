@@ -1,0 +1,92 @@
+==============================================================
+# t69 构建：t67(服务端宽限期)+t68(客户端可存活化) 重编交付 APK
+# T0=2026-09-16T00:12:49+08:00  脚本=/opt/dsh-workspaces/tmp/t69-build.sh  TS=20260916-001249
+# HEAD=8563addbe096a3b288b94013bf8e5d89002cd678  dirty=87 行
+# 门禁 java/gradle 进程=0  近5min app/src=0  signaling=0
+# T0 双钉 jar=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+# T0 双钉 aar=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+# T0 双钉 so =757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+# T0 双钉 lcxx=c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+
+===== 1. build_app.sh --check-only =====
+CHECK_ONLY_EXIT=0   raw=/opt/dsh-workspaces/tmp/t69/checkonly-20260916-001249.log
+  tail: ===== == --check-only：不执行构建 == ===== 前置校验全部通过（未构建） 
+
+===== 2. :app:compileDebugKotlin =====
+COMPILE_EXIT=0   raw=/opt/dsh-workspaces/tmp/t69/compile-20260916-001249.log
+  BUILD SUCCESSFUL in 1m 39s
+  15 actionable tasks: 1 executed, 14 up-to-date
+
+===== 3. --no-daemon --no-build-cache clean assembleDebug =====
+ASSEMBLE_EXIT=0  T1=2026-09-16T00:14:33+08:00  T2=2026-09-16T00:17:27+08:00  raw=/opt/dsh-workspaces/tmp/t69/assemble-20260916-001249.log
+  BUILD SUCCESSFUL in 2m 52s
+  43 actionable tasks: 42 executed, 1 up-to-date
+  FROM-CACHE 行数=0   :app:clean 出现=1
+  构建窗口内 app/src 写入(>T1)=0  signaling 写入(>T1)=0
+  APK sha256=8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+  APK size=33419885  mtime=2026-09-16 00:17:26.029582955 +0800
+  T2 双钉 jar=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+  T2 双钉 aar=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+  T2 双钉 so =757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+  T2 双钉 lcxx=c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+  自有库(APK 内)=d49eafc3e7cdeaa296579f039dfda75b0dc34b76885b173dc61e3c1a426212a5
+
+===== 4. --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest =====
+TEST_EXIT=0   raw=/opt/dsh-workspaces/tmp/t69/test-20260916-001249.log
+  BUILD SUCCESSFUL in 4m 30s
+  24 actionable tasks: 24 executed
+  XML 汇总: tests=165 failures=0 errors=0 skipped=0  (XML mtime 最新=00:21:58)
+
+===== 5. 属主归一 =====
+  app/build root 条目=0  .gradle=0  app/.cxx=0
+# T3=2026-09-16T00:22:00+08:00 结束（CHECK=0 COMPILE=0 ASSEMBLE=0 TEST=0）
+
+===== 6. 发布（冻结副本刷新）=====
+  新 APK: 8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9  33419885 B  mtime=2026-09-16 00:17:26.029582955 +0800
+  旧 served: 3190ef73e3a836237580b9dd585795577adf03d51cb5c3aa99372d2f16a4531c
+  已归档旧 served → /opt/apk-http/artifacts/app-debug-3190ef73.apk (3190ef73e3a83623)
+  已归档旧 parts → /opt/apk-http/parts-archive/parts-3190ef73-20260916-002212 (6 件)
+  served  sha256=8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+  artifacts//opt/dsh-workspaces/artifacts/app-debug-8b58b3f0.apk sha256=8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+  make_parts.sh 运行:
+    [make_parts] 源 APK: /opt/dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk  size=33419885  sha256=8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+    [make_parts] 清理旧分片并重新切分（PART_SIZE=8388608）
+    [make_parts] 合并校验…
+    [make_parts] 合并校验通过: 8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+    [make_parts] 分片清单:
+      total 32648
+      -rw-r--r-- 1 root root 8388608 Sep 16 00:22 app-debug.apk.part00
+      -rw-r--r-- 1 root root 8388608 Sep 16 00:22 app-debug.apk.part01
+      -rw-r--r-- 1 root root 8388608 Sep 16 00:22 app-debug.apk.part02
+      -rw-r--r-- 1 root root 8254061 Sep 16 00:22 app-debug.apk.part03
+      -rw-r--r-- 1 root root     348 Sep 16 00:22 SHA256SUMS
+      -rw-r--r-- 1 root root      65 Sep 16 00:22 SOURCE.sha256
+    [make_parts] SHA256SUMS:
+      bc3837d9c4a114a855a6910ade3330e2f9b42e6a24ec6d9e9998490eed59b122  app-debug.apk.part00
+      d889b1a1457658ea7d4362914cdc2b580a5df5d239943cdb7f776fc6565eeea2  app-debug.apk.part01
+      01b418bfa6a318eccb226361f98a6ceaa06f927b386988ca27f8bcb1e5f4f3d4  app-debug.apk.part02
+      a1ef67f4bdb824d7f30074581c7f845b4b68601b2d56f535fa4d77517b0c4f21  app-debug.apk.part03
+  MAKE_PARTS_EXIT=0
+  SOURCE.sha256 = 8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+  SHA256SUMS 自校验 OK = 4 片
+  parts 拼接 sha256 = 8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+  CONCAT == 新 APK : True
+
+===== 7. 服务与公网复验 =====
+  enabled=enabled active=active MainPID=664402 启动时刻=Mon 2026-09-14 18:57:09 CST
+  (未重启服务；served 为原地替换，文件级零停机)
+  loopback HEAD : code=200 len=0
+  loopback Range: code=206 bytes=1024
+  public   HEAD : code=200 len=0
+  public   Range: code=206 bytes=1024
+  public  全量 sha 复核: 8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+
+===== 8. 与上一版 APK 的条目级差异 =====
+  old=165 entries new=165 entries  相同=158 不同=7 仅旧=[] 仅新=[]
+  不同条目: classes11.dex, classes12.dex, classes14.dex, classes3.dex, classes5.dex, classes6.dex, classes9.dex
+  新 APK 四 .so:
+    libandroidx.graphics.path.so                 41e9a793c43a0f4f p_align=['0x4000']
+    libc++_shared.so                             c9dbf4ec15e931f5 p_align=['0x4000']
+    libjingle_peerconnection_so.so               757cef8128bf9151 p_align=['0x4000']
+    libwebrtcdemo_native.so                      d49eafc3e7cdeaa2 p_align=['0x4000']
+# 发布结束 2026-09-16T00:22:16+08:00

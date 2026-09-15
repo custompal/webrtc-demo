@@ -1,0 +1,71 @@
+# t42 发布：20260915-014001
+# 新 APK: /opt/dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk
+#   sha256=6b45f365a83333350af4fd319b288e5d4551bef05ad7cdbf08994d0e304c1bf1  size=33358597  mtime=2026-09-15 01:37:52.176300192 +0800
+# 上一版(served): df45c864ecb9af3495fabc730ea5700e7bb29352e4499dc868748ba87779d737
+===== 1. 归档旧 parts 快照（保留，不删除） =====
+归档到 /opt/apk-http/parts-archive/parts-df45c864-20260915-014001 （6 件）
+===== 2. 冻结交付副本 + artifacts 归档 =====
+served  = 6b45f365a83333350af4fd319b288e5d4551bef05ad7cdbf08994d0e304c1bf1
+archive = 6b45f365a83333350af4fd319b288e5d4551bef05ad7cdbf08994d0e304c1bf1
+===== 3. 重新生成 parts 分片（make_parts.sh） =====
+[make_parts] 源 APK: /opt/dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk  size=33358597  sha256=6b45f365a83333350af4fd319b288e5d4551bef05ad7cdbf08994d0e304c1bf1
+[make_parts] 清理旧分片并重新切分（PART_SIZE=8388608）
+[make_parts] 合并校验…
+[make_parts] 合并校验通过: 6b45f365a83333350af4fd319b288e5d4551bef05ad7cdbf08994d0e304c1bf1
+[make_parts] 分片清单:
+  total 32588
+  -rw-r--r-- 1 root root 8388608 Sep 15 01:40 app-debug.apk.part00
+  -rw-r--r-- 1 root root 8388608 Sep 15 01:40 app-debug.apk.part01
+  -rw-r--r-- 1 root root 8388608 Sep 15 01:40 app-debug.apk.part02
+  -rw-r--r-- 1 root root 8192773 Sep 15 01:40 app-debug.apk.part03
+  -rw-r--r-- 1 root root     348 Sep 15 01:40 SHA256SUMS
+  -rw-r--r-- 1 root root      65 Sep 15 01:40 SOURCE.sha256
+[make_parts] SHA256SUMS:
+  bc3837d9c4a114a855a6910ade3330e2f9b42e6a24ec6d9e9998490eed59b122  app-debug.apk.part00
+  7d0e7598690cdee237f9cdd9e104817fc8929e3e578526686aaf47410e9fbd53  app-debug.apk.part01
+  f5420b4655c9c99e1e6661bda89a3cd2fbf1e37bd5eb3fa38982d36c1059b275  app-debug.apk.part02
+  6d92509f74a325781553dccd35296bf0fe75b15f81526e266705609160482b93  app-debug.apk.part03
+MAKE_PARTS_EXIT=0
+SOURCE.sha256 = 6b45f365a83333350af4fd319b288e5d4551bef05ad7cdbf08994d0e304c1bf1
+SHA256SUMS 自校验: 4/4 OK
+parts 拼接 sha256 = 6b45f365a83333350af4fd319b288e5d4551bef05ad7cdbf08994d0e304c1bf1
+CONCAT == NEW_APK : True
+===== 4. 服务状态与公网/回环复验 =====
+enabled=enabled active=active MainPID=664402
+loopback HEAD code=200
+loopback range code=206 bytes=1024
+public  HEAD code=200
+public  range code=206 bytes=1024
+archive dir 404 期望 code=404
+===== 5. 与旧锚点 APK 的逐条目差异（哪一类条目变了） =====
+old entries=165  new entries=165
+相同=154  不同=11  仅旧=0  仅新=0
+仅旧: -
+仅新: -
+不同的条目:
+  classes11.dex: 67608B eb7ae550eb33 -> 106760B 8b33476ca1c6
+  classes12.dex: 14304B d07ba06834fa -> 14304B e518fee47ac0
+  classes14.dex: 558984B 006ba159a7ec -> 558976B c758e7ab46ee
+  classes2.dex: 40748B 3a94eb4fe0c7 -> 40868B 4f9c752c691a
+  classes3.dex: 164988B 9b8e24559124 -> 164992B 87eb6d4427a9
+  classes4.dex: 6504B b97db179f214 -> 6508B b7a7e4c68318
+  classes5.dex: 94468B 35fc006ff669 -> 125808B 4acb1c39fe2f
+  classes6.dex: 39368B 6919236a8bfc -> 39368B bc1203abf85f
+  classes9.dex: 91916B 0408a67eac42 -> 91916B b4251668bd1d
+  lib/arm64-v8a/libwebrtcdemo_native.so: 1231512B 95c44e5ab9ff -> 1246656B f2ade5b6adb5
+  resources.arsc: 438772B ecbf1aa805f3 -> 440012B e5550e4254b2
+===== 6. 新 APK 内四个 .so 的 ELF p_align（16 KB 页门禁） =====
+readelf=/usr/bin/readelf
+  lib_arm64-v8a_libandroidx.graphics.path.so  LOAD aligns = 0x4000
+  lib_arm64-v8a_libc++_shared.so  LOAD aligns = 0x4000
+  lib_arm64-v8a_libjingle_peerconnection_so.so  LOAD aligns = 0x4000
+  lib_arm64-v8a_libwebrtcdemo_native.so  LOAD aligns = 0x4000
+===== 7. jniLibs 源件与依赖锚点（应为逐位不变） =====
+jar    = 0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757  期望 0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+aar    = 8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099  期望 8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+so     = 757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e  期望 757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+libcxx = c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36  期望 c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+===== 8. 属主归一 =====
+reports 日志属主已归一；served/artifacts 属主 1000
+
+# 发布结束 T=2026-09-15T01:40:04+08:00  新 APK sha256=6b45f365a83333350af4fd319b288e5d4551bef05ad7cdbf08994d0e304c1bf1 size=33358597

@@ -42,6 +42,7 @@ func run() int {
 		flagLog        = flag.String("log", "logs/signaling.log", "日志文件路径（目录不存在会自动创建；置空则仅输出终端）")
 		flagLogLevel   = flag.String("log-level", "info", "日志级别：debug/info/warn/error")
 		flagRoomExpiry = flag.Int("room-expiry", cfg.RoomExpirySec, "房间过期秒数（创建后无人加入即销毁）")
+		flagRoomGrace  = flag.Duration("room-grace", cfg.RoomGrace, "WS 瞬断后保留房间与席位的宽限期（t67；默认 90s，须大于客户端重连预算；0=关闭宽限期=旧行为）")
 		flagMaxMsg     = flag.Int64("max-message-bytes", cfg.MaxMessageSize, "单条 WebSocket 消息大小上限（字节，doc/09 §1：65536）")
 		flagWriteTO    = flag.Duration("write-timeout", cfg.WriteTimeout, "单次 WebSocket 写超时")
 		flagPongWait   = flag.Duration("pong-wait", cfg.PongWait, "读超时（ping/pong 超时判定）")
@@ -61,6 +62,7 @@ func run() int {
 	cfg.LogFile = *flagLog
 	cfg.LogLevel = *flagLogLevel
 	cfg.RoomExpirySec = *flagRoomExpiry
+	cfg.RoomGrace = *flagRoomGrace
 	cfg.MaxMessageSize = *flagMaxMsg
 	cfg.WriteTimeout = *flagWriteTO
 	cfg.PongWait = *flagPongWait
@@ -90,6 +92,7 @@ func run() int {
 		"log_file":         cfg.LogFile,
 		"log_level":        cfg.LogLevel,
 		"room_expiry_s":    cfg.RoomExpirySec,
+		"room_grace_ms":    cfg.RoomGrace.Milliseconds(),
 		"max_msg_bytes":    cfg.MaxMessageSize,
 		"pong_wait_ms":     cfg.PongWait.Milliseconds(),
 		"write_timeout_ms": cfg.WriteTimeout.Milliseconds(),

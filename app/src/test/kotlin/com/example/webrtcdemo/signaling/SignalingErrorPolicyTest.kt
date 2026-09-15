@@ -186,5 +186,88 @@ class SignalingErrorPolicyTest {
         // 且终态集合确实非空（防止集合被误清空后此断言恒真）
         assertTrue(SignalingErrorPolicy.TERMINAL_CODES.isNotEmpty())
     }
+
+    // ============ t68：房间丢失的"可存活化"闸门（old-red / new-green 对照） ============
+    // 背景（真机 dl-b 2026-09-15）：
+    //   15:27:45.779 pong 单次丢失 ⇒ ws_pong_timeout ⇒ 重连
+    //   15:28:02.247 server_error ROOM_NOT_FOUND
+    //   15:28:02.248 state_change WAITING→DISCONNECTED
+    //   15:28:02.248 call_end notice=通话已结束，可重新创建   ← **旧口径：自动退房**
+    //   15:28:02.249 hangup / session_teardown
+    // 当时 `down_bps=326398`（画面仍在更新）。新口径：只要处于"曾经在房内"的语境或媒体仍存活，
+    // 就**不得**因为 ROOM_NOT_FOUND 自动退出通话页，而要给出可恢复态 + 显式「重新创建房间」。
+
+    @Test
+    fun roomGoneDuringRejoinNoLongerEndsCall_oldRedNewGreen() {
+        // —— 旧口径（RED，修复前的行为）：ROOM_NOT_FOUND ⇒ endsCall == true ⇒ 上层 hangup 退出通话页
+        assertTrue("旧口径确实会'自动退房'（本用例即缺陷复现的断言）", SignalingErrorPolicy.endsCall("ROOM_NOT_FOUND"))
+        assertEquals(
+            "旧口径下重连语境同样判终态",
+            SignalingErrorPolicy.Action.TERMINAL_SUPPRESS,
+            SignalingErrorPolicy.actionFor("ROOM_NOT_FOUND", rejoinAfterDrop = true),
+        )
+
+        // —— 新口径（GREEN）：同一错误码在重连语境 / 媒体存活时**保持通话页**
+        assertTrue(
+            "重连语境 + 媒体存活 ⇒ 保持通话页（dl-b 场景）",
+            SignalingErrorPolicy.keepsCallOnRoomLoss("ROOM_NOT_FOUND", rejoinContext = true, mediaAlive = true),
+        )
+        assertTrue(
+            "重连语境（此刻无新鲜帧）⇒ 仍保持通话页",
+            SignalingErrorPolicy.keepsCallOnRoomLoss("ROOM_NOT_FOUND", rejoinContext = true, mediaAlive = false),
+        )
+        assertTrue(
+            "媒体仍在流动 ⇒ 即使语境判定缺失也必须保持",
+            SignalingErrorPolicy.keepsCallOnRoomLoss("ROOM_EXPIRED", rejoinContext = false, mediaAlive = true),
+        )
+        // 对照：首次入房就找不到房间 ⇒ 仍按原语义结束（不留半死不活的界面）
+        assertFalse(
+            SignalingErrorPolicy.keepsCallOnRoomLoss("ROOM_NOT_FOUND", rejoinContext = false, mediaAlive = false),
+        )
+    }
+
+    @Test
+    fun roomLossCodesCoverExactlyRoomGone() {
+        // 可恢复集合只含"房间被回收"两类：报文类错误（INVALID_MESSAGE/NOT_IN_ROOM）不得被"可恢复"化，
+        // 否则用户会在一个永远不会成功的房间上反复点「重新创建房间」。
+        assertEquals(setOf("ROOM_NOT_FOUND", "ROOM_EXPIRED"), SignalingErrorPolicy.ROOM_LOSS_CODES)
+        assertTrue(SignalingErrorPolicy.isRoomLossCode("ROOM_NOT_FOUND"))
+        assertFalse(SignalingErrorPolicy.isRoomLossCode("INVALID_MESSAGE"))
+        assertFalse(SignalingErrorPolicy.isRoomLossCode("NOT_IN_ROOM"))
+        assertFalse(SignalingErrorPolicy.isRoomLossCode(SignalingErrorPolicy.CODE_ROOM_FULL))
+        // 且 ROOM_LOSS_CODES 必须是 TERMINAL_CODES 的真子集（可恢复 ≠ 不再抑制重连）
+        assertTrue(SignalingErrorPolicy.TERMINAL_CODES.containsAll(SignalingErrorPolicy.ROOM_LOSS_CODES))
+        assertFalse(SignalingErrorPolicy.keepsCallOnRoomLoss("INVALID_MESSAGE", rejoinContext = true, mediaAlive = true))
+    }
+
+    // ============ ① 重连期 ROOM_NOT_FOUND 不得自动退出通话页（captain 2026-09-16 指令②） ============
+
+    @Test
+    fun reconnectRoomNotFoundDoesNotAutoExitCallPage() {
+        // 真机 dl-b 15:28:02.248：`server_error ROOM_NOT_FOUND` → 旧实现 `call_end` + `hangup` 自动退房。
+        // 新口径：重连期房间被回收 ⇒ 保持通话页（媒体仍在流时尤甚）+ 显式「重新创建房间」。
+        assertTrue(
+            "重连期 ROOM_NOT_FOUND ⇒ 保留通话页（不得自动退出）",
+            SignalingErrorPolicy.keepsCallOnRoomLoss("ROOM_NOT_FOUND", rejoinContext = true, mediaAlive = true),
+        )
+        // 与 endsCall 的对照：endsCall 仍是"首次入房"口径（true = 应结束），两者语义分离且都由用例钉住
+        assertTrue(SignalingErrorPolicy.endsCall("ROOM_NOT_FOUND"))
+        // 首次入房（非重连语境且无媒体）才结束
+        assertFalse(SignalingErrorPolicy.keepsCallOnRoomLoss("ROOM_NOT_FOUND", rejoinContext = false, mediaAlive = false))
+    }
+
+    // ============ t68：DISCONNECTED 的来源必须能区分"可存活"与"传输层终态" ============
+    // 上层（通话页）在 onStateChanged(DISCONNECTED) 里据此决定：推迟给消息处理器判定 / 立即结束通话。
+
+    @Test
+    fun disconnectCauseSeparatesSurvivableFromFatal() {
+        assertFalse("用户主动离开/进程退出必须结束通话", DisconnectCause.FATAL.survivable)
+        assertTrue("peerLeft 不得被当作传输层终态", DisconnectCause.PEER_LEFT.survivable)
+        assertTrue("重连期房间丢失必须给可恢复态", DisconnectCause.ROOM_LOST.survivable)
+        assertTrue("重连预算耗尽 ≠ 通话结束（服务端宽限期未满、对端未离开）", DisconnectCause.SIGNAL_LOST.survivable)
+        assertEquals(4, DisconnectCause.entries.size)
+        // 唯一"不可存活"的来源只有 FATAL
+        assertEquals(listOf(DisconnectCause.FATAL), DisconnectCause.entries.filter { !it.survivable })
+    }
 }
 

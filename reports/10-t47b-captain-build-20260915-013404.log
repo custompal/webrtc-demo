@@ -1,0 +1,46 @@
+# t47（captain 接管执行）：用 t44 修复重编：宿主机构建 t39 修复
+# 脚本=/opt/dsh-workspaces/tmp/t47b-captain-build.sh  TS=20260915-013404  T0=2026-09-15T01:34:04+08:00
+# 前置：HEAD=621d673b97b787ff50bd42ded9d3453081015f7c  porcelain=13 行
+# 门禁：gradle/java 进程数=0
+# 门禁：近5分钟 app/src 写入文件数=1
+# 门禁：近5分钟 third_party/libwebrtc/java 写入=0
+# T0 双钉：jar=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+# T0 双钉：aar=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+# T0 双钉：so =757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+# T0 双钉：libcxx=c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+
+===== 1. build_app.sh --check-only =====
+CHECK_ONLY_EXIT=0  log=/opt/dsh-workspaces/code/webrtc-demo/reports/10-t47b-captain-checkonly-20260915-013404.log
+
+===== 2. :app:compileDebugKotlin（快速编译闸门） =====
+COMPILE_EXIT=0  log=/opt/dsh-workspaces/code/webrtc-demo/reports/10-t47b-captain-compileDebugKotlin-20260915-013404.log
+BUILD SUCCESSFUL in 1m 30s
+
+===== 3. --no-daemon --no-build-cache clean assembleDebug =====
+ASSEMBLE_EXIT=0  T1=2026-09-15T01:35:39+08:00  T2=2026-09-15T01:37:52+08:00  log=/opt/dsh-workspaces/code/webrtc-demo/reports/10-t47b-captain-assembleDebug-20260915-013404.log
+BUILD SUCCESSFUL in 2m 12s
+43 actionable tasks: 42 executed, 1 up-to-date
+FROM-CACHE 行数=0  :app:clean 出现=1
+APK sha256=6b45f365a83333350af4fd319b288e5d4551bef05ad7cdbf08994d0e304c1bf1
+APK size=33358597  mtime=2026-09-15 01:37:52.176300192 +0800
+T2 双钉：jar=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+T2 双钉：aar=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+T2 双钉：so =757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+T2 双钉：libcxx=c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+自有 native 库（构建产物，预期因 t46 变化）：f2ade5b6adb5ed47c3ca9b654294aeaac4124008a0102fce39bb237415f9b91c
+
+===== 4. --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest =====
+TEST_EXIT=0  log=/opt/dsh-workspaces/code/webrtc-demo/reports/10-t47b-captain-testDebugUnitTest-20260915-013404.log
+BUILD SUCCESSFUL in 2m 6s
+24 actionable tasks: 24 executed
+XML 文件数=9
+XML mtime 最新=2026-09-15 01:39:59.871861375 +0800
+SUM tests=74
+SUM skipped=0
+SUM failures=0
+SUM errors=0
+
+===== 5. 属主归一 =====
+chown 后 root:root 条目数 app/build=0 .gradle=0
+
+# T3=2026-09-15T01:40:00+08:00  本次构建结束（CHECK=0 COMPILE=0 ASSEMBLE=0 TEST=0）

@@ -137,10 +137,48 @@ data class ConnStatus(
     val mediaAgeMs: Long = -1L,
     /** 【t63】ICE/传输是否已离开 CONNECTED（仅诊断；界面展示以**媒体存活**为准）。 */
     val iceDown: Boolean = false,
+    /**
+     * 【t68】最近一次"媒体存活"判定。
+     *
+     * 口径（验收原文：帧新鲜 <3 s **或** selected pair）：
+     *   * `CONNECTED`（已选中候选对 / 传输 CONNECTED / 收到帧）⇒ 真；
+     *   * 中断后的**宽限期**（[ConnectionStatusTracker] 的 `lostGraceMs`）内仍为真 —— 该期间画面可能
+     *     只是抖动，界面**不得到处报 ICE 失败**（真机 dl-b 15:27:54.733：
+     *     `phase=connecting reason=connection_lost media_age_ms=2705 pair=true`，而视频随后自行恢复）；
+     *   * 宽限期用尽（`FAILED`）⇒ 假：真的断了必须照常给出失败文案与「点击重试」。
+     */
+    val mediaAlive: Boolean = false,
 ) {
     /** 是否需要中央状态卡（未连上 / 已失败）。 */
     val showOverlay: Boolean
         get() = phase != ConnPhase.CONNECTED
+
+    /**
+     * 【t68】媒体存活期间必须**抑制**的"ICE/连接失败"用户可见呈现。
+     *
+     * 满足验收"媒体存活期间不显示 ICE 失败"：媒体仍存活（帧新鲜 / 候选对刚选中且尚在宽限期）时，
+     * 不渲染失败样式的中央状态卡（[failureCardVisible] 为假），只给一条中性提示
+     * （[recoveryBannerVisible]），文案里**不出现** ICE/失败/重连字样。
+     */
+    val iceFailureSuppressed: Boolean
+        get() = mediaAlive && phase != ConnPhase.CONNECTED
+
+    /** 【t68】失败样式中央状态卡是否可见（= 需要遮罩 且 未被媒体存活抑制）。 */
+    val failureCardVisible: Boolean
+        get() = showOverlay && !iceFailureSuppressed
+
+    /** 【t68】是否显示"画面恢复中"中性提示（媒体存活但链路在抖动）。 */
+    val recoveryBannerVisible: Boolean
+        get() = iceFailureSuppressed && !remoteFrameReady
+
+    /**
+     * 【t68】媒体存活期间的中性提示文案（替代失败卡）。
+     *
+     * 硬要求"媒体存活期间**文案不含 ICE 失败**"：这里必须保持中性，
+     * 单测（`MediaAliveSuppressionTest`）逐字断言不含 `ICE`/`失败`/`重连`。
+     */
+    val recoveryBannerText: String
+        get() = "画面恢复中…（网络抖动，请稍候）"
 
     /**
      * 远端画面是否必须被遮罩。
@@ -377,6 +415,16 @@ class ConnectionStatusTracker(
     /** 【t63】停滞去抖：连续多少个 tick 超过阈值才判停滞。 */
     private var staleTicks = 0
 
+    /**
+     * 【t68】"媒体存活"latch（[ConnStatus.mediaAlive] 的真源）。
+     *
+     * 语义：进入 `CONNECTED`（帧/候选对/传输）即置真；**确认中断**（[markLost]，即帧龄超阈值
+     * 经去抖、或 ICE 掉了且无新鲜媒体）后**在宽限期内保持真**（画面可能自行恢复，此时报 ICE 失败
+     * 就是误报 —— 真机 dl-b 15:27:54 的缺陷）；宽限期用尽进入 `FAILED` 时置假，
+     * 保证"真的断了"照常出现失败文案与「点击重试」。
+     */
+    private var mediaAlive = false
+
     /** 【t64】等待态起点（仅诊断用）。 */
     private var waitingSinceMs = 0L
 
@@ -403,6 +451,8 @@ class ConnectionStatusTracker(
         iceDown = false
         staleTicks = 0
         retryClockRunning = false
+        // 【t68】等待对端：本世代还没有任何媒体证据
+        mediaAlive = false
         status = ConnStatus(phase = ConnPhase.WAITING_PEER, retryCount = 0)
         return status
     }
@@ -422,6 +472,8 @@ class ConnectionStatusTracker(
         startedAtMs = nowMs
         gatheringCompleteAtMs = 0L
         staleTicks = 0
+        // 【t68】对端刚出现、还没有任何媒体证据
+        mediaAlive = false
         status = status.copy(
             phase = ConnPhase.CONNECTING,
             reason = ConnReason.NONE,
@@ -432,6 +484,7 @@ class ConnectionStatusTracker(
             iceDown = false,
             mediaSource = mediaSource,
             mediaAgeMs = mediaAgeMs,
+            mediaAlive = false,
         )
         return status
     }
@@ -457,6 +510,7 @@ class ConnectionStatusTracker(
         mediaAgeMs = -1L
         iceDown = false
         staleTicks = 0
+        mediaAlive = false
         status = ConnStatus(phase = ConnPhase.CONNECTING, retryCount = retries)
         return status
     }
@@ -478,10 +532,12 @@ class ConnectionStatusTracker(
             active = true
             startedAtMs = nowMs
         }
+        mediaAlive = false
         status = status.copy(
             phase = ConnPhase.FAILED,
             reason = ConnReason.SESSION_START_FAILED,
             elapsedMs = nowMs - startedAtMs,
+            mediaAlive = false,
         )
         return status
     }
@@ -519,6 +575,8 @@ class ConnectionStatusTracker(
         mediaSource = source
         mediaAgeMs = ageMs
         staleTicks = 0
+        // 【t68】帧证据 ⇒ 媒体存活（失败文案的抑制依据）
+        mediaAlive = true
         return markConnected(nowMs, viaFrame = true)
     }
 
@@ -540,21 +598,47 @@ class ConnectionStatusTracker(
         }
         // 媒体仍新鲜 ⇒ 抑制界面跳变（只落盘，由 ViewModel 记 ice_flap_suppressed）
         if (hasFreshMedia && nowMs - lastFreshMediaMs <= frameStallMs) {
-            status = status.copy(iceDown = true, mediaSource = mediaSource, mediaAgeMs = mediaAgeMs)
+            // 【t68】媒体存活 ⇒ 失败文案必须被抑制（见 ConnStatus.iceFailureSuppressed）
+            mediaAlive = true
+            status = status.copy(
+                iceDown = true,
+                mediaSource = mediaSource,
+                mediaAgeMs = mediaAgeMs,
+                mediaAlive = true,
+            )
             return status
         }
-        return markLost(nowMs, ConnReason.CONNECTION_LOST)
+        return markLost(nowMs, ConnReason.CONNECTION_LOST, mediaAgeOf(nowMs))
     }
+
+    /**
+     * 【t68】中断时刻的**真实帧龄**（不是可能滞后的 `mediaAgeMs` 字段）。
+     *
+     * 真机 dl-b 15:27:54 的 `ui_conn_state … media_age_ms=2705` 就是"把上一次 onMediaFrame 存下的
+     * 旧值原样抄进中断状态"，导致诊断与界面判定都按 2.7 s 看待一次 **5 s** 的真实空窗。
+     */
+    private fun mediaAgeOf(nowMs: Long): Long =
+        if (hasFreshMedia) nowMs - lastFreshMediaMs else -1L
 
     /**
      * 进入"已中断/停滞"状态（统一入口，保证字段一致）。
      *
+     * 【t68】终止语义变化：中断后进入**宽限期**（`CONNECTING` + `mediaAlive = 曾选中候选对`）——
+     * 宽限期内界面以中性提示替代失败卡（媒体可能只是抖动，真机 dl-b 视频随后自行恢复）；
+     * 宽限期内恢复 ⇒ 回到 `CONNECTED`；宽限期用尽 ⇒ `FAILED`（见 [onTick]）且 `mediaAlive=false`，
+     * 保证"真的断了"照常显示失败文案与「点击重试」。
+     *
      * @param lossStartMs 中断**起点**（可能是"帧龄刚越过阈值"的时刻，早于当前 tick）。
+     * @param ageMs 中断瞬间的真实帧龄（诊断用；-1 表示没有帧证据）。
      */
-    private fun markLost(lossStartMs: Long, reason: ConnReason): ConnStatus {
+    private fun markLost(lossStartMs: Long, reason: ConnReason, ageMs: Long = -1L): ConnStatus {
         lostAtMs = lossStartMs
         hasFreshMedia = false
         staleTicks = 0
+        mediaAgeMs = ageMs
+        // 【t68】曾选中候选对 ⇒ 宽限期内按"媒体可能仍在"处理（抑制 ICE 失败文案）；
+        // 从未连上过的失败（无候选对）⇒ 立即按失败呈现，一键重试不受影响。
+        mediaAlive = status.hasSelectedPair
         status = status.copy(
             phase = ConnPhase.CONNECTING,
             reason = reason,
@@ -564,6 +648,7 @@ class ConnectionStatusTracker(
             iceDown = iceDown,
             mediaSource = mediaSource,
             mediaAgeMs = mediaAgeMs,
+            mediaAlive = mediaAlive,
         )
         return status
     }
@@ -593,6 +678,8 @@ class ConnectionStatusTracker(
                     mediaSource = mediaSource,
                     mediaAgeMs = age,
                     iceDown = iceDown,
+                    // 【t68】等待对端：没有媒体证据，失败文案不受抑制
+                    mediaAlive = false,
                 )
             }
 
@@ -604,8 +691,15 @@ class ConnectionStatusTracker(
                 if (overThreshold) staleTicks++ else staleTicks = 0
                 if (overThreshold && staleTicks >= stallDebounceTicks) {
                     // 中断起点 = 帧龄刚越过阈值的时刻（宽限期从"看起来断了"起算）
-                    return markLost(lastFreshMediaMs + frameStallMs, if (iceDown) ConnReason.CONNECTION_LOST else ConnReason.REMOTE_FRAME_STALLED)
+                    // 【t68】把**真实帧龄**写入中断状态（不抄滞后的 mediaAgeMs 字段，见 mediaAgeOf）
+                    return markLost(
+                        lastFreshMediaMs + frameStallMs,
+                        if (iceDown) ConnReason.CONNECTION_LOST else ConnReason.REMOTE_FRAME_STALLED,
+                        mediaAgeOf(nowMs),
+                    )
                 }
+                // 【t68】仍处于 CONNECTED ⇒ 媒体存活（帧新鲜 或 已选中候选对）
+                mediaAlive = true
                 status = status.copy(
                     elapsedMs = elapsed,
                     retryHintReached = retryHint,
@@ -613,6 +707,7 @@ class ConnectionStatusTracker(
                     mediaSource = mediaSource,
                     mediaAgeMs = age,
                     iceDown = iceDown,
+                    mediaAlive = true,
                 )
             }
 
@@ -625,6 +720,8 @@ class ConnectionStatusTracker(
                     else -> loss >= lostGraceMs
                 }
                 status = if (timedOut) {
+                    // 【t68】宽限期用尽 ⇒ 媒体不再存活（真的断了）：失败文案与「点击重试」照常出现
+                    mediaAlive = false
                     status.copy(
                         phase = ConnPhase.FAILED,
                         reason = when {
@@ -640,6 +737,7 @@ class ConnectionStatusTracker(
                         mediaSource = mediaSource,
                         mediaAgeMs = age,
                         iceDown = iceDown,
+                        mediaAlive = false,
                     )
                 } else {
                     status.copy(
@@ -650,18 +748,24 @@ class ConnectionStatusTracker(
                         mediaSource = mediaSource,
                         mediaAgeMs = age,
                         iceDown = iceDown,
+                        // 【t68】宽限期内保持 mediaAlive（中断前曾选中候选对）⇒ 抑制 ICE 失败文案
+                        mediaAlive = mediaAlive,
                     )
                 }
             }
 
-            ConnPhase.FAILED -> status = status.copy(
-                elapsedMs = elapsed,
-                retryHintReached = true,
-                relayMissing = relayMissing,
-                mediaSource = mediaSource,
-                mediaAgeMs = age,
-                iceDown = iceDown,
-            )
+            ConnPhase.FAILED -> {
+                mediaAlive = false
+                status = status.copy(
+                    elapsedMs = elapsed,
+                    retryHintReached = true,
+                    relayMissing = relayMissing,
+                    mediaSource = mediaSource,
+                    mediaAgeMs = age,
+                    iceDown = iceDown,
+                    mediaAlive = false,
+                )
+            }
         }
         return status
     }
@@ -676,6 +780,7 @@ class ConnectionStatusTracker(
         hasFreshMedia = false
         lostAtMs = 0L
         gatheringCompleteAtMs = 0L
+        mediaAlive = false
         status = ConnStatus(phase = ConnPhase.CONNECTING, retryCount = retries)
         return status
     }
@@ -693,6 +798,8 @@ class ConnectionStatusTracker(
             lastFreshMediaMs = nowMs
         }
         lostAtMs = 0L
+        // 【t68】"已连上"（帧/候选对/传输任一）⇒ 媒体存活：宽限期内的 ICE 抖动不得呈现为失败
+        mediaAlive = true
         status = status.copy(
             phase = ConnPhase.CONNECTED,
             reason = ConnReason.NONE,
@@ -706,6 +813,8 @@ class ConnectionStatusTracker(
             mediaSource = mediaSource,
             mediaAgeMs = mediaAgeMs,
             iceDown = iceDown,
+            // 【t68】媒体存活（帧新鲜或已选中候选对）
+            mediaAlive = true,
         )
         return status
     }

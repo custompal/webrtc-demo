@@ -637,4 +637,46 @@ class ConnectionStatusTrackerTest {
         assertEquals(RetryNegotiation.NONE, retryNegotiationFor("joiner", peerKnown = false, sawRemoteNegotiationSinceRetry = false))
         assertEquals(RetryNegotiation.NONE, retryNegotiationFor("joiner", peerKnown = true, sawRemoteNegotiationSinceRetry = true))
     }
+
+    // ===================== t68：`mediaAlive` latch 的复位不变量 =====================
+    // 为什么单独钉：`mediaAlive` 是"媒体存活期不显示 ICE 失败"的**唯一闸门**。
+    // 它必须能被"重新等待对端（peerLeft）"与"用户点击重试"两条路径**及时复位**，
+    // 否则一次中断后残留的真值会永久压掉失败文案与「点击重试」（比原缺陷更糟）。
+
+    /** `peerLeft` ⇒ `onWaitingPeer`：必须复位（等待期没有媒体证据，也不能继承上一段的抑制）。 */
+    @Test
+    fun waitingPeerResetClearsMediaAliveSuppression() {
+        val tracker = ConnectionStatusTracker()
+        tracker.onCallStarted(0L)
+        tracker.onMediaFrame(1_000L, MEDIA_SOURCE_SINK, ageMs = 30L)
+        assertTrue("已连上 ⇒ 媒体存活", tracker.status.mediaAlive)
+
+        val waiting = tracker.onWaitingPeer(2_000L)
+
+        assertEquals(ConnPhase.WAITING_PEER, waiting.phase)
+        assertFalse("等待对端期间不得继承上一段的 mediaAlive", waiting.mediaAlive)
+        assertFalse("等待期不存在被抑制的失败文案", waiting.iceFailureSuppressed)
+        assertEquals("等待对方加入", waiting.title)
+    }
+
+    /** 用户「点击重试」⇒ `onRetry`：必须复位 —— 新一代会话必须能如实显示失败/重试。 */
+    @Test
+    fun retryResetClearsMediaAliveSuppression() {
+        val tracker = ConnectionStatusTracker()
+        tracker.onCallStarted(0L)
+        tracker.onMediaFrame(1_000L, MEDIA_SOURCE_SINK, ageMs = 20L)
+        tracker.onConnectionLost(2_000L)
+        tracker.onTick(6_000L)
+        tracker.onTick(7_000L)
+        assertEquals(ConnPhase.CONNECTING, tracker.status.phase)
+        assertTrue("宽限期内仍按'媒体可能还在'处理", tracker.status.mediaAlive)
+        assertTrue(tracker.status.iceFailureSuppressed)
+
+        val retried = tracker.onRetry(8_000L)
+
+        assertEquals(ConnPhase.CONNECTING, retried.phase)
+        assertEquals(1, retried.retryCount)
+        assertFalse("重试后必须复位 mediaAlive", retried.mediaAlive)
+        assertFalse("重试后新一代会话的失败文案不得被旧抑制压掉", retried.iceFailureSuppressed)
+    }
 }

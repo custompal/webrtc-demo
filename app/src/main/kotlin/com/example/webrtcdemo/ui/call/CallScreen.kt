@@ -101,11 +101,17 @@ fun CallScreen(
     val localTrack by viewModel.localVideoTrack.collectAsStateWithLifecycle()
     val remoteTrack by viewModel.remoteVideoTrack.collectAsStateWithLifecycle()
     val navigateHome by viewModel.navigateHome.collectAsStateWithLifecycle()
+    // 【t68】可恢复态（房间被服务端回收）：非空 ⇒ 显示「重新创建房间」显式入口（不自动退出通话页）
+    val recoverable by viewModel.recoverable.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var exportMessage by remember { mutableStateOf<String?>(null) }
     var exporting by remember { mutableStateOf(false) }
+
+    // 【t68】显示用房间号：可恢复态下点「重新创建房间」会拿到**服务端重新分配的房间号**，
+    // 因此以 ViewModel 的状态为准，仅在其为空时回落到导航参数（保证新房间号可见/可复制）。
+    val displayRoomId = state.roomId.ifBlank { roomId }
 
     // 【t39 修复②】复制会议号：用**框架 ClipboardManager**（版本稳定，避开 Compose 侧
     // `LocalClipboardManager` 在不同 BOM 版本的弃用差异）+ Toast 可见反馈。
@@ -113,7 +119,7 @@ fun CallScreen(
     val copyRoomId: () -> Unit = {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         // label 与内容都用房间号本身（避免为此再新增第 4 个字符串资源）
-        clipboard.setPrimaryClip(ClipData.newPlainText(roomId, roomId))
+        clipboard.setPrimaryClip(ClipData.newPlainText(displayRoomId, displayRoomId))
         Toast.makeText(context, context.getString(R.string.call_room_code_copied), Toast.LENGTH_SHORT).show()
     }
 
@@ -323,7 +329,7 @@ fun CallScreen(
         // 【t39 修复②】会议号**常驻顶部覆盖层**：整个通话生命周期可见（原先只在 isConnecting
         // 遮罩内渲染 ⇒ 连接完成/被远端画面盖住后房主无法把 6 位房间号告知第二台设备）。
         // 空值守卫：roomId 为空白时不渲染，避免出现"会议号："空壳。
-        if (roomId.isNotBlank()) {
+        if (displayRoomId.isNotBlank()) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -335,7 +341,7 @@ fun CallScreen(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.call_room_code, roomId),
+                    text = stringResource(R.string.call_room_code, displayRoomId),
                     color = Color.White,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -449,7 +455,45 @@ fun CallScreen(
         //   * 未连上（含"连上又断/画面停滞"）⇒ 明确的连接中状态 + **已用/已中断时长**；
         //   * 失败 ⇒ 可操作失败提示 + **一键重试**（走 ViewModel 的世代化新会话，见 retryConnection）；
         //   * 已连上但还没收到画面 ⇒ 顶部小提示（不遮挡画面）。
-        if (conn.showOverlay) {
+        // 【t68】两处闸门（顺序即优先级）：
+        //   ① `recoverable != null`（房间被回收但**通话未结束**）⇒ 只显示可恢复面板 + 显式
+        //      「重新创建房间」，**不**显示失败卡（不得让用户以为通话已终止）；
+        //   ② `conn.failureCardVisible`（= 需要遮罩 且 **未被媒体存活抑制**）⇒ 才渲染失败卡；
+        //      媒体仍存活时改渲染中性提示 `conn.recoveryBannerText`（文案不含 ICE/失败/重连）。
+        val recoverableNotice = recoverable
+        if (recoverableNotice != null) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(Color(0xCC000000))
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = recoverableNotice.notice,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = if (recoverableNotice.mediaAlive) {
+                        RECOVERABLE_MEDIA_ALIVE_NOTICE
+                    } else {
+                        RECOVERABLE_MEDIA_STOPPED_NOTICE
+                    },
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                // 显式入口（captain 2026-09-15 裁定：不得自动退出，必须给出可操作入口）
+                Button(
+                    onClick = { viewModel.recreateRoom() },
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    Text(text = RECREATE_ROOM_LABEL)
+                }
+                Text(text = displayRoomId, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+            }
+        } else if (conn.failureCardVisible) {
             Column(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -476,9 +520,23 @@ fun CallScreen(
                         Text(text = RETRY_LABEL)
                     }
                 }
-                Text(text = roomId, color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                Text(text = displayRoomId, color = Color.White, style = MaterialTheme.typography.bodyMedium)
             }
-        } else if (!conn.remoteFrameReady) {
+        } else if (conn.recoveryBannerVisible) {
+            // 【t68③】媒体存活（帧新鲜/候选对仍在）但链路在抖动：只给中性提示 —— **不遮挡画面、
+            // 不出现 ICE/失败/重连字样**（真机 dl-b 15:27:54：`ice_down=true` 而 `media_age_ms=2705`，
+            // 视频随后自行恢复，旧实现却弹"连接中断…"失败卡）。
+            Text(
+                text = conn.recoveryBannerText,
+                color = Color.White,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp)
+                    .background(Color(0x99000000), MaterialTheme.shapes.small)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+        } else if (!conn.showOverlay && !conn.remoteFrameReady) {
             // 已连上但尚未收到远端画面：给一条不遮挡画面的提示（避免用户以为"卡住了"）
             Text(
                 text = WAITING_REMOTE_FRAME_NOTICE,
@@ -496,6 +554,15 @@ fun CallScreen(
 
 /** 【t59】一键重试按钮文案（inScope 不含 `res/values/strings.xml`，故与 ViewModel 的提示常量一致内联）。 */
 private const val RETRY_LABEL = "点击重试"
+
+/** 【t68】可恢复态下的显式入口文案（房间被服务端回收后新建房间继续通话）。 */
+private const val RECREATE_ROOM_LABEL = "重新创建房间"
+
+/** 【t68】可恢复态副标题：媒体仍在流（明确"通话没断"，避免用户误以为已退出）。 */
+private const val RECOVERABLE_MEDIA_ALIVE_NOTICE = "画面仍在传输；重建后请把新会议号告知对方"
+
+/** 【t68】可恢复态副标题：媒体也已停止（房间与画面都需要重建）。 */
+private const val RECOVERABLE_MEDIA_STOPPED_NOTICE = "房间已无法恢复；可重新创建房间继续"
 
 /** 【t59】已连上、等待远端画面时的提示。 */
 private const val WAITING_REMOTE_FRAME_NOTICE = "已连接，等待对端画面…"

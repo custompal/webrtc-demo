@@ -277,15 +277,36 @@ phase_libvpx() {
   export LD_LIBRARY_PATH="$TC/lib"
   log "CC=$CC"
   make distclean >/dev/null 2>&1 || true
+  # 【t56 口径修订 · 真机 SIGILL 根因修复（2026-09-15）】
+  # 旧参数含 --disable-runtime-cpu-detect：运行时 SIMD 派发退化为**编译期 #define 直连**
+  # （vpx_dsp_rtcd.h / vp9_rtcd.h），core encoder TU 因而直接引用 *_sve / *_neon_i8mm /
+  # *_neon_dotprod（t56 实测旧件：vp9_rdopt.c.o 直接 `U vp9_block_error_sve`，vpx_dsp_rtcd.h
+  # 直连绑定 _neon_dotprod 72 条 / _neon_i8mm 6 条 / _sve 1 条）⇒ 真机 CPU 无 SVE 时首帧关键帧
+  # 的 RD 调用即 SIGILL（信号而非 C++ 异常 ⇒ 零日志，恰好停在 encode_vpx_begin 之后）。
+  # 现口径（两项一起，理由见 docs 报告 reports/26-libvpx-runtime-cpu-detect.md）：
+  #   ① 显式 --enable-runtime-cpu-detect：不依赖 configure 默认值，恢复运行时派发；dotprod/i8mm
+  #      经 vpx_ports/aarch64_cpudetect.c 的 __linux__ 分支用 getauxval(AT_HWCAP/AT_HWCAP2) 探测后才选用。
+  #   ② 显式 --disable-sve --disable-sve2：SVE/SVE2 在现行 Android 手机上无收益，却是本事故的爆炸半径；
+  #      关闭后 HAVE_SVE=HAVE_SVE2=0，产物内 SVE 成员/符号/指令一律为 0，可静态验收。
   ./configure --target=arm64-android-gcc \
       --enable-vp9 --enable-vp9-encoder --enable-vp9-decoder \
       --disable-vp8-encoder --disable-vp8-decoder \
       --enable-static --disable-shared --disable-examples --disable-tools \
-      --disable-docs --disable-unit-tests --disable-runtime-cpu-detect --enable-pic \
+      --disable-docs --disable-unit-tests --enable-runtime-cpu-detect \
+      --disable-sve --disable-sve2 --enable-pic \
       --prefix="$LIBVPX_OUT" 2>&1 | tail -15
   [ -f Makefile ] || { log "FATAL libvpx configure 失败"; return 1; }
   make -j4 2>&1 | tail -12 || { log "FATAL libvpx make 失败"; return 1; }
   make install 2>&1 | tail -6
+  # 【t56 自检】口径不符即失败（不要把带 SVE 直连的库当成功产物放行）
+  local SVE_CNT RCD_CNT
+  SVE_CNT=$("$TC/bin/llvm-ar" t "$LIBVPX_OUT/lib/libvpx.a" 2>/dev/null | grep -ci sve || true)
+  RCD_CNT=$(grep -c '^#define CONFIG_RUNTIME_CPU_DETECT 1$' vpx_config.h 2>/dev/null || true)
+  if [ "${SVE_CNT:-1}" != "0" ] || [ "${RCD_CNT:-0}" != "1" ]; then
+    log "FATAL libvpx 口径不符（t56）：SVE 成员=$SVE_CNT（期望 0） CONFIG_RUNTIME_CPU_DETECT=$RCD_CNT（期望 1）"
+    return 1
+  fi
+  log "  t56 口径自检通过：SVE 成员=0；CONFIG_RUNTIME_CPU_DETECT=1；HAVE_SVE/SVE2=0"
   log "== libvpx 完成: $(file -b "$LIBVPX_OUT/lib/libvpx.a" 2>/dev/null | cut -c1-40) =="
 }
 
@@ -320,6 +341,9 @@ phase_extract() {
   [ -d third_party/libyuv/include ] && { mkdir -p "$H/third_party/libyuv"; cp -r third_party/libyuv/include "$H/third_party/libyuv/" 2>/dev/null; }
   [ -d "$LIBVPX_OUT/lib" ] && cp -rf "$LIBVPX_OUT/lib/." "$TP/libvpx/lib/" 2>/dev/null
   [ -d "$LIBVPX_OUT/include" ] && cp -rf "$LIBVPX_OUT/include/." "$TP/libvpx/include/" 2>/dev/null
+  # 【t56】libvpx 的 make install 不安装 vpx_config.h；把构建期该文件一并入库，
+  # 使交付目录自证口径（CONFIG_RUNTIME_CPU_DETECT=1 / HAVE_SVE=HAVE_SVE2=0）。
+  [ -f "$LIBVPX_SRC/vpx_config.h" ] && cp -f "$LIBVPX_SRC/vpx_config.h" "$TP/libvpx/include/vpx_config.h"
 
   {
     echo "### 架构核验 $(date -u +%FT%TZ)"

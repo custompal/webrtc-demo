@@ -13,6 +13,7 @@ import com.example.webrtcdemo.model.IceEventType
 import com.example.webrtcdemo.model.StatsSnapshot
 import com.example.webrtcdemo.nat.NatTypeRepository
 import com.example.webrtcdemo.signaling.ConnectionState
+import com.example.webrtcdemo.signaling.DisconnectCause
 import com.example.webrtcdemo.signaling.SignalingClient
 import com.example.webrtcdemo.signaling.SignalingErrorPolicy
 import com.example.webrtcdemo.signaling.SignalingHolder
@@ -20,6 +21,7 @@ import com.example.webrtcdemo.signaling.SignalingIdentity
 import com.example.webrtcdemo.signaling.SignalingMessage
 import com.example.webrtcdemo.webrtc.CallSession
 import com.example.webrtcdemo.webrtc.IceServerCache
+import com.example.webrtcdemo.webrtc.IceServerConfig
 import com.example.webrtcdemo.webrtc.WebRtcEngine
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -179,6 +181,46 @@ class CallViewModel(application: Application) :
     /** 【t64】等待态起点（仅用于 `retry_clock_started` 的 `waited_ms` 诊断）。 */
     private var waitingSinceMs = 0L
 
+    // ===================== t68：通话可存活化（媒体存活期不退出通话页） =====================
+    // 真机缺陷（2026-09-15，用户报告）：「视频没断，UI 却显示 ICE 失败，过一会自动退出房间」。
+    // 三条根因（均有真机日志定位）：
+    //   ① `SignalingClient` pong **单次**丢失即判断线（dl-b 15:27:45.779 `ws_pong_timeout timeout_ms=5000`）
+    //      ⇒ 服务端回收房间 ⇒ 重连得 `ROOM_NOT_FOUND`；
+    //   ② `peerLeft`/`ROOM_NOT_FOUND` 经 `onStateChanged(DISCONNECTED)` **自动挂断退出**
+    //      （dl-a:7516-7520 `peer_left → state_change → call_end/hangup`，当时 `down_bps=2047967`；
+    //        dl-b:9717-9720 `ROOM_NOT_FOUND → DISCONNECTED → call_end/hangup`，当时画面仍在更新）；
+    //   ③ `ice_down` 被用来驱动用户可见的失败文案（dl-b 15:27:54.733
+    //      `phase=connecting reason=connection_lost media_age_ms=2705 pair=true`，视频随后自行恢复）。
+    // 纯判定集中在 `CallSurvivability`（可 JVM 单测）；本处只做"接线 + 诊断落盘"。
+
+    /**
+     * 可恢复态（t68）：房间被服务端回收，但通话页**必须保留**（媒体仍在流时更是如此）。
+     *
+     * 非空 ⇒ 通话页显示 [RecoverableState.notice] 与显式的「重新创建房间」入口。
+     */
+    private val _recoverable = MutableStateFlow<RecoverableState?>(null)
+
+    /** 可恢复态（t68）；`null` 表示无待处理的可恢复状态。 */
+    val recoverable: StateFlow<RecoverableState?> = _recoverable.asStateFlow()
+
+    /** 【t68】「重新创建房间」已发起、正在等待服务端 `created`（避免重复发起）。 */
+    private var recreatePending = false
+
+    /** 【t68】上一次"ICE 失败文案被抑制"的落盘时刻（限频，避免每秒刷屏）。 */
+    private var lastIceSuppressedLogMs = 0L
+
+    // ===================== t75：防 glare 的重连重协商分工 =====================
+
+    /**
+     * 【t75】是否处于"重连入会成功（`Joined`）、正在等待对端 offer"的状态。
+     *
+     * 仅重连侧（非 host）会置真；一旦收到 `Offer`（或被兜底发起后）即置假。
+     */
+    private var awaitingPeerOfferAfterRejoin = false
+
+    /** 【t75】`Joined` 时刻（用于计算"8 s 内未收到 offer"；超时判定在既有 1 s 心跳里做，不 sleep）。 */
+    private var rejoinOfferWaitSinceMs = 0L
+
     init {
         // 编码目标码率：来自 Vp9VideoEncoder.setRateAllocation（§7.4，本地直通）
         viewModelScope.launch {
@@ -236,6 +278,22 @@ class CallViewModel(application: Application) :
                 }
                 logFrameLivenessIfNeeded(now, source, frameAge, liveness?.frames ?: 0L, downBps)
                 publishConnStatus(connTracker.onTick(now, relayMissing))
+                // 【t75】重连侧兜底：`Joined` 后 8 s 仍未收到对端 offer 且 ICE 未恢复 ⇒ 由本端兜底发起
+                // 一次带 iceRestart 的 offer（否则在线侧若也在重连/不在场，会永久停在"信令已恢复、画面黑"）。
+                // 超时用**时间戳**判定（既有 1 s 心跳即评估点，不新增 sleep/协程）；纯判定可 JVM 单测。
+                if (evaluateRejoinOfferFallback(now)) {
+                    // 诊断主键统一为 `restart_ice reason=rejoin initiator=…`（captain 2026-09-16 定案；`rejoin_ice_restart …` 为旧写法）
+                    restartIceThenOffer(
+                        initiator = INITIATOR_REJOINER,
+                        trigger = TRIGGER_JOINED,
+                        logEvent = "restart_ice reason=rejoin initiator=rejoiner",
+                        extra = mapOf(
+                            "fallback" to "offer_timeout",
+                            "waited_ms" to (now - rejoinOfferWaitSinceMs).toString(),
+                            "threshold_ms" to CallSurvivability.REJOIN_OFFER_FALLBACK_MS.toString(),
+                        ),
+                    )
+                }
             }
         }
     }
@@ -389,6 +447,8 @@ class CallViewModel(application: Application) :
         publishConnStatus(
             when {
                 reason == REASON_RETRY -> connTracker.onRetry(startedAt)
+                // 【t68】重建房间 = **全新空房间**（本端是 host）⇒ 回到"等待对方加入"，不计时
+                reason == REASON_RECREATE -> connTracker.onWaitingPeer(startedAt)
                 peerKnownBefore -> connTracker.onCallStarted(startedAt)
                 else -> connTracker.onWaitingPeer(startedAt)
             },
@@ -409,6 +469,13 @@ class CallViewModel(application: Application) :
         everConnectedInGeneration = false
         lastNoPairLogMs = 0L
         autoRegatherDone = false
+        // 【t68】新一代通话 ⇒ 清掉上一代的可恢复态与限频闸门
+        _recoverable.value = null
+        // 【t75】新一代通话：清掉"等待对端 offer"的兜底计时
+        recreatePending = false
+        lastIceSuppressedLogMs = 0L
+        awaitingPeerOfferAfterRejoin = false
+        rejoinOfferWaitSinceMs = 0L
         val app = getApplication<Application>()
 
         // 【t59】重试不重置信令身份：房间与对端都没变，清掉反而会让 UI 丢失对端 ID
@@ -550,6 +617,10 @@ class CallViewModel(application: Application) :
         if (callEnded) return
         callEnded = true
         AppLog.i(TAG, "hangup", mapOf("seq" to callSeq.toString(), "session" to "s$sessionId"))
+        // 【t68】挂断即清掉可恢复态（避免返回首页后仍留着"重新创建房间"入口）
+        _recoverable.value = null
+        // 【t75】新一代通话：清掉"等待对端 offer"的兜底计时
+        recreatePending = false
         client?.leave()
         // 【t53】会话释放纪律：旧 CallSession 必须 close()（PC/统计循环/看门狗一并停）
         slot.endCall()
@@ -603,6 +674,48 @@ class CallViewModel(application: Application) :
         return LogExporter.exportZip(getApplication())
     }
 
+    /**
+     * 【t68】可恢复态下的显式入口：**重新创建房间**（房间被服务端回收后继续通话）。
+     *
+     * 背景：captain 2026-09-15 裁定 —— 重连期 `ROOM_NOT_FOUND` 不得自动退出通话页，
+     * 必须给出可操作入口。服务端 `create` 会分配**新的 6 位房间号**（doc/09 §3.1，
+     * 客户端不能指定房间号），因此本方法只发 `create`，真正的"新一代会话"由收到
+     * `created` 之后在 [onMessage] 里开启（新房间号与新的 ICE 配置都要先用上）。
+     */
+    fun recreateRoom() {
+        if (callEnded) {
+            AppLog.w(TAG, "room_recreate_invoked", mapOf("result" to "ignored", "reason" to "call_ended"))
+            return
+        }
+        val room = _uiState.value.roomId
+        val currentRole = role
+        if (room.isBlank() || currentRole.isBlank()) {
+            AppLog.w(
+                TAG,
+                "room_recreate_invoked",
+                mapOf("result" to "ignored", "reason" to "no_active_call", "room" to room, "role" to currentRole),
+            )
+            return
+        }
+        AppLog.w(
+            TAG,
+            "room_recreate_invoked",
+            mapOf(
+                "room" to room,
+                "role" to currentRole,
+                "media_alive" to mediaAliveForUi().toString(),
+                "seq" to callSeq.toString(),
+                "session" to "s$sessionId",
+            ),
+        )
+        recreatePending = true
+        _recoverable.value = null
+        // 【t75】新一代通话：清掉"等待对端 offer"的兜底计时
+        _uiState.update { it.copy(isConnecting = true, error = null, connectionState = ROOM_RECREATING_STATE) }
+        // 信令侧：清掉终态抑制并用 create 建一个新房间（服务端分配新房间号，经 created 回传）
+        client?.createRoom()
+    }
+
     /** 设置导出会话摘要（§9.5 的 session-summary.txt 内容）。 */
     fun installSessionSummaryProvider() {
         val state = _uiState.value
@@ -631,12 +744,118 @@ class CallViewModel(application: Application) :
         // 按 captain 2026-09-13 要求：**干脆回首页 + 明确提示，不留半死不活的通话界面**。
         // 注意：短暂掉线走的是 CONNECTING（见 SignalingClient.scheduleReconnect），不会误触发这里。
         if (state == ConnectionState.DISCONNECTED && !callEnded && sessionReady) {
-            endCallNow(NOTICE_CALL_ENDED)
+            // 【t68 根因②修复】先看这次掉线的**来源**：`peerLeft` / "重连期房间被回收"**不得**在这里
+            // 自动结束通话（真机 dl-a:7516-7520、dl-b:9717-9720 —— 两处媒体都还在流动）。
+            // 去留由紧接着到达的消息按 `CallSurvivability` 的纯判定决定：
+            //   * PeerLeft  → 曾连上过/有媒体 ⇒ 回「等待对方加入」，保留房间；否则才结束；
+            //   * ServerError(ROOM_NOT_FOUND) → 可恢复态 + 显式「重新创建房间」。
+            // 两者的 `listener.onMessage(...)` 都在**同一次同步派发**里紧随其后（SignalingClient.onMessage：
+            // advanceStateOnIncoming → listener.onMessage），因此这里只"推迟"，不会漏处理。
+            // 【t68 收尾 / captain 2026-09-16 指令①】`SIGNAL_LOST`（重连预算耗尽）**必须先按媒体判定**：
+            // 服务端宽限期 90 s 内不发 peerLeft，本端"重连不上"不说明对端离开 ⇒ 曾连上过/媒体存活时
+            // 保留通话页与**会话**（不 hangup、不销毁），否则才结束（避免半死不活的页面）。
+            val cause = client?.lastDisconnectCause ?: DisconnectCause.FATAL
+            val mediaAlive = mediaAliveForUi()
+            when {
+                cause == DisconnectCause.SIGNAL_LOST -> when (
+                    CallSurvivability.signalLostAction(everConnectedInGeneration, mediaAlive)
+                ) {
+                    SignalLostAction.KEEP_CALL -> {
+                        AppLog.w(
+                            TAG,
+                            "signaling_lost action=keep_call",
+                            mapOf(
+                                "ever_connected" to everConnectedInGeneration.toString(),
+                                "media_alive" to mediaAlive.toString(),
+                                "media_age_ms" to connStatus.value.mediaAgeMs.toString(),
+                                "phase" to connStatus.value.phase.name.lowercase(),
+                                "seq" to callSeq.toString(),
+                                "session" to "s$sessionId",
+                            ),
+                        )
+                        // 可恢复态：保留通话页与会话（媒体可能仍在流），给出显式入口
+                        _recoverable.value = RecoverableState(
+                            reason = cause.name,
+                            mediaAlive = mediaAlive,
+                            notice = SIGNAL_LOST_NOTICE,
+                        )
+                        _uiState.update {
+                            it.copy(
+                                connectionState = SIGNAL_LOST_STATE,
+                                isConnecting = false,
+                                error = null,
+                            )
+                        }
+                    }
+
+                    SignalLostAction.END_CALL -> {
+                        AppLog.w(
+                            TAG,
+                            "signaling_lost action=end_call",
+                            mapOf(
+                                "reason" to "never_connected_no_media",
+                                "phase" to connStatus.value.phase.name.lowercase(),
+                                "seq" to callSeq.toString(),
+                                "session" to "s$sessionId",
+                            ),
+                        )
+                        endCallNow(NOTICE_CALL_ENDED)
+                    }
+                }
+
+                // `peerLeft` / 房间丢失：同一次派发中的消息分支会立刻接管（只需记录"推迟"）
+                cause.survivable -> AppLog.w(
+                    TAG,
+                    "disconnect_deferred",
+                    mapOf(
+                        "cause" to cause.name.lowercase(),
+                        "ever_connected" to everConnectedInGeneration.toString(),
+                        "media_alive" to mediaAlive.toString(),
+                        "phase" to connStatus.value.phase.name.lowercase(),
+                        "seq" to callSeq.toString(),
+                        "session" to "s$sessionId",
+                    ),
+                )
+
+                else -> endCallNow(NOTICE_CALL_ENDED)
+            }
         }
     }
 
     override fun onMessage(message: SignalingMessage) {
         when (message) {
+            is SignalingMessage.Created -> {
+                // 【t68】「重新创建房间」（可恢复态下的显式入口）成功：服务端分配了**新的房间号**。
+                // 这里先缓存新下发的 ICE 配置（新会话必须用它建 PC），再开新一代会话；
+                // 房间号随之更新到 UI（真机复测时要能把新房间号念给对端）。
+                AppLog.i(
+                    TAG,
+                    "room_recreated",
+                    mapOf(
+                        "room" to message.roomId,
+                        "recreate" to recreatePending.toString(),
+                        "seq" to callSeq.toString(),
+                        "session" to "s$sessionId",
+                    ),
+                )
+                IceServerCache.put(
+                    IceServerConfig(
+                        stunUrl = message.stunUrl,
+                        turnUrl = message.turnUrl,
+                        turnUsername = message.turnUsername,
+                        turnCredential = message.turnCredential,
+                    )
+                )
+                _uiState.update {
+                    it.copy(roomId = message.roomId, connectionState = ROOM_RECREATED_STATE, error = null)
+                }
+                if (recreatePending) {
+                    recreatePending = false
+                    // 新房间的第一个成员 ⇒ 本端角色为 host（与 HomeViewModel 的 create 路径一致）
+                    beginGeneration(message.roomId, ROLE_HOST, REASON_RECREATE)
+                }
+            }
+
             is SignalingMessage.Joined -> {
                 // 通话中收到 joined = **异常断线后重连成功**（go-dev 对齐通知第 7 点 / doc/09 §6）：
                 // 服务端保留房间、对端会收到新的 peerJoined，因此发起方必须重新走 offer/answer；
@@ -647,6 +866,12 @@ class CallViewModel(application: Application) :
                 if (sessionReady) {
                     peerJoined = true
                     maybeCreateOffer()
+                    // 【t75 防 glare】`Joined` 一侧（重连侧）**不得立即发起**重协商：服务端已给"保持在线
+                    // 的一侧"发 `peerJoined`，由它发起带 iceRestart 的 offer；本侧只等 offer 并 answer
+                    // （两边界同时发 offer 会撞 glare，libwebrtc 的 rollback 很脆弱 ⇒ 「信令恢复但画面黑」）。
+                    // 仅当 `REJOIN_OFFER_FALLBACK_MS`(8 s) 内未收到 offer 且 ICE 未恢复时，才由心跳兜底发起一次。
+                    awaitingPeerOfferAfterRejoin = role != ROLE_HOST
+                    rejoinOfferWaitSinceMs = System.currentTimeMillis()
                 }
             }
 
@@ -655,7 +880,14 @@ class CallViewModel(application: Application) :
                 AppLog.i(TAG, "peer_joined", mapOf("peer" to message.peerId))
                 // 【t64】host 侧计时起点：对端进入房间 ⇒ 从此刻开始两档计时
                 startRetryClockIfWaiting("peer_joined")
-                maybeCreateOffer()
+                // 【t75 顺序修复】保持在线的一侧（收到 peerJoined 的一方）才发起重协商；若 ICE 已掉，
+                // **必须**先 restartIce（使**下一次** offer 携带 iceRestart）**再** createOffer ——
+                // 顺序反了会发出不带 iceRestart 的 offer ⇒ 旧候选对已死、ICE 不重选 ⇒ 「信令已恢复、画面黑」。
+                if (shouldInitiateRejoinRenegotiation()) {
+                    restartIceThenOffer(INITIATOR_HOST, TRIGGER_PEER_JOINED, "restart_ice reason=rejoin initiator=host")
+                } else {
+                    maybeCreateOffer()
+                }
             }
 
             is SignalingMessage.PeerLeft -> {
@@ -663,22 +895,48 @@ class CallViewModel(application: Application) :
                 onIceEvent(IceEvent(IceEventType.SELECTED_PAIR, "peer_left"))
                 // 【t64】对端离开：**先停表并复位回等待态**（不计时、不显示失败/重试）。
                 resetRetryClock("peer_left")
-                // doc/14 §8.5 口径 B（现行口径 + §11.4 D-7，known limitation/low/不得判失败）：
-                // **已建立过通话**时仍按原语义终态结束并回首页（房间随即销毁，不留半死不活的状态）。
-                // 未建立过（仅等待/连接尝试阶段）时不挂断：留在通话页显示「等待对方加入」，
-                // 便于房主继续等下一个设备（用户需求：等待期不要被当成失败）。
-                if (everConnectedInGeneration) {
-                    hangup()
-                } else {
-                    AppLog.i(
-                        TAG,
-                        "peer_left_keep_waiting",
-                        mapOf(
-                            "reason" to "never_connected",
-                            "seq" to callSeq.toString(),
-                            "session" to "s$sessionId",
-                        ),
-                    )
+                // 【t68】captain 2026-09-15 裁定（答复 t64 报告 §2.4 的 U4）：
+                // **本世代曾连上过**（或当前仍有媒体证据）时的 peerLeft **不再挂断** ——
+                // 回到「等待对方加入」并保留房间（配合服务端宽限期，对端可能重连回来）；
+                // 界面上的「挂断」按钮始终是显式结束入口。
+                // 仅"从未连上过且无媒体证据"时按 doc/14 §8.5 原语义结束通话（不留半死不活的界面）。
+                val mediaAlive = mediaAliveForUi()
+                when (CallSurvivability.peerLeftAction(everConnectedInGeneration, mediaAlive)) {
+                    PeerLeftAction.KEEP_CALL -> {
+                        AppLog.w(
+                            TAG,
+                            "peer_left action=keep_call",
+                            mapOf(
+                                "ever_connected" to everConnectedInGeneration.toString(),
+                                "media_alive" to mediaAlive.toString(),
+                                "media_age_ms" to connStatus.value.mediaAgeMs.toString(),
+                                "seq" to callSeq.toString(),
+                                "session" to "s$sessionId",
+                            ),
+                        )
+                        // 【t68】留在通话页：文案回到"等待对方加入"（保留房间意图，服务端宽限期内
+                        // 对端可以重连回来）；媒体仍在流时桌面画面照旧，不遮挡。
+                        _uiState.update {
+                            it.copy(
+                                connectionState = ConnectionState.IN_ROOM.label,
+                                isConnecting = false,
+                                error = null,
+                            )
+                        }
+                    }
+
+                    PeerLeftAction.END_CALL -> {
+                        AppLog.w(
+                            TAG,
+                            "peer_left action=end_call",
+                            mapOf(
+                                "reason" to "never_connected_no_media",
+                                "seq" to callSeq.toString(),
+                                "session" to "s$sessionId",
+                            ),
+                        )
+                        hangup()
+                    }
                 }
             }
 
@@ -691,6 +949,19 @@ class CallViewModel(application: Application) :
                 // 真机 room 66DZFT：offer 16:18:34.953 < pc_starting 16:18:35.244；候选 16:18:35.105
                 // 当时只打了 `ice_without_session` 就被丢掉。
                 peerResponseSeen = false
+                // 【t75】已收到对端 offer ⇒ 取消重连侧的 8 s 兜底（避免两侧同时发 offer 撞 glare）
+                if (awaitingPeerOfferAfterRejoin) {
+                    AppLog.i(
+                        TAG,
+                        "rejoin_offer_received",
+                        mapOf(
+                            "waited_ms" to (System.currentTimeMillis() - rejoinOfferWaitSinceMs).toString(),
+                            "seq" to callSeq.toString(),
+                            "session" to "s$sessionId",
+                        ),
+                    )
+                }
+                awaitingPeerOfferAfterRejoin = false
                 // 【t64】joiner 侧计时起点之二：收到对端 offer 即视为"对端已在"
                 startRetryClockIfWaiting("offer")
                 val current = session
@@ -772,16 +1043,53 @@ class CallViewModel(application: Application) :
                     }
                 } else {
                     AppLog.e(TAG, "server_error", mapOf("code" to message.code))
-                    // 终态码（ROOM_NOT_FOUND / ROOM_EXPIRED / INVALID_MESSAGE / NOT_IN_ROOM）：
-                    // 房间已销毁或报文非法 ⇒ 明确失败并退出通话页；其余码只呈现错误但仍退出，
-                    // 绝不停在通话页显示"重试中…"（captain 2026-09-13）。
-                    endCallNow(
-                        if (SignalingErrorPolicy.endsCall(message.code)) {
-                            NOTICE_CALL_ENDED
-                        } else {
-                            "服务端错误: ${message.code}"
+                    // 【t68】房间丢失（ROOM_NOT_FOUND / ROOM_EXPIRED）：若本端仍处于
+                    // "曾经在房内"的语境（断线重连 / 通话中 / 尚在等对端）**或媒体仍在流动**，
+                    // **不得自动退出通话页** —— 改为可恢复态 + 显式「重新创建房间」入口
+                    // （captain 2026-09-15 裁定；媒体在流时通话页必须保持）。
+                    // 首次入房就找不到房间（从未在房内）时仍按原语义结束通话。
+                    val mediaAlive = mediaAliveForUi()
+                    val rejoinContext = inRoomContext()
+                    val keepCall = SignalingErrorPolicy.keepsCallOnRoomLoss(message.code, rejoinContext, mediaAlive)
+                    val action = if (keepCall) RoomLostAction.KEEP_CALL else RoomLostAction.END_CALL
+                    if (action == RoomLostAction.KEEP_CALL) {
+                        AppLog.w(
+                            TAG,
+                            "room_not_found action=keep_call",
+                            mapOf(
+                                "code" to message.code,
+                                "media_alive" to mediaAlive.toString(),
+                                "media_age_ms" to connStatus.value.mediaAgeMs.toString(),
+                                "rejoin_context" to rejoinContext.toString(),
+                                "rejoin_drop" to (client?.isRejoinContext == true).toString(),
+                                "phase" to connStatus.value.phase.name.lowercase(),
+                                "seq" to callSeq.toString(),
+                                "session" to "s$sessionId",
+                            ),
+                        )
+                        // 可恢复态：保持通话页（不 hangup、不 endCallNow），给出显式入口
+                        _recoverable.value = RecoverableState(
+                            reason = message.code,
+                            mediaAlive = mediaAlive,
+                            notice = ROOM_LOST_NOTICE,
+                        )
+                        _uiState.update {
+                            it.copy(
+                                connectionState = ROOM_LOST_STATE,
+                                isConnecting = false,
+                                error = null,
+                            )
                         }
-                    )
+                    } else {
+                        // 终态码且非重连语境 ⇒ 明确失败并退出通话页（captain 2026-09-13 口径）
+                        endCallNow(
+                            if (SignalingErrorPolicy.endsCall(message.code)) {
+                                NOTICE_CALL_ENDED
+                            } else {
+                                "服务端错误: ${message.code}"
+                            }
+                        )
+                    }
                 }
             }
 
@@ -904,6 +1212,26 @@ class CallViewModel(application: Application) :
     }
 
     override fun onError(message: String) {
+        // 【t68 根因③】媒体存活期间**不得**显示 ICE/连接失败文案：链路层的 ICE 事实只用于失败归因
+        // 与日志，不驱动用户可见的失败提示（真机 dl-b 15:27:54：`ice_down=true` 但 `media_age_ms=2705`
+        // 且 `pair=true`，视频随后自行恢复）。
+        val mediaAlive = mediaAliveForUi()
+        if (!CallSurvivability.shouldSurfaceError(message, mediaAlive)) {
+            AppLog.w(
+                TAG,
+                "ice_down_ui_suppressed",
+                mapOf(
+                    "age_ms" to connStatus.value.mediaAgeMs.toString(),
+                    "media_source" to connStatus.value.mediaSource,
+                    "pair" to connStatus.value.hasSelectedPair.toString(),
+                    "phase" to connStatus.value.phase.name.lowercase(),
+                    "message" to message,
+                    "seq" to callSeq.toString(),
+                    "session" to "s$sessionId",
+                ),
+            )
+            return
+        }
         _uiState.update { it.copy(error = message) }
     }
 
@@ -969,11 +1297,94 @@ class CallViewModel(application: Application) :
     /** host 侧：只有「已收到 peerJoined」且「会话已就绪」时才发 offer（避免顺序问题）。 */
     private fun maybeCreateOffer() {
         if (role != ROLE_HOST || !peerJoined || !sessionReady) return
+        sendOfferInternal()
+    }
+
+    /**
+     * 【t71③ / t75】重连入会成功后的 ICE 恢复门控（纯判定在 [CallSurvivability.shouldRestartIceOnRejoin]）。
+     *
+     * 规则：本世代曾连上过 且（ICE 掉了 或 无媒体证据）；**媒体证据新鲜（帧龄 <3 s）且存在 selected pair
+     * ⇒ 不重启**（健康通话不受打扰，也避免与对端 offer 撞 glare）。
+     */
+    private fun shouldInitiateRejoinRenegotiation(): Boolean {
+        val status = connStatus.value
+        return CallSurvivability.shouldRestartIceOnRejoin(
+            everConnected = everConnectedInGeneration,
+            iceDown = status.iceDown,
+            mediaAlive = status.mediaAlive,
+            hasSelectedPair = status.hasSelectedPair,
+        )
+    }
+
+    /**
+     * 【t75 顺序修复】先 `restartIce("rejoin")`（让**下一次** offer 携带 `iceRestart`）**再**发 offer。
+     *
+     * 为什么不能反过来：`CallSession.restartIce()` 只调用 `PeerConnection.restartIce()` 置标志并重新
+     * gathering，**它自己不发 offer**；若先 `createOffer()` 再 `restartIce()`，发出去的 offer 不带
+     * `iceRestart` ⇒ 旧候选对已死时 ICE 不会重选 ⇒ 真机表现为「信令已恢复、画面黑」。
+     *
+     * @param initiator 发起方（`host` = 保持在线侧；`rejoiner` = 重连侧 8 s 兜底）——作为**新增字段**写入诊断；
+     *   注意：既有键名**一处都不改**（host 侧消息仍为 `restart_ice reason=rejoin`，既有字段仍有 `trigger`）。
+     * @param trigger 触发来源（`peer_joined` / `joined`），沿用 t71 既有字段名。
+     * @param logEvent 该路径的诊断消息：主键统一为 `restart_ice reason=rejoin initiator=host|rejoiner`
+     *   （`rejoin_ice_restart …` 为旧写法，按 captain 2026-09-16 定案不再使用）。
+     */
+    private fun restartIceThenOffer(
+        initiator: String,
+        trigger: String,
+        logEvent: String = "restart_ice reason=rejoin initiator=host",
+        extra: Map<String, String> = emptyMap(),
+    ) {
+        val status = connStatus.value
+        val current = session ?: return
+        if (current.isClosed()) return
+        // 【t75 顺序修复】先 restartIce("rejoin")（让**下一次** offer 带 iceRestart）**再**发 offer；
+        // reason 字符串保持 `rejoin`（与 t71 已落地、t72 APK 一致；captain 2026-09-16 定案"主键统一为 restart_ice"）
+        val accepted = current.restartIce("rejoin")
+        AppLog.i(
+            TAG,
+            logEvent,
+            mapOf(
+                // 【t75】新增 `initiator=host|rejoiner`（仅"新增字段"，既有 trigger/accepted/… 键名不变）
+                "initiator" to initiator,
+                "trigger" to trigger,
+                "accepted" to accepted.toString(),
+                "ice_down" to status.iceDown.toString(),
+                "media_alive" to status.mediaAlive.toString(),
+                "pair" to status.hasSelectedPair.toString(),
+                "phase" to status.phase.name.lowercase(),
+                "seq" to callSeq.toString(),
+                "session" to "s$sessionId",
+            ) + extra,
+        )
+        sendOfferInternal()
+    }
+
+    /** [t75] 发 offer 的**统一内部入口**（不做 host 角色闸门：重连侧 8 s 兜底也要能发）。 */
+    private fun sendOfferInternal() {
         val current = session ?: return
         if (current.isClosed()) return
         current.createOffer()
-        // 【t51】发出 offer 后等待 answer/远端候选；20 s 无响应 ⇒ UI 明确提示（WARN 落盘）
         armPeerResponseWatchdog("offer_sent")
+    }
+
+    /**
+     * 【t75】在既有心跳里评估"重连侧 8 s 兜底"是否需要发起（**一次性**：触发后立即清标志）。
+     *
+     * @return `true` 表示本次调用已判定需要兜底发起（调用方随后 `restartIceThenOffer(INITIATOR_REJOINER, …)`）。
+     */
+    private fun evaluateRejoinOfferFallback(nowMs: Long): Boolean {
+        if (!awaitingPeerOfferAfterRejoin) return false
+        val status = connStatus.value
+        val decided = CallSurvivability.shouldRejoinerFallbackOffer(
+            awaitingPeerOffer = true,
+            waitedMs = nowMs - rejoinOfferWaitSinceMs,
+            iceDown = status.iceDown,
+            mediaAlive = status.mediaAlive,
+            hasSelectedPair = status.hasSelectedPair,
+        )
+        if (decided) awaitingPeerOfferAfterRejoin = false
+        return decided
     }
 
     // ===================== t59：连接状态发布 / 诊断 / 重试重协商 =====================
@@ -1072,6 +1483,28 @@ class CallViewModel(application: Application) :
         }
         if (status.phase == ConnPhase.FAILED && status.reason == ConnReason.TIMEOUT_NO_PAIR) {
             maybeLogNoSelectedPair(status)
+        }
+        // 【t68】媒体存活期抑制了"ICE/连接失败"呈现 ⇒ 落一条诊断，便于下一轮复测**一行确认**
+        // "界面为什么不报失败"（真机缺陷：视频仍在流却显示 ICE 失败）。
+        if (status.iceFailureSuppressed && lastIceSuppressedLogMs == 0L) {
+            lastIceSuppressedLogMs = System.currentTimeMillis()
+            AppLog.w(
+                TAG,
+                "ice_down_ui_suppressed",
+                mapOf(
+                    "age_ms" to status.mediaAgeMs.toString(),
+                    "media_source" to status.mediaSource,
+                    "pair" to status.hasSelectedPair.toString(),
+                    "phase" to status.phase.name.lowercase(),
+                    "reason" to status.reason.name.lowercase(),
+                    "ice_down" to status.iceDown.toString(),
+                    "seq" to callSeq.toString(),
+                    "session" to "s$sessionId",
+                ),
+            )
+        } else if (!status.iceFailureSuppressed) {
+            // 抑制结束（已恢复 或 已确认失败）⇒ 重置限频闸门，下一次抑制仍会落盘
+            lastIceSuppressedLogMs = 0L
         }
         // 【t60/A7】"配了 TURN 却没有中继候选" ⇒ 失败时**自动**做一次 ICE restart + 重新 gathering
         // 并重新协商（而不是让用户只能点重试）。
@@ -1275,6 +1708,34 @@ class CallViewModel(application: Application) :
         _uiState.update { it.copy(error = message, isConnecting = false) }
     }
 
+    // ===================== t68：可存活化判定（薄接线，纯逻辑在 CallSurvivability） =====================
+
+    /**
+     * 当前是否有可用媒体证据（t68）。
+     *
+     * 取连接状态机的**权威快照**：`ConnStatus.mediaAlive`（帧新鲜 <3 s 或已选中候选对，
+     * 且未被确认为中断）—— 与 `ConnStatus.mediaAgeMs`/`hasSelectedPair` 同源，避免多处口径分叉。
+     */
+    private fun mediaAliveForUi(): Boolean = connStatus.value.mediaAlive
+
+    /**
+     * 是否处于"**曾经在房内**（等待/通话/重连）"的语境（t68）。
+     *
+     * 判定来源（任一成立即可）：
+     *   * 信令侧正在"掉线后重连"（[SignalingClient.isRejoinContext]，dl-b 场景的直接证据）；
+     *   * 本世代曾 `CONNECTED`（`everConnectedInGeneration`）；
+     *   * 对端出现过或已回应（`peerJoined` / `peerResponseSeen`）；
+     *   * 已选中候选对（媒体层面确实通过）。
+     *
+     * 用于区分"房间被回收（可重建）"与"首次入房就找不到房间"（后者仍是终态）。
+     */
+    private fun inRoomContext(): Boolean =
+        client?.isRejoinContext == true ||
+            everConnectedInGeneration ||
+            peerJoined ||
+            peerResponseSeen ||
+            connStatus.value.hasSelectedPair
+
     /**
      * **终态结束**本次通话：给出明确提示 → 清理 → 回首页（captain 2026-09-13 要求）。
      *
@@ -1312,6 +1773,12 @@ class CallViewModel(application: Application) :
         const val NO_PAIR_LOG_INTERVAL_MS = 15_000L
 
         /** 【t59】joiner 重试后延迟重发 offer 的等待时长（给 host 的 offer 让路）。 */
+
+        /** 【t75】诊断 `trigger` 取值（沿用 t71 既有字段名）。 */
+        const val TRIGGER_PEER_JOINED = "peer_joined"
+
+        /** 【t75】诊断 `trigger` 取值：重连侧 8 s 兜底。 */
+        const val TRIGGER_JOINED = "joined"
         const val RETRY_REOFFER_DELAY_MS = 1_200L
 
         /** 【t53/t59】世代化开启原因：首次进入通话。 */
@@ -1320,6 +1787,20 @@ class CallViewModel(application: Application) :
         /** 【t53/t59】世代化开启原因：用户一键重试。 */
         const val REASON_RETRY = "retry"
 
+        /**
+         * 【t68】世代化开启原因：可恢复态下用户点击「重新创建房间」。
+         *
+         * 与 [REASON_RETRY] 的区别：重试保留原房间（服务端房间仍在）；重建是**新房间**
+         * （原房间已被服务端回收），房间号由服务端重新分配。
+         */
+        const val REASON_RECREATE = "recreate"
+
+
+        /** 【t75】重协商发起方：保持在线侧（收到 peerJoined）。 */
+        const val INITIATOR_HOST = "host"
+
+        /** 【t75】重协商发起方：重连侧 8 s 兜底（收到 joined）。 */
+        const val INITIATOR_REJOINER = "rejoiner"
         /**
          * 【t63】帧存活阈值：`VideoSink.onFrame` 时间戳在此时长内即视为"画面在更新"。
          *
@@ -1338,6 +1819,34 @@ class CallViewModel(application: Application) :
          * （§11.4 D-7，low，不得判失败）——结束时必须**明确告知**并回首页，不留下半死不活的状态。
          */
         const val NOTICE_CALL_ENDED = "通话已结束，可重新创建"
+
+        /**
+         * 【t68】房间被服务端回收（可恢复）时的通话页提示。
+         *
+         * 措辞要点：明确"**没有**结束通话"、明确"画面可能仍在"、给出下一步动作（重建）。
+         * 本任务 inScope 不含 `res/values/strings.xml`，故与既有 [NOTICE_CALL_ENDED] 一致内联。
+         */
+        const val ROOM_LOST_NOTICE = "房间已被服务端回收（通话未结束）：可重新创建房间继续"
+
+        /** 【t68】可恢复态下的通话页连接文案（替换"未连接"，避免误导为终态）。 */
+        const val ROOM_LOST_STATE = "房间已回收（可重新创建）"
+
+        /** 【t68】「重新创建房间」进行中的状态文案。 */
+        const val ROOM_RECREATING_STATE = "正在重新创建房间…"
+
+        /**
+         * 【t68 收尾】信令链路丢失（重连预算耗尽）但通话**未结束**时的提示。
+         *
+         * 与 [ROOM_LOST_NOTICE] 的区别：房间可能仍在（服务端保留 90 s），只是本端信令断了；
+         * 措辞必须说明"画面可能仍在"，并给出重建/挂断两条显式出路。
+         */
+        const val SIGNAL_LOST_NOTICE = "信令连接已断开（对端未离开，画面可能仍在）：可重新创建房间或手动挂断"
+
+        /** 【t68 收尾】信令丢失但保留通话页时的连接文案。 */
+        const val SIGNAL_LOST_STATE = "信令已断开（画面可能仍在）"
+
+        /** 【t68】重建成功、等待对端时的状态文案。 */
+        const val ROOM_RECREATED_STATE = "已创建新房间，等待对方加入"
 
         /** 【t51】对端无响应看门狗时长（验收要求 20 s）。 */
         const val PEER_RESPONSE_TIMEOUT_MS = 20_000L

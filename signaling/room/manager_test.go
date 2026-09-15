@@ -29,11 +29,11 @@ func TestRoomAddAndRemove(t *testing.T) {
 	p1 := NewPeer(nil, PeerOptions{}, testLogger())
 	p2 := NewPeer(nil, PeerOptions{}, testLogger())
 
-	id1, ok := r.AddPeer(p1)
+	id1, _, _, ok := r.AddPeer(p1, 0, nil)
 	if !ok || id1 != PeerID1 {
 		t.Fatalf("第一个 peer 应为 %s，实际 %q ok=%v", PeerID1, id1, ok)
 	}
-	id2, ok := r.AddPeer(p2)
+	id2, _, _, ok := r.AddPeer(p2, 0, nil)
 	if !ok || id2 != PeerID2 {
 		t.Fatalf("第二个 peer 应为 %s，实际 %q ok=%v", PeerID2, id2, ok)
 	}
@@ -42,7 +42,7 @@ func TestRoomAddAndRemove(t *testing.T) {
 
 	// 第三个 peer 必须被拒绝（房间容量 2）
 	p3 := NewPeer(nil, PeerOptions{}, testLogger())
-	if _, ok := r.AddPeer(p3); ok {
+	if _, _, _, ok := r.AddPeer(p3, 0, nil); ok {
 		t.Fatal("房间已满时 AddPeer 应返回 ok=false")
 	}
 
@@ -82,8 +82,8 @@ func TestRoomExpiry(t *testing.T) {
 	// 满员房间不过期（正在通话不应被清理协程打断）
 	p1 := NewPeer(nil, PeerOptions{}, testLogger())
 	p2 := NewPeer(nil, PeerOptions{}, testLogger())
-	_, _ = r.AddPeer(p1)
-	_, _ = r.AddPeer(p2)
+	_, _, _, _ = r.AddPeer(p1, 0, nil)
+	_, _, _, _ = r.AddPeer(p2, 0, nil)
 	if r.IsExpired(time.Now().Add(10 * time.Second)) {
 		t.Fatal("满员房间不应判定过期")
 	}

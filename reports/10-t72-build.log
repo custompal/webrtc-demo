@@ -1,0 +1,237 @@
+==============================================================
+# t72 构建：t67+t68+t71 重编交付 APK（第二次构建发布）
+# T0=2026-09-16T00:50:31+08:00  脚本=/opt/dsh-workspaces/tmp/t72-build.sh  TS=20260916-005031
+# HEAD=8563addbe096a3b288b94013bf8e5d89002cd678  dirty=91 行
+# T1 界（t71 报告口径，实测 app/src 最后写入）= 2026-09-16+00:39:01.5052439110 app/src/test/kotlin/com/example/webrtcdemo/signaling/ReconnectBudgetTest.kt
+# 前置静默：java/gradle 进程=0  近5min app/src=0  signaling=0
+# 前置静默断言：PASS
+# T0 双钉 jar=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+# T0 双钉 aar=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+# T0 双钉 so =757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+# T0 双钉 lcxx=c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+# T0 六文件（t68/t71 声明值）: SignalingClient=7c32c5db0f6da640 CallSurvivability=d2b837170a4e7644 CallViewModel=d3f2469462a5294a
+
+===== 1. build_app.sh --check-only =====
+CHECK_ONLY_EXIT=0   raw=/opt/dsh-workspaces/tmp/t72/checkonly-20260916-005031.log
+  tail: ===== == --check-only：不执行构建 == ===== 前置校验全部通过（未构建） 
+
+===== 2. :app:compileDebugKotlin =====
+COMPILE_EXIT=1   raw=/opt/dsh-workspaces/tmp/t72/compile-20260916-005031.log
+ABORT at compileDebugKotlin
+==============================================================
+# t72 构建：t67+t68+t71 重编交付 APK（第二次构建发布）
+# T0=2026-09-16T00:50:53+08:00  脚本=/opt/dsh-workspaces/tmp/t72-build.sh  TS=20260916-005053
+# HEAD=8563addbe096a3b288b94013bf8e5d89002cd678  dirty=91 行
+# T1 界（t71 报告口径，实测 app/src 最后写入）= 2026-09-16+00:50:35.2799973190 app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so
+# 前置静默：java/gradle 进程=0  近5min app/src=1  signaling=0
+ABORT: app/src 近 5 分钟仍有写入（1 件），等静默
+==============================================================
+# t72 构建：t67+t68+t71 重编交付 APK（第二次构建发布）
+# T0=2026-09-16T00:51:30+08:00  脚本=/opt/dsh-workspaces/tmp/t72-build.sh  TS=20260916-005130
+# HEAD=8563addbe096a3b288b94013bf8e5d89002cd678  dirty=91 行
+# T1 界（t71 报告口径，实测 app/src 最后写入，排除 jniLibs 固定件）= 2026-09-16+00:39:01.5052439110 app/src/test/kotlin/com/example/webrtcdemo/signaling/ReconnectBudgetTest.kt
+# 前置静默（check-only 之前）：java/gradle 进程=0  近5min app/src(非jniLibs)=0  signaling=0
+# 前置静默断言：PASS
+===== 1. build_app.sh --check-only =====
+CHECK_ONLY_EXIT=0   raw=/opt/dsh-workspaces/tmp/t72/checkonly-20260916-005130.log
+  tail: ===== == --check-only：不执行构建 == ===== 前置校验全部通过（未构建） 
+===== 1b. 静默断言（check-only 之后；固定件同哈希重拷豁免）=====
+  java/gradle 进程=0
+  豁免（内容不变重拷）: app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so
+  非豁免写入件数=0
+  静默断言：PASS（近 5 分钟仅固定件内容不变重拷或零写入）
+# T0 双钉 jar=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+# T0 双钉 aar=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+# T0 双钉 so =757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+# T0 双钉 lcxx=c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+# T0 关键源码: SignalingClient=7c32c5db0f6da640 CallSurvivability=d2b837170a4e7644 CallViewModel=d3f2469462a5294a ReconnectBudgetTest=0978f368d447a97f
+
+===== 2. :app:compileDebugKotlin =====
+COMPILE_EXIT=0   raw=/opt/dsh-workspaces/tmp/t72/compile-20260916-005130.log
+  BUILD SUCCESSFUL in 1m 42s
+  15 actionable tasks: 1 executed, 14 up-to-date
+
+===== 3. --no-daemon --no-build-cache clean assembleDebug =====
+ASSEMBLE_EXIT=0  T1=2026-09-16T00:53:17+08:00  T2=2026-09-16T00:56:46+08:00  raw=/opt/dsh-workspaces/tmp/t72/assemble-20260916-005130.log
+  BUILD SUCCESSFUL in 3m 28s
+  43 actionable tasks: 42 executed, 1 up-to-date
+  FROM-CACHE 行数=0   :app:clean 出现=1
+  tasks 行: 43 actionable tasks: 42 executed, 1 up-to-date
+  构建窗口内 app/src 写入(>T1)=0  signaling 写入(>T1)=0
+  APK sha256=f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+  APK size=33419885  mtime=2026-09-16 00:56:45.863384778 +0800
+  T2 双钉 jar=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+  T2 双钉 aar=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+  T2 双钉 so =757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+  T2 双钉 lcxx=c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+  自有库(APK 内 libwebrtcdemo_native.so)=d49eafc3e7cdeaa296579f039dfda75b0dc34b76885b173dc61e3c1a426212a5
+  四 .so p_align（APK 内）:
+    libandroidx.graphics.path.so               41e9a793c43a0f4f p_align=['0x4000']
+    libc++_shared.so                           c9dbf4ec15e931f5 p_align=['0x4000']
+    libjingle_peerconnection_so.so             757cef8128bf9151 p_align=['0x4000']
+    libwebrtcdemo_native.so                    d49eafc3e7cdeaa2 p_align=['0x4000']
+
+===== 4. --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest =====
+TEST_EXIT=0   raw=/opt/dsh-workspaces/tmp/t72/test-20260916-005130.log
+  BUILD SUCCESSFUL in 4m 28s
+  24 actionable tasks: 24 executed
+===== 4b. 单测计数闸门（类数>=18 且 用例数>=173）=====
+  XML 汇总: 类数=18  tests=176 failures=0 errors=0 skipped=0  (XML 最新 mtime=2026-09-16 01:01:16)
+    AppConfigUrlTest                                     tests=8   fail=0 err=0 skip=0
+    LogLevelFilterTest                                   tests=6   fail=0 err=0 skip=0
+    NativeInterfaceContractTest                          tests=4   fail=0 err=0 skip=0
+    PongLivenessTest                                     tests=8   fail=0 err=0 skip=0
+    ReconnectBudgetTest                                  tests=5   fail=0 err=0 skip=0
+    SignalingErrorPolicyTest                             tests=21  fail=0 err=0 skip=0
+    SignalingIdentityTest                                tests=11  fail=0 err=0 skip=0
+    CallSessionSlotTest                                  tests=8   fail=0 err=0 skip=0
+    CallSurvivabilityTest                                tests=15  fail=0 err=0 skip=0
+    ConnectionStatusTrackerTest                          tests=29  fail=0 err=0 skip=0
+    MediaAliveSuppressionTest                            tests=10  fail=0 err=0 skip=0
+    PendingRemoteMessagesTest                            tests=7   fail=0 err=0 skip=0
+    IceCandidateInfoTest                                 tests=8   fail=0 err=0 skip=0
+    JniBindingClasspathTest                              tests=6   fail=0 err=0 skip=0
+    LoopbackCandidatesTest                               tests=5   fail=0 err=0 skip=0
+    RendererRecoveryPolicyTest                           tests=7   fail=0 err=0 skip=0
+    SessionLifecycleTest                                 tests=10  fail=0 err=0 skip=0
+    TurnTcpFallbackTest                                  tests=8   fail=0 err=0 skip=0
+  GATE: 类数 18>=18 ? True ; 用例 176>=173 ? True ; failures=0 errors=0 ⇒ PASS
+  GATE_EXIT=0
+
+===== 4c. 包体旁证：dex 内 t68/t71 诊断串 =====
+  signal_lost_keep_call          出现次数=0
+  rejoin_ice_restart             出现次数=0
+  restart_ice                    出现次数=1
+  pong_miss                      出现次数=1
+  room_not_found                 出现次数=1
+  peer_left action=keep_call     出现次数=1
+  ws_reconnect_scheduled         出现次数=1
+  signaling_lost action=keep_call 出现次数=1
+  rejoinBudgetMs                 出现次数=2
+
+===== 5. 属主归一 =====
+  app/build root 条目=0  .gradle=0  app/.cxx=0
+# T3=2026-09-16T01:01:18+08:00 结束（CHECK=0 COMPILE=0 ASSEMBLE=0 TEST=0 GATE=0）
+
+===== 6. 发布（冻结副本刷新）=====
+  新 APK: f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901  33419885 B  mtime=2026-09-16 00:56:45.863384778 +0800
+  旧 served: 8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+  已归档旧 parts → /opt/apk-http/parts-archive/parts-8b58b3f0-20260916-010127 (0 件)
+  served  sha256=f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+  /opt/dsh-workspaces/artifacts/app-debug-f694a103.apk sha256=f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+  make_parts.sh 运行:
+    [make_parts] 源 APK: /opt/dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk  size=33419885  sha256=f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+    [make_parts] 清理旧分片并重新切分（PART_SIZE=8388608）
+    rm: cannot remove '/opt/apk-http/parts/app-debug.apk.part00': Permission denied
+    rm: cannot remove '/opt/apk-http/parts/app-debug.apk.part01': Permission denied
+    rm: cannot remove '/opt/apk-http/parts/app-debug.apk.part02': Permission denied
+    rm: cannot remove '/opt/apk-http/parts/app-debug.apk.part03': Permission denied
+    rm: cannot remove '/opt/apk-http/parts/SHA256SUMS': Permission denied
+  MAKE_PARTS_EXIT=1
+  SOURCE.sha256 = 8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+  SHA256SUMS 自校验 OK = 4 片
+  parts 拼接 sha256 = 8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9
+  CONCAT == 新 APK : **False**
+
+===== 7. 服务与公网复验 =====
+  enabled=enabled active=active MainPID=664402 启动时刻=Mon 2026-09-14 18:57:09 CST
+  (未重启服务；served 为原地替换，文件级零停机)
+  loopback HEAD : code=200 len=0
+  loopback Range: code=206 bytes=1024
+  public   HEAD : code=200 len=0
+  public   Range: code=206 bytes=1024
+  public  全量 sha 复核: f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+
+===== 8. 与上一版 APK 的条目级差异 =====
+Traceback (most recent call last):
+  File "<stdin>", line 7, in <module>
+  File "<stdin>", line 4, in scan
+  File "/usr/lib/python3.12/zipfile/__init__.py", line 1347, in __init__
+    self.fp = io.open(file, filemode)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/opt/apk-http/artifacts/app-debug-8b58b3f0.apk'
+# 发布结束 2026-09-16T01:01:29+08:00
+
+===== 6b. 发布补齐（root 特权步骤；admin 无权写 /opt/apk-http）=====
+  新 APK=f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901 (33419885 B)  served=f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+  旧 served 归档已存在或源缺失：ls: cannot access '/opt/apk-http/artifacts/app-debug-8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9.apk': No such file or directory
+  已归档旧 parts → /opt/apk-http/parts-archive/parts-8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9-20260916-010149 (6 件)
+  重切分片（make_parts.sh，源=构建输出 APK）：
+    [make_parts] 源 APK: /opt/dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk  size=33419885  sha256=f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+    [make_parts] 清理旧分片并重新切分（PART_SIZE=8388608）
+    [make_parts] 合并校验…
+    [make_parts] 合并校验通过: f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+    [make_parts] 分片清单:
+      total 32648
+      -rw-r--r-- 1 root root 8388608 Sep 16 01:01 app-debug.apk.part00
+      -rw-r--r-- 1 root root 8388608 Sep 16 01:01 app-debug.apk.part01
+      -rw-r--r-- 1 root root 8388608 Sep 16 01:01 app-debug.apk.part02
+      -rw-r--r-- 1 root root 8254061 Sep 16 01:01 app-debug.apk.part03
+      -rw-r--r-- 1 root root     348 Sep 16 01:01 SHA256SUMS
+      -rw-r--r-- 1 root root      65 Sep 16 01:01 SOURCE.sha256
+    [make_parts] SHA256SUMS:
+      bc3837d9c4a114a855a6910ade3330e2f9b42e6a24ec6d9e9998490eed59b122  app-debug.apk.part00
+      1506516153cd1e6da3a3477868fb9d79c4c60829434eea5663ce558566a80dbe  app-debug.apk.part01
+      9c0d84b2c0261579806684d13681f963796023c5911748f3eabbfff23f430c22  app-debug.apk.part02
+      7baa7441c9e9d2498a6ef6815907d71a768ef102d8cce5683d0a3739be0618fa  app-debug.apk.part03
+  MAKE_PARTS_EXIT=0
+  SOURCE.sha256 = f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+  SHA256SUMS OK 片数 = 4
+  parts 拼接 = f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+  CONCAT == 新 APK : True
+  四方对账：
+    构建输出 = f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+    served   = f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901  (33419885 2026-09-16 01:01:27.666329481 +0800)
+    artifacts= f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+    parts    = f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+    SOURCE   = f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+
+===== 7b. 服务与公网复验 =====
+  enabled=enabled active=active MainPID=664402 启动时刻=Mon 2026-09-14 18:57:09 CST
+  loopback HEAD : code=200 len=0
+  loopback Range: code=206 bytes=1024
+  public   HEAD : HTTP/1.1 200 OK Content-Length: 33419885 Accept-Ranges: bytes ETag: "1fdf26d-18d58d3573dda789" Last-Modified: Tue, 15 Sep 2026 17:01:27 GMT 
+  public   Range: code=206 bytes=1024
+  public  全量 sha: f694a103d963f444cf1e0c5780f881967d226254cd68bc082c4309016c239901
+  服务日志尾部: Sep 16 01:01:50 iZj6cgbzeotp84twpfniy5Z python3[664402]: 2026-09-16T01:01:50+0800 47.238.144.66 done status=206 file=app-debug.apk sent_bytes=1024 declared_bytes=1024 range=bytes=0-1023 duration_s=0.001 effective_KBps=1223.4 rate_basis=server_write(sndbuf=131072) Sep 16 01:01:50 iZj6cgbzeotp84twpfniy5Z python3[664402]: 2026-09-16T01:01:50+0800 47.238.144.66 "GET /app-debug.apk HTTP/1.1" 200 - Sep 16 01:01:50 iZj6cgbzeotp84twpfniy5Z python3[664402]: 2026-09-16T01:01:50+0800 47.238.144.66 done status=200 file=app-debug.apk sent_bytes=33419885 declared_bytes=33419885 range=- duration_s=0.387 effective_KBps=84318.6 rate_basis=server_write(sndbuf=131072) 
+
+===== 8b. 与上一版 APK（8b58b3f0）条目级差异 =====
+Traceback (most recent call last):
+  File "<stdin>", line 7, in <module>
+  File "<stdin>", line 4, in scan
+  File "/usr/lib/python3.12/zipfile/__init__.py", line 1347, in __init__
+    self.fp = io.open(file, filemode)
+              ^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/opt/apk-http/artifacts/app-debug-8b58b3f0914021f124a0b86bdfca8350311ef4f26c2d297acfa9d041c16629d9.apk'
+# 发布补齐结束 2026-09-16T01:01:51+08:00
+归档旧 served → /opt/apk-http/artifacts/app-debug-8b58b3f0.apk  sha=8b58b3f0914021f1
+===== 条目级差异（t69 锚点 8b58b3f0 → t72 锚点 f694a103）=====
+  old=165 entries  new=165 entries  相同=158 不同=7 仅旧=[] 仅新=[]
+  不同条目(7): classes11.dex, classes12.dex, classes14.dex, classes3.dex, classes5.dex, classes6.dex, classes9.dex
+    classes.dex                    old_size=44668428  new_size=44668428  SAME
+    classes10.dex                  old_size=21188     new_size=21188     SAME
+    classes11.dex                  old_size=135060    new_size=135060    DIFF
+    classes12.dex                  old_size=14304     new_size=14304     DIFF
+    classes13.dex                  old_size=12903480  new_size=12903480  SAME
+    classes14.dex                  old_size=558980    new_size=558976    DIFF
+    classes2.dex                   old_size=40868     new_size=40868     SAME
+    classes3.dex                   old_size=164764    new_size=164764    DIFF
+    classes4.dex                   old_size=6504      new_size=6504      SAME
+    classes5.dex                   old_size=190768    new_size=194044    DIFF
+    classes6.dex                   old_size=39368     new_size=39368     DIFF
+    classes7.dex                   old_size=6584      new_size=6584      SAME
+    classes8.dex                   old_size=12352     new_size=12352     SAME
+    classes9.dex                   old_size=95576     new_size=96372     DIFF
+    lib/arm64-v8a/libandroidx.graphics.path.so old_size=10096     new_size=10096     SAME
+    lib/arm64-v8a/libc++_shared.so old_size=1356968   new_size=1356968   SAME
+    lib/arm64-v8a/libjingle_peerconnection_so.so old_size=12946912  new_size=12946912  SAME
+    lib/arm64-v8a/libwebrtcdemo_native.so old_size=1275176   new_size=1275176   SAME
+---- 新 APK 内 t71 关键串 ----
+  signaling_lost action=keep_call  1
+  restart_ice                      1
+  rejoinBudgetMs                   2
+  ws_reconnect_scheduled           1
+  RECONNECT_MAX_DELAY_MS           0
+  MAX_RECONNECT_ATTEMPTS           0
+  pong_miss                        1
+  room_not_found                   1

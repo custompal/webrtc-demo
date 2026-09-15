@@ -41,6 +41,21 @@ const (
 	// 信令丢 ICE 会导致建连失败，因此使用「等待 + 超时」而非「满即丢」。
 	DefaultSendTimeout = 5 * time.Second
 
+	// DefaultRoomGrace 是 **WS 瞬断后保留房间与席位的宽限期**（t67 新增，核心修复项）。
+	//
+	// 真机缺陷（2026-09-15）：移动网络瞬断会让一端 WS 断开，旧行为立即销毁房间并给
+	// 对端发 peerLeft，对端据此挂断 → 通话被迫中断，而媒体当时其实还是健康的。
+	//
+	// 取值依据（必须 > 客户端重连预算，见 reports/35-room-grace.md §5.1）：
+	//   - 客户端心跳 15s 间隔、pong 超时 5s（实测日志 ws_pong_timeout timeout_ms=5000）；
+	//   - 客户端断线后重连退避：首次重连 ~3s，失败后下一次 ~13s（实测日志）；
+	//   - 服务端读超时 PongWait=45s 也要被覆盖：静默掉线时服务端要 45s 才发现。
+	//   ⇒ 预算 ≈ 45s(读超时) + 15s(下一次重连) ≈ 60s，故默认 90s 留 50% 余量。
+	DefaultRoomGrace = 90 * time.Second
+
+	// MinRecommendedRoomGrace 报告/日志中用于提醒的下限（低于它会给不出足够重连窗口）。
+	MinRecommendedRoomGrace = 60 * time.Second
+
 	// PlaceholderHost 是 doc/01、doc/12 中的示例 IP，启动时若仍是它说明未按实际部署配置。
 	PlaceholderHost = "1.2.3.4"
 )
@@ -53,6 +68,7 @@ type Config struct {
 	TurnUsername   string        // TURN 用户名（全局共享）
 	TurnCredential string        // TURN 密码（全局共享）
 	RoomExpirySec  int           // 房间过期秒数
+	RoomGrace      time.Duration // WS 瞬断后保留房间/席位的宽限期（t67；<=0 表示关闭宽限期=旧行为）
 	MaxMessageSize int64         // 单条消息最大字节数
 	WriteTimeout   time.Duration // 单次 WebSocket 写超时
 	PongWait       time.Duration // 读超时（ping/pong 超时）
@@ -70,6 +86,7 @@ func Default() *Config {
 		TurnUsername:   DefaultTurnUsername,
 		TurnCredential: DefaultTurnCredential,
 		RoomExpirySec:  DefaultRoomExpirySec,
+		RoomGrace:      DefaultRoomGrace,
 		MaxMessageSize: MaxMessageSize,
 		WriteTimeout:   DefaultWriteTimeout,
 		PongWait:       DefaultPongWait,
@@ -115,6 +132,13 @@ func (c *Config) Validate() error {
 	if c.SendTimeout <= 0 {
 		return fmt.Errorf("发送等待超时必须为正数，收到 %s", c.SendTimeout)
 	}
+	if c.RoomGrace < 0 {
+		return fmt.Errorf("宽限期不能为负数，收到 %s（0 表示关闭宽限期，即 t67 之前的立即回收行为）", c.RoomGrace)
+	}
+	if c.RoomGrace > 0 && c.RoomGrace < MinRecommendedRoomGrace {
+		// 允许但告警：宽限期应大于客户端重连预算（见 DefaultRoomGrace 注释与
+		// reports/35-room-grace.md §5.1）；小于 60s 可能在客户端完成重连前就回收房间。
+	}
 	return nil
 }
 
@@ -129,6 +153,14 @@ func (c *Config) Warnings() []string {
 	}
 	if c.TurnCredential == DefaultTurnCredential {
 		w = append(w, "TURN 凭据仍是文档示例值 demo/demopass，公网部署建议通过 -user 更换")
+	}
+	if c.RoomGrace > 0 && c.RoomGrace < MinRecommendedRoomGrace {
+		w = append(w, fmt.Sprintf(
+			"宽限期 %s 低于建议下限 %s：移动网络瞬断后客户端可能来不及重连（预算 ≈ PongWait+重连退避），房间会被提前回收",
+			c.RoomGrace, MinRecommendedRoomGrace))
+	}
+	if c.RoomGrace <= 0 {
+		w = append(w, "宽限期已关闭（-room-grace 0）：WS 瞬断将立即回收房间并通知对端 peerLeft（t67 之前的旧行为）")
 	}
 	return w
 }
