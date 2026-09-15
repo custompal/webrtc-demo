@@ -155,6 +155,8 @@ class Vp9Encoder {
   int64_t last_pts_us_ = -1;
   bool force_key_frame_ = false;
   bool rotation_warned_ = false;
+  // 【t57】旋转模式日志只打一次（bake/passthrough）
+  bool rotation_mode_logged_ = false;
 
   // 最近一次 SetRates 的输入与输出（CSV/日志留痕）。
   LayerBitrate last_matrix_;

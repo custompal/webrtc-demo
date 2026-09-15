@@ -88,9 +88,6 @@ class Vp9VideoEncoder : VideoEncoder {
     @Volatile
     private var callback: VideoEncoder.Callback? = null
 
-    /** 编码结果直接缓冲（只扩容不缩容）。 */
-    private var dst: ByteBuffer = ByteBuffer.allocateDirect(MIN_DST_BYTES)
-
     /** 帧元数据：`[w, h, isKeyFrame, spatialIndex, temporalIndex, qp]`。 */
     private val meta = IntArray(6)
 
@@ -129,7 +126,6 @@ class Vp9VideoEncoder : VideoEncoder {
             return statusOf(rc)
         }
         handle = newHandle
-        dst = ByteBuffer.allocateDirect(max(MIN_DST_BYTES, startBitrateBps / 8 * 2).coerceAtMost(MAX_DST_BYTES))
         released = false
         AppLog.i(
             TAG,
@@ -341,20 +337,30 @@ class Vp9VideoEncoder : VideoEncoder {
     private fun deliverFrame(handle: Long, captureTimeNs: Long, cb: VideoEncoder.Callback): VideoCodecStatus {
         val size = NativeVp9Encoder.nativeGetEncodedFrameSize(handle)
         if (size <= 0) return VideoCodecStatus.NO_OUTPUT
-        if (size > dst.capacity()) {
-            if (size > MAX_DST_BYTES) {
-                AppLog.e(TAG, "encoded_frame_too_large", mapOf("bytes" to size.toString(), "max" to MAX_DST_BYTES.toString()))
-                return VideoCodecStatus.ERROR
-            }
-            dst = ByteBuffer.allocateDirect(size)
+        if (size > MAX_DST_BYTES) {
+            AppLog.e(TAG, "encoded_frame_too_large", mapOf("bytes" to size.toString(), "max" to MAX_DST_BYTES.toString()))
+            return VideoCodecStatus.ERROR
         }
-        val written = NativeVp9Encoder.nativeCopyEncodedFrame(handle, dst, meta)
+        // 【t57 卡顿根因】必须交给上层一个**容量恰好等于帧长度**的 direct buffer：
+        //   libwebrtc 的 sdk/android/src/jni/encoded_image.cc:JavaToNativeEncodedImage
+        //   取的是 GetDirectBufferCapacity() 作为 EncodedImage 长度（**完全不看
+        //   position/limit**）。旧代码复用 512 KiB 的 dst（只把 position/limit 裁到
+        //   written）⇒ 上层以为每帧 ≈512 KiB：
+        //     * FrameDropper::Fill(524288) 触发疯狂丢帧：真机 dh-b 出现 **812 次**
+        //       `Drop Frame: target_bitrate 2000000, input_frame_rate 30`
+        //       （2 Mbps/30fps 的预算只有 ~8.3 KB/帧，512 KiB = 63 倍过冲），
+        //       30 fps 输入最终只编出 0.25–0.45 fps（75 帧/298 s）＝用户看到的卡顿；
+        //     * RTP 按 512 KiB 打包（越界读复用缓冲）⇒ up_bps 3–5 Mbps 与
+        //       `encoded_frame bytes≈2.9 KB` 自相矛盾，对端也只能看到碎裂画面。
+        //   故每帧分配精确容量的 direct buffer（~3 KB/帧，30fps ≈ 90 KB/s，可忽略）。
+        val out = ByteBuffer.allocateDirect(size)
+        val written = NativeVp9Encoder.nativeCopyEncodedFrame(handle, out, meta)
         if (written <= 0) return if (written == 0) VideoCodecStatus.NO_OUTPUT else VideoCodecStatus.ERROR
-        dst.position(0)
-        dst.limit(written)
+        out.position(0)
+        out.limit(written)
 
         val builder = EncodedImage.builder()
-            .setBuffer(dst, null)
+            .setBuffer(out, null)
             .setEncodedWidth(meta[0])
             .setEncodedHeight(meta[1])
             .setCaptureTimeNs(captureTimeNs)
@@ -374,6 +380,7 @@ class Vp9VideoEncoder : VideoEncoder {
             "encoded_frame",
             mapOf(
                 "bytes" to written.toString(),
+                "cap" to out.capacity().toString(),
                 "w" to meta[0].toString(),
                 "h" to meta[1].toString(),
                 "key" to (meta[2] == 1).toString(),

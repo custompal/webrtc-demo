@@ -52,6 +52,16 @@ constexpr int kMaxDimension = 4096;  // 契约 §6.7 尺寸上限
 // 【t46】旋转暂存缓冲上限（防御性）：4096x4096 的 I420 = 25 MB；超过即视为尺寸异常。
 constexpr size_t kMaxRotateBufferBytes = 64u * 1024u * 1024u;
 constexpr int32_t kDefaultStartBps = 300 * 1000;
+// 【t57 旋转方向决定】是否把 frame.rotation_degrees 烘进像素（t46 路径）。
+//   真机证据（dh-a/dh-b）：对 rot=270 施加「顺时针 270°」后用户看到**对端逆时针 90°**
+//   ⇒ 送达编码器的 I420 **已经是显示方向**（SDK 的纹理→I420 转换已把方向烘进像素），
+//   再烘一次等于多转 270°(=逆时针 90°)。故默认**直通**：不旋转、不交换宽高，
+//   EncodedImage 仍 setRotation(0)（像素已正立，无需 CVO）。
+//   若后续真机复测发现对端变成「侧躺/竖躺」，把本常量改回 true 即恢复 t46
+//   「顺时针 rotation 度 + 90/270 尺寸交换」——rotator 的方向已由角点单测证明正确
+//   （encoder/i420_rotator_corners_host_test.cpp）。
+constexpr bool kBakeRotationInEncoder = false;
+
 constexpr int64_t kSlowFrameThresholdUs =
     33 * 1000;  // >33 ms 记 WARN（契约 §5.4）
 
@@ -518,10 +528,19 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
   //     R=270 ：顺时针 270°（旋转 + 宽高交换）
   //   只交换 g_w/g_h 而不旋转像素会得到**错乱图像**，故两者必须一起做。
   //   非法值（非 0/90/180/270）按 0 处理并只 WARN 一次（既有行为保持）。
-  const int rotation = NormalizeRotationDegrees(frame.rotation_degrees);
-  if (frame.rotation_degrees != rotation && !rotation_warned_) {
+  const int rotation =
+      kBakeRotationInEncoder ? NormalizeRotationDegrees(frame.rotation_degrees)
+                             : 0;
+  if (kBakeRotationInEncoder && frame.rotation_degrees != rotation &&
+      !rotation_warned_) {
     rotation_warned_ = true;
     NLOG_WARN(kTagEncoder, "encode_bad_rotation rot=%d treat_as=0",
+              frame.rotation_degrees);
+  }
+  if (!rotation_mode_logged_) {
+    rotation_mode_logged_ = true;
+    NLOG_INFO(kTagEncoder, "encoder_rotation_mode mode=%s rot=%d",
+              kBakeRotationInEncoder ? "bake" : "passthrough",
               frame.rotation_degrees);
   }
   // 旋转后的编码尺寸（90/270 交换；0/180 不变）
