@@ -63,28 +63,25 @@ int AlignEvenDown(int value) {
   return (value % 2 == 0) ? value : value - 1;
 }
 
-// 【t55】读取 CPU 能力并判断交付 libvpx 是否可安全使用（见
-// encoder/libvpx_cpu_guard.h 的根因说明）。只在首次调用时探测并缓存。
+// 【t56 起：仅诊断，不再拒绝】真机 SIGILL 的根因是**交付 libvpx 用了
+// `--disable-runtime-cpu-detect`**（t55 定位，见 encoder/libvpx_cpu_guard.h）。
+// t56 已把交付件重建为**开启运行时 CPU 探测**：rtcd 在运行期按 HWCAP 派发，
+// 缺 SVE/SVE2/dotprod/i8mm 时自动走 C/NEON 路径 ⇒ 「编译期假定不满足即 SIGILL」
+// 的风险已消除。故此处保留 CPU 能力探测**仅供诊断**（一条可 grep 的证据），
+// **不再据此拒绝自研编码器**（t55 的 encoder_cpu_incompatible 回退逻辑随之解除）。
 bool DeliveredLibvpxCpuOk() {
-  static const bool kCpuOk = [] {
+  static const bool kProbed = [] {
     const unsigned long hwcap = getauxval(AT_HWCAP);
     const unsigned long hwcap2 = getauxval(AT_HWCAP2);
     const LibvpxCpuStatus status = CheckLibvpxCpu(hwcap, hwcap2);
-    if (status == LibvpxCpuStatus::kOk) {
-      NLOG_INFO(kTagEncoder,
-                "encoder_cpu_ok hwcap=%lu hwcap2=%lu build=runtime_detect_off",
-                hwcap, hwcap2);
-    } else {
-      // 这一行是下一次真机复测的**判据**：出现它即证明本机 CPU 不满足交付件
-      // 的编译期 SIMD 假定（SVE/SVE2/dotprod/i8mm），而不是我们的配置有问题。
-      NLOG_ERROR(kTagEncoder,
-                 "encoder_cpu_incompatible reason=%s hwcap=%lu hwcap2=%lu "
-                 "need=sve+sve2+dotprod+i8mm",
-                 LibvpxCpuStatusName(status), hwcap, hwcap2);
-    }
-    return status == LibvpxCpuStatus::kOk;
+    NLOG_INFO(kTagEncoder,
+              "encoder_cpu_probe status=%s hwcap=%lu hwcap2=%lu "
+              "libvpx=runtime_cpu_detect_on",
+              LibvpxCpuStatusName(status), hwcap, hwcap2);
+    return true;
   }();
-  return kCpuOk;
+  (void)kProbed;
+  return true;
 }
 
 int64_t NowMicros() {

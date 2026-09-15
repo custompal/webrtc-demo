@@ -146,18 +146,9 @@ object AppConfig {
     /** 是否强制中继（§7.4 诊断开关）。 */
     fun forceRelay(context: Context): Boolean = icePolicy(context) == ICE_POLICY_RELAY
 
-    /**
-     * 是否使用默认（硬件）编码器做对照实验（§7.1）。
-     *
-     * 【t53 临时口径 · 2026-09-15 · captain】**默认值由 false 改为 true**：
-     * 自研 VP9 编码器（契约 §5 A1 路线）在真机首帧 `vpx_codec_encode()` 内导致进程死亡
-     * （两次修复尝试与证据见 `reports/20`、`reports/22`：`encode_vpx_begin` 有、`encode_vpx_done` 无），
-     * 而"默认编码器"路径已真机验证**稳定出画面**（`stats_sample … impl=libvpx`）。
-     * 在自研编码器修好前，交付默认走可用路径；诊断页仍可手动**关闭**该开关以复现自研路径。
-     * 自研编码器修复并通过真机复测后，应把此默认值改回 false。
-     */
+    /** 是否使用默认（硬件）编码器做对照实验（§7.1，默认关闭）。 */
     fun useDefaultEncoder(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_USE_DEFAULT_ENCODER, true)
+        prefs(context).getBoolean(KEY_USE_DEFAULT_ENCODER, false)
 
     /** 写入默认编码器开关。 */
     fun setUseDefaultEncoder(context: Context, enabled: Boolean) {
