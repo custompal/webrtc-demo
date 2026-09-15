@@ -35,6 +35,7 @@
 #include <string>
 
 #include "log/log_macros.h"
+#include "nat/stun_address.h"
 
 namespace webrtcdemo {
 namespace {
@@ -88,14 +89,26 @@ void WriteUint32(uint8_t* data, uint32_t value) {
   data[3] = static_cast<uint8_t>(value & 0xFF);
 }
 
-std::string IpToString(uint32_t network_order_ip) {
+// 【t54 修复】把「网络序的 4 个地址字节」格式化为 `a.b.c.d`。
+//
+// 【t54 修复】旧实现 `IpToString(uint32_t)` 要求「网络序整数」，而 STUN 属性里读
+// 出的 4 字节经 `ReadUint32()` 得到的是「大端数值」（人类书写顺序的整数）；把后者
+// 直接交给 `inet_ntop` 时，小端设备上读到的内存字节正好反转 ⇒ 真机打印出
+// 195.211.55.111（实际 111.55.211.195）。现在统一走**字节**接口：STUN 属性用
+// `DecodePlainAddress()/DecodeXorAddress()`（nat/stun_address.h）+ 本函数，
+// sockaddr（getsockname/recvfrom，本身即网络序）用 IpFromSockaddrInAddr()。
+std::string IpFromNetworkOrderBytes(const uint8_t* bytes) {
   char buffer[INET_ADDRSTRLEN] = {0};
-  struct in_addr address;
-  address.s_addr = network_order_ip;
-  if (inet_ntop(AF_INET, &address, buffer, sizeof(buffer)) == nullptr) {
+  if (!FormatIpv4(bytes, buffer, sizeof(buffer))) {
     return std::string("-");
   }
   return std::string(buffer);
+}
+
+// sockaddr_in::sin_addr.s_addr（网络序）→ 字符串。
+std::string IpFromSockaddrInAddr(const struct in_addr& addr) {
+  return IpFromNetworkOrderBytes(
+      reinterpret_cast<const uint8_t*>(&addr.s_addr));
 }
 
 // 生成 96 位事务 ID。这里不需要密码学强度，只需在本次探测内唯一且能匹配响应；
@@ -117,35 +130,39 @@ void FillTransactionId(uint8_t* transaction_id) {
 }
 
 // 解析 MAPPED-ADDRESS / RESPONSE-ORIGIN / OTHER-ADDRESS 这类“明文地址”属性。
+// 【t54 修复】改为按**字节**解码（DecodePlainAddress），不再经过
+// `IpToString(ReadUint32(value + 4))` 这条会反转 4 字节的整数路径。
 bool ParsePlainAddress(const uint8_t* value, size_t length, StunAddress* out) {
   if (value == nullptr || out == nullptr || length < 8) {
     return false;
   }
-  const uint8_t family = value[1];
-  if (family != 0x01) {
-    return false;  // 本项目只处理 IPv4
+  uint8_t bytes[4] = {0};
+  uint16_t port = 0;
+  if (!DecodePlainAddress(value, length, bytes, &port)) {
+    return false;  // 非 IPv4：本项目不处理
   }
-  out->port = ReadUint16(value + 2);
-  out->ip = IpToString(ReadUint32(value + 4));
+  out->port = port;
+  out->ip = IpFromNetworkOrderBytes(bytes);
   out->valid = !out->ip.empty() && out->ip != "-";
   return out->valid;
 }
 
 // 解析 XOR-MAPPED-ADDRESS（RFC 5389 §15.2）。
+// 【t54 修复】改为**逐字节**与 cookie 异或（DecodeXorAddress），
+// 端口与地址都按网络序解读，不做任何整数/主机序转换。
 bool ParseXorMappedAddress(const uint8_t* value, size_t length,
                            const uint8_t* transaction_id, StunAddress* out) {
   if (value == nullptr || out == nullptr || transaction_id == nullptr ||
       length < 8) {
     return false;
   }
-  const uint8_t family = value[1];
-  if (family != 0x01) {
-    return false;
+  uint8_t bytes[4] = {0};
+  uint16_t port = 0;
+  if (!DecodeXorAddress(value, length, bytes, &port)) {
+    return false;  // 非 IPv4：本项目不处理
   }
-  const uint16_t xor_port = static_cast<uint16_t>(kMagicCookie >> 16) & 0xFFFFu;
-  out->port = static_cast<uint16_t>(ReadUint16(value + 2) ^ xor_port);
-  const uint32_t xor_ip = ReadUint32(value + 4) ^ kMagicCookie;
-  out->ip = IpToString(xor_ip);
+  out->port = port;
+  out->ip = IpFromNetworkOrderBytes(bytes);
   out->valid = !out->ip.empty() && out->ip != "-";
   return out->valid;
 }
@@ -206,7 +223,7 @@ bool StunClient::Bind(uint16_t local_port, std::string* error) {
   if (getsockname(fd_, reinterpret_cast<struct sockaddr*>(&actual),
                   &actual_length) == 0) {
     local_port_ = ntohs(actual.sin_port);
-    local_address_.ip = IpToString(actual.sin_addr.s_addr);
+    local_address_.ip = IpFromSockaddrInAddr(actual.sin_addr);
     local_address_.port = local_port_;
     local_address_.valid = local_address_.ip != "-";
   }
@@ -240,7 +257,7 @@ bool StunClient::DiscoverLocalAddress(const std::string& server_host,
     memset(&local, 0, sizeof(local));
     if (getsockname(probe_fd, reinterpret_cast<struct sockaddr*>(&local),
                     &local_length) == 0) {
-      const std::string ip = IpToString(local.sin_addr.s_addr);
+      const std::string ip = IpFromSockaddrInAddr(local.sin_addr);
       if (!ip.empty() && ip != "-" && ip != "0.0.0.0") {
         local_address_.ip = ip;
         local_address_.valid = true;
@@ -382,7 +399,7 @@ StunBindingResult StunClient::SendBinding(const std::string& server_host,
 
     result.received = true;
     result.rtt_ms = NowMillis() - send_ms;
-    result.source.ip = IpToString(from.sin_addr.s_addr);
+    result.source.ip = IpFromSockaddrInAddr(from.sin_addr);
     result.source.port = ntohs(from.sin_port);
     result.source.valid = result.source.ip != "-";
     if (message_type == kBindingErrorResponse) {
