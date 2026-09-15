@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -94,6 +95,9 @@ fun CallScreen(
     viewModel: CallViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // 【t59】连接状态（connecting/connected/failed + 已用时长 + 是否可重试）：
+    // 与 `state.isConnecting` 不同，它是"是否真的连上"的唯一判定（`isConnecting` 也由它派生）。
+    val conn by viewModel.connStatus.collectAsStateWithLifecycle()
     val localTrack by viewModel.localVideoTrack.collectAsStateWithLifecycle()
     val remoteTrack by viewModel.remoteVideoTrack.collectAsStateWithLifecycle()
     val navigateHome by viewModel.navigateHome.collectAsStateWithLifecycle()
@@ -287,6 +291,13 @@ fun CallScreen(
             }
         }
 
+        // 【t59】远端区域的"非实时"遮罩：连接未建立 / 没有新鲜远端帧时，**压暗远端画面**，
+        // 杜绝"把最后一帧静止帧当成已出画面"（SurfaceViewRenderer 在 RTP 停止后会把最后一帧留在屏幕上）。
+        // 位置放在本地小窗**之前** ⇒ 不会挡住本地预览。
+        if (conn.remoteDimmed) {
+            Box(modifier = Modifier.fillMaxSize().background(Color(0xB3000000)))
+        }
+
         // 本地视频（右上角小窗）
         // 注：`Modifier.align` 是 BoxScope 扩展，必须在 `key {}` 之外求值（key 的 block 无 BoxScope 接收者）。
         val localViewModifier = Modifier
@@ -434,8 +445,11 @@ fun CallScreen(
             }
         }
 
-        // 连接中遮罩（doc/10 §3.3）
-        if (state.isConnecting) {
+        // 【t59】连接状态卡（替换原先只看 `state.isConnecting` 的遮罩）
+        //   * 未连上（含"连上又断/画面停滞"）⇒ 明确的连接中状态 + **已用/已中断时长**；
+        //   * 失败 ⇒ 可操作失败提示 + **一键重试**（走 ViewModel 的世代化新会话，见 retryConnection）；
+        //   * 已连上但还没收到画面 ⇒ 顶部小提示（不遮挡画面）。
+        if (conn.showOverlay) {
             Column(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -444,14 +458,44 @@ fun CallScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                CircularProgressIndicator(modifier = Modifier.size(36.dp), color = Color.White)
+                if (conn.phase == ConnPhase.CONNECTING) {
+                    CircularProgressIndicator(modifier = Modifier.size(36.dp), color = Color.White)
+                }
                 Text(
-                    text = stringResource(R.string.call_connecting),
-                    color = Color.White,
+                    text = conn.title,
+                    color = if (conn.phase == ConnPhase.FAILED) Color(0xFFFF8A80) else Color.White,
                     style = MaterialTheme.typography.titleMedium,
                 )
+                Text(text = conn.detail, color = Color.White, style = MaterialTheme.typography.bodySmall)
+                if (conn.canRetry) {
+                    // 一键重试：新世代会话（旧 PC/轨道/统计循环先关掉）
+                    Button(
+                        onClick = { viewModel.retryConnection() },
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Text(text = RETRY_LABEL)
+                    }
+                }
                 Text(text = roomId, color = Color.White, style = MaterialTheme.typography.bodyMedium)
             }
+        } else if (!conn.remoteFrameReady) {
+            // 已连上但尚未收到远端画面：给一条不遮挡画面的提示（避免用户以为"卡住了"）
+            Text(
+                text = WAITING_REMOTE_FRAME_NOTICE,
+                color = Color.White,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 12.dp)
+                    .background(Color(0x99000000), MaterialTheme.shapes.small)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+            )
         }
     }
 }
+
+/** 【t59】一键重试按钮文案（inScope 不含 `res/values/strings.xml`，故与 ViewModel 的提示常量一致内联）。 */
+private const val RETRY_LABEL = "点击重试"
+
+/** 【t59】已连上、等待远端画面时的提示。 */
+private const val WAITING_REMOTE_FRAME_NOTICE = "已连接，等待对端画面…"

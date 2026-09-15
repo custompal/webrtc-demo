@@ -128,6 +128,34 @@ class CallViewModel(application: Application) :
     @Volatile
     private var natTypeSent = false
 
+    // ===================== t59：连接状态可见性 / 一键重试 =====================
+    // 真机 4G↔WiFi 缺陷（reports/29-connect-state-ui.md §1）：连接**从未建立**（无选中候选对，
+    // `stats_sample … local=- mode=- remote=-`），但界面只把远端画面的最后一帧（静止帧）留在屏幕上，
+    // "连接中"遮罩又被"编码器已在跑"（`impl=SelfVp9Libvpx`）错误关闭 ⇒ 用户看不到任何状态。
+
+    /** 连接状态机（纯 Kotlin，可 JVM 单测：ConnectionStatusTrackerTest）。 */
+    private val connTracker = ConnectionStatusTracker()
+
+    private val _connStatus = MutableStateFlow(ConnStatus())
+
+    /**
+     * 连接状态（t59）：`connecting`/`connected`/`failed` + 已用时长 + 是否可重试。
+     *
+     * 与 [CallUiState.isConnecting] 的关系：本字段是**唯一真源**，`isConnecting` 由它派生
+     * （见 [publishConnStatus]），UI 用本字段渲染状态卡与重试按钮。
+     */
+    val connStatus: StateFlow<ConnStatus> = _connStatus.asStateFlow()
+
+    /** 最近一次 stats（`no_selected_pair` 诊断要带上"当时到底看到了什么"）。 */
+    @Volatile
+    private var lastStats: StatsSnapshot? = null
+
+    /** 上一次 `no_selected_pair` 落盘时刻（按 [NO_PAIR_LOG_INTERVAL_MS] 限频）。 */
+    private var lastNoPairLogMs = 0L
+
+    /** 重试后是否有"延迟重发 offer"待执行（收到对端 offer/answer 即取消）。 */
+    private var retryReofferPending = false
+
     init {
         // 编码目标码率：来自 Vp9VideoEncoder.setRateAllocation（§7.4，本地直通）
         viewModelScope.launch {
@@ -157,6 +185,17 @@ class CallViewModel(application: Application) :
         }
         viewModelScope.launch {
             SignalingIdentity.remotePeerId.collect { id -> _uiState.update { it.copy(remotePeerId = id) } }
+        }
+
+        // 【t59】连接状态心跳（1 s）：推进"已等待 N 秒"，并在阈值（15 s）到达时把状态推进到
+        // `FAILED(TIMEOUT_NO_PAIR)` ⇒ 界面显示可操作失败提示 + 一键重试（见 CallScreen）。
+        // 旧实现没有任何"连接是否真的建立"的计时，因此既能一直显示静止帧、也不会给出失败提示。
+        viewModelScope.launch {
+            while (true) {
+                delay(CONN_TICK_MS)
+                if (callEnded || !connTracker.active) continue
+                publishConnStatus(connTracker.onTick(System.currentTimeMillis()))
+            }
         }
     }
 
@@ -192,16 +231,74 @@ class CallViewModel(application: Application) :
             )
             return
         }
+        beginGeneration(roomId, role, REASON_INIT)
+    }
+
+    /**
+     * 一键重试（t59）：连接失败后由用户点击触发。
+     *
+     * 重试必须走 t53 的**世代化**路径（`slot.beginCall` ⇒ 上一代仍活跃则先 `close()`），
+     * 即**新建 `CallSession` + 新建 `PeerConnection`**，绝不复用旧 PC/轨道/编码器状态 ——
+     * 效果等价于"挂断后重新进入房间"，但**保留房间与信令连接**（不 `leave()`，避免对端收到
+     * `peerLeft` 而被连带挂断）。
+     *
+     * 重试后如何让协商重新开始，见 [retryNegotiationFor] 与 [beginGeneration]：
+     * host 立刻重发 offer；joiner **延迟**重发（避免与 host 的 offer 相撞）。
+     */
+    fun retryConnection() {
+        val room = _uiState.value.roomId
+        val currentRole = role
+        val status = connStatus.value
+        if (callEnded || room.isBlank() || currentRole.isBlank()) {
+            AppLog.w(
+                TAG,
+                "retry_invoked",
+                mapOf(
+                    "result" to "ignored",
+                    "reason" to "no_active_call",
+                    "room" to room,
+                    "role" to currentRole,
+                    "seq" to callSeq.toString(),
+                ),
+            )
+            return
+        }
+        AppLog.i(
+            TAG,
+            "retry_invoked",
+            mapOf(
+                "room" to room,
+                "role" to currentRole,
+                "phase" to status.phase.name.lowercase(),
+                "reason" to status.reason.name.lowercase(),
+                "elapsed_ms" to status.elapsedMs.toString(),
+                "retry" to (status.retryCount + 1).toString(),
+                "seq" to callSeq.toString(),
+                "session" to "s$sessionId",
+            ),
+        )
+        beginGeneration(room, currentRole, REASON_RETRY)
+    }
+
+    /**
+     * 开启新一代通话（t53 世代化 + t59 连接状态机复位）。
+     *
+     * @param reason [REASON_INIT]（首次进入通话）或 [REASON_RETRY]（一键重试）。
+     */
+    private fun beginGeneration(roomId: String, role: String, reason: String) {
+        // 【t59】重试前先记住"对端是否已在房中"：releaseSession 会复位 peerResponseSeen，
+        // 而"重试后要不要由本端重发 offer"完全取决于这个事实。
+        val peerKnownBefore = peerResponseSeen || _uiState.value.remotePeerId.isNotBlank()
         val staleActive = slot.beginCall(roomId, role)
         callSeq = CALL_SEQ.incrementAndGet()
         if (staleActive) {
             AppLog.w(
                 TAG,
-                "call_reinit",
+                if (reason == REASON_RETRY) "session_retry" else "call_reinit",
                 mapOf("seq" to callSeq.toString(), "room" to roomId, "role" to role),
             )
             // 旧会话必须被关闭：它可能仍在跑 stats 采样、仍持有 PeerConnection
-            releaseSession("reinit")
+            releaseSession(reason)
         }
         // 【t53】新一代通话必须把"上一次通话的遗留闸门/一次性标记"全部复位：
         // 旧实现靠"每次新的 ViewModel 实例"来保证这些字段是干净的，一旦同一 VM 被复用，
@@ -214,9 +311,20 @@ class CallViewModel(application: Application) :
         _uiState.update {
             it.copy(roomId = roomId, role = role, isConnecting = true, error = null)
         }
+
+        // 【t59】连接状态机复位：首次进入 = 开始计时；重试 = 重试次数 +1 且重新计时。
+        // `publishConnStatus` 是 `CallUiState.isConnecting` 的**唯一写入方**（见其 KDoc）。
+        val startedAt = System.currentTimeMillis()
+        publishConnStatus(
+            if (reason == REASON_RETRY) connTracker.onRetry(startedAt) else connTracker.onCallStarted(startedAt),
+        )
+        lastNoPairLogMs = 0L
         val app = getApplication<Application>()
 
-        SignalingIdentity.reset()
+        // 【t59】重试不重置信令身份：房间与对端都没变，清掉反而会让 UI 丢失对端 ID
+        if (reason != REASON_RETRY) {
+            SignalingIdentity.reset()
+        }
         val connection = SignalingHolder.getOrCreate(AppConfig.signalingUrl(app))
         connection.listener = this
         client = connection
@@ -226,6 +334,7 @@ class CallViewModel(application: Application) :
             val detail = WebRtcEngine.lastFailureDetail()
             // 【t53】初始化失败必须结束本世代，否则 `decideInit` 会把"同房间重试"判成重复调用而拒绝
             slot.endCall()
+            publishConnStatus(connTracker.onSessionFailed(System.currentTimeMillis()))
             fail(
                 if (detail.isNullOrBlank()) {
                     "WebRTC 引擎初始化失败（native 库缺失或初始化异常）"
@@ -239,9 +348,45 @@ class CallViewModel(application: Application) :
         val capture = WebRtcEngine.mediaCapture()
         if (factory == null || capture == null) {
             slot.endCall()
+            publishConnStatus(connTracker.onSessionFailed(System.currentTimeMillis()))
             fail("WebRTC 引擎组件缺失")
             return
         }
+
+        // 【t59】重试时的重新协商准备（必须在 `start()` 之前 —— `onReady()` 会立刻尝试发 offer）
+        if (reason == REASON_RETRY) {
+            retryReofferPending = false
+            when (retryNegotiationFor(role, peerKnownBefore, sawRemoteNegotiationSinceRetry = false)) {
+                RetryNegotiation.OFFER_NOW -> {
+                    // host：沿用既有 `peerJoined → createOffer` 正常路径
+                    peerJoined = true
+                    AppLog.i(
+                        TAG,
+                        "retry_reoffer",
+                        mapOf(
+                            "role" to role,
+                            "mode" to "immediate",
+                            "peer_known" to "true",
+                            "seq" to callSeq.toString(),
+                        ),
+                    )
+                }
+
+                RetryNegotiation.OFFER_DELAYED -> AppLog.i(
+                    TAG,
+                    "retry_reoffer",
+                    mapOf(
+                        "role" to role,
+                        "mode" to "delayed",
+                        "delay_ms" to RETRY_REOFFER_DELAY_MS.toString(),
+                        "seq" to callSeq.toString(),
+                    ),
+                )
+
+                RetryNegotiation.NONE -> Unit
+            }
+        }
+
         // 【t53】**无条件**新建会话：绝不复用 `session` 字段里的旧对象
         val callSession = CallSession(
             factory = factory,
@@ -258,6 +403,7 @@ class CallViewModel(application: Application) :
             // 后续 offer/answer 会走进"看起来有会话、实际静默丢弃"的路径（正是真机缺陷①的形态）。
             slot.endCall()
             releaseSession("start_failed")
+            publishConnStatus(connTracker.onSessionFailed(System.currentTimeMillis()))
             fail("创建 PeerConnection 失败")
             return
         }
@@ -267,12 +413,20 @@ class CallViewModel(application: Application) :
         flushPendingRemoteQueue(callSession)
         // 若 NAT 探测在进入通话页之前就完成了（常见：host 在等待对端时探测完），这里补发一次
         maybeSendNatType()
+        // 【t59】joiner 侧延迟重发 offer（给 host 的 offer 让路，避免双方同时 re-offer）
+        if (reason == REASON_RETRY &&
+            retryNegotiationFor(role, peerKnownBefore, sawRemoteNegotiationSinceRetry = false) ==
+            RetryNegotiation.OFFER_DELAYED
+        ) {
+            scheduleRetryReoffer()
+        }
         AppLog.i(
             TAG,
             "call_init",
             mapOf(
                 "room" to roomId,
                 "role" to role,
+                "reason" to reason,
                 "seq" to callSeq.toString(),
                 "session" to "s$sessionId",
                 "pc_ready" to slot.peerReady.toString(),
@@ -310,6 +464,8 @@ class CallViewModel(application: Application) :
         // 【t53】会话释放纪律：旧 CallSession 必须 close()（PC/统计循环/看门狗一并停）
         slot.endCall()
         releaseSession("hangup")
+        // 【t59】停止连接状态心跳
+        connTracker.onCallEnded()
         IceServerCache.clear()
         NatTypeRepository.cancel()
         SignalingHolder.release()
@@ -321,9 +477,29 @@ class CallViewModel(application: Application) :
         _navigateHome.value = false
     }
 
-    /** 远端首帧（SurfaceViewRenderer.onFirstFrameRendered，§7.3）。 */
+    /**
+     * 远端首帧（SurfaceViewRenderer.onFirstFrameRendered，§7.3）。
+     *
+     * 【t59】连接未建立期间**不得**把这一帧当作"已出画面"：该回调只说明解码器吐过一帧，
+     * 真机缺陷里连接从未建立（无选中候选对），画面其实是上一个连接的最后一帧（静止帧）。
+     * 因此这里先做连通性闸门，未连上则只落盘不上报 UI。
+     */
     fun onRemoteFirstFrame() {
-        _uiState.update { it.copy(isRemoteVideoReady = true) }
+        val status = connStatus.value
+        if (status.phase != ConnPhase.CONNECTED) {
+            AppLog.w(
+                TAG,
+                "remote_frame_ignored",
+                mapOf(
+                    "reason" to "not_connected",
+                    "phase" to status.phase.name.lowercase(),
+                    "seq" to callSeq.toString(),
+                    "session" to "s$sessionId",
+                ),
+            )
+            return
+        }
+        publishConnStatus(connTracker.onRemoteFrame(System.currentTimeMillis()))
     }
 
     /**
@@ -356,12 +532,9 @@ class CallViewModel(application: Application) :
     // ============================ 信令回调 ============================
 
     override fun onStateChanged(state: ConnectionState) {
-        _uiState.update {
-            it.copy(connectionState = state.label, isConnecting = state == ConnectionState.WAITING)
-        }
-        if (state == ConnectionState.IN_CALL) {
-            _uiState.update { it.copy(isConnecting = false) }
-        }
+        // 【t59】只更新信令侧展示文案：`isConnecting`（连接中遮罩）已改由连接状态机唯一拥有 ——
+        // 信令到了 IN_CALL **不等于**媒体连通（真机缺陷：信令正常但无选中候选对）。
+        _uiState.update { it.copy(connectionState = state.label) }
         // 通话已建立后落到 DISCONNECTED，且不是用户主动挂断 ⇒ 通话已**终态结束**
         // （重连 3 次 / 重连后 join 重试 10 次均耗尽，或服务端终态码被抑制重连）。
         // 按 captain 2026-09-13 要求：**干脆回首页 + 明确提示，不留半死不活的通话界面**。
@@ -425,12 +598,16 @@ class CallViewModel(application: Application) :
                 } else {
                     current.onRemoteOffer(message.sdp)
                 }
+                // 【t59】对端已经主动发起协商 ⇒ 取消本端"重试后延迟重发 offer"（避免 glare）
+                retryReofferPending = false
                 // joiner：收到 offer 后开始等待远端候选（20 s 内无 ⇒ UI 明确提示）
                 armPeerResponseWatchdog("offer_received")
             }
 
             is SignalingMessage.Answer -> {
                 peerResponseSeen = true
+                // 【t59】同上：对端已回应 ⇒ 无需本端再发 offer
+                retryReofferPending = false
                 val current = session
                 if (current == null) {
                     val queued = pendingRemote.enqueueAnswer(message.sdp)
@@ -513,7 +690,9 @@ class CallViewModel(application: Application) :
         sessionReady = true
         // 【t51】媒体链就绪即视为"对端有响应"，解除对端无响应看门狗（避免误报）
         peerResponseSeen = true
-        _uiState.update { it.copy(isConnecting = false) }
+        // 【t59 根因修复】这里**删除**了旧的 `_uiState.update { isConnecting = false }`：
+        // `onReady()` 是"本地媒体链就绪"（PC 已建、本地轨已挂），**不是**"已连上对端"。
+        // 旧代码在进房约 0.4 s 后就关掉"连接中"遮罩，正是"界面没有任何状态提示"的根因之一。
         maybeCreateOffer()
     }
 
@@ -523,9 +702,20 @@ class CallViewModel(application: Application) :
 
     override fun onIceEvent(event: IceEvent) {
         _iceEvents.update { current -> current + event }
+        // 【t59】把 ICE/传输状态变化接入 UI 连接状态机 —— 旧实现只把事件堆进诊断列表，
+        // 因此"曾连上又断掉"（真机 `pc_ice_connection_state state=DISCONNECTED`）对主界面完全不可见。
+        if (event.type == IceEventType.ICE_CONNECTION) {
+            val now = System.currentTimeMillis()
+            when (parseConnSignal(event.detail)) {
+                ConnSignal.CONNECTED -> publishConnStatus(connTracker.onTransportConnected(now))
+                ConnSignal.DISCONNECTED, ConnSignal.FAILED -> publishConnStatus(connTracker.onConnectionLost(now))
+                ConnSignal.IN_PROGRESS, ConnSignal.IGNORED -> Unit
+            }
+        }
     }
 
     override fun onStats(snapshot: StatsSnapshot) {
+        lastStats = snapshot
         _uiState.update {
             it.copy(
                 connectionType = snapshot.connectionType,
@@ -535,8 +725,20 @@ class CallViewModel(application: Application) :
                 encoderImplementation = snapshot.encoderImplementation,
             )
         }
-        if (snapshot.connectionType.isNotEmpty() || snapshot.encoderImplementation.isNotEmpty()) {
-            _uiState.update { it.copy(isConnecting = false) }
+        // 【t59 根因修复】旧代码是：
+        //     if (snapshot.connectionType.isNotEmpty() || snapshot.encoderImplementation.isNotEmpty())
+        //         _uiState.update { it.copy(isConnecting = false) }
+        // `encoderImplementation`（真机 `SelfVp9Libvpx`）在**没有选中候选对**时同样非空
+        // （编码器照样被驱动、`up_bps` 照样增长），于是"连接中"遮罩在进房约 1 s 后就被错误关闭，
+        // 用户只看到一帧静止画面且没有任何提示。现在只认：
+        //   ① `connectionType` 非空（`mode=P2P|RELAY` = 有选中的候选对）；
+        //   ② `down_bps > 0`（**下行字节**是唯一能证明路径打通的信号；无候选对时 `up_bps` 仍会
+        //      增长到 ≈49 kbps，绝不可用作判活）。
+        val now = System.currentTimeMillis()
+        if (snapshot.connectionType.isNotEmpty()) {
+            publishConnStatus(connTracker.onSelectedPair(now))
+        } else if (snapshot.downBitrateBps > 0) {
+            publishConnStatus(connTracker.onRemoteFrame(now))
         }
     }
 
@@ -613,6 +815,111 @@ class CallViewModel(application: Application) :
         armPeerResponseWatchdog("offer_sent")
     }
 
+    // ===================== t59：连接状态发布 / 诊断 / 重试重协商 =====================
+
+    /**
+     * 发布连接状态（**`isConnecting` 的唯一写入方**）。
+     *
+     * 做的事：
+     *  1. 更新 [connStatus]；
+     *  2. 由状态派生 `isConnecting`（CONNECTING ⇒ true）与 `isRemoteVideoReady`
+     *     （只有"已连上**且**画面新鲜"才为真 —— 静止帧绝不算已出画面）；
+     *  3. 阶段/原因变化时落盘 `ui_conn_state`（阈值 DEBUG 下必落盘）；
+     *  4. 停在"没有选中候选对"的失败态时按 [NO_PAIR_LOG_INTERVAL_MS] 限频落盘 `no_selected_pair`。
+     */
+    private fun publishConnStatus(status: ConnStatus) {
+        val previous = _connStatus.value
+        _connStatus.value = status
+        _uiState.update {
+            it.copy(
+                isConnecting = status.phase == ConnPhase.CONNECTING,
+                isRemoteVideoReady = status.phase == ConnPhase.CONNECTED && status.remoteFrameReady,
+            )
+        }
+        if (status.phase != previous.phase || status.reason != previous.reason) {
+            AppLog.i(
+                TAG,
+                "ui_conn_state",
+                mapOf(
+                    "phase" to status.phase.name.lowercase(),
+                    "reason" to status.reason.name.lowercase(),
+                    "elapsed_ms" to status.elapsedMs.toString(),
+                    "pair" to status.hasSelectedPair.toString(),
+                    "frame" to status.remoteFrameReady.toString(),
+                    "stalled" to status.remoteFrameStalled.toString(),
+                    "retry" to status.retryCount.toString(),
+                    "seq" to callSeq.toString(),
+                    "session" to "s$sessionId",
+                ),
+            )
+        }
+        if (status.phase == ConnPhase.FAILED && status.reason == ConnReason.TIMEOUT_NO_PAIR) {
+            maybeLogNoSelectedPair(status)
+        }
+    }
+
+    /**
+     * 落盘"没有选中的候选对"诊断（`no_selected_pair after_ms=N`）。
+     *
+     * 字段刻意与真机定因时用到的口径一致（`impl`/`avail_bps`/`up_bps`/`down_bps`），
+     * 下一轮复测可一眼确认"编码器在跑但链路没通"。
+     */
+    private fun maybeLogNoSelectedPair(status: ConnStatus) {
+        val now = System.currentTimeMillis()
+        if (lastNoPairLogMs != 0L && now - lastNoPairLogMs < NO_PAIR_LOG_INTERVAL_MS) return
+        lastNoPairLogMs = now
+        val stats = lastStats
+        AppLog.w(
+            TAG,
+            "no_selected_pair",
+            mapOf(
+                "after_ms" to status.elapsedMs.toString(),
+                "pair" to "false",
+                "impl" to (stats?.encoderImplementation ?: "-"),
+                "avail_bps" to (stats?.availableOutgoingBitrateBps?.toString() ?: "-"),
+                "up_bps" to (stats?.upBitrateBps?.toString() ?: "-"),
+                "down_bps" to (stats?.downBitrateBps?.toString() ?: "-"),
+                "local" to (stats?.localCandidateType ?: "-"),
+                "remote" to (stats?.remoteCandidateType ?: "-"),
+                "seq" to callSeq.toString(),
+                "session" to "s$sessionId",
+            ),
+        )
+    }
+
+    /**
+     * 重试后**延迟**重发 offer（joiner 侧）。
+     *
+     * 为什么需要：对端已在房中且不会因为本端重建会话而重新发 offer；joiner 若不主动重发，
+     * 会一直停在"没连上"的等待态。延迟 [RETRY_REOFFER_DELAY_MS] 是为了给 host 的 offer 让路，
+     * 收到对端 offer/answer 即取消（见 [retryReofferPending] 的两处取消点），避免 glare。
+     */
+    private fun scheduleRetryReoffer() {
+        retryReofferPending = true
+        val scheduledSeq = callSeq
+        viewModelScope.launch {
+            delay(RETRY_REOFFER_DELAY_MS)
+            if (!retryReofferPending || callEnded || scheduledSeq != callSeq) return@launch
+            retryReofferPending = false
+            val current = session
+            if (current == null || current.isClosed() || connStatus.value.phase == ConnPhase.CONNECTED) {
+                return@launch
+            }
+            AppLog.i(
+                TAG,
+                "retry_reoffer_run",
+                mapOf(
+                    "role" to role,
+                    "delay_ms" to RETRY_REOFFER_DELAY_MS.toString(),
+                    "seq" to scheduledSeq.toString(),
+                    "session" to "s$sessionId",
+                ),
+            )
+            current.createOffer()
+            armPeerResponseWatchdog("retry_reoffer")
+        }
+    }
+
     /**
      * t51：把 `session == null` 窗口内到达的远端消息**按到达顺序**回放给刚建好的会话。
      *
@@ -667,16 +974,19 @@ class CallViewModel(application: Application) :
      * t51：**对端无响应看门狗**。
      *
      * 触发条件：已发出/收到 offer，20 s（[PEER_RESPONSE_TIMEOUT_MS]）内既未收到 answer、
-     * 未收到任何远端候选、媒体也未就绪（`isConnecting` 仍为 true）且未挂断。
+     * 未收到任何远端候选、连接也未建立且未挂断。
      * 行为：写 WARN `answer_timeout` + 通过 [onError] 把明确文案透传到通话页
      * （旧版本用户只能看到"一直正在连接会议…"，无从判断是哪一侧的问题）。
+     *
+     * 【t59】判定基准由 `isConnecting` 改为"连接未建立"：t59 后 `isConnecting` 由连接状态机拥有，
+     * 15 s 超时会把它置 false —— 若继续用它判活，20 s 的对端无响应提示将永远不触发（行为回退）。
      */
     private fun armPeerResponseWatchdog(reason: String) {
         if (peerWatchdogArmed) return
         peerWatchdogArmed = true
         viewModelScope.launch {
             delay(PEER_RESPONSE_TIMEOUT_MS)
-            val stillWaiting = _uiState.value.isConnecting
+            val stillWaiting = connStatus.value.phase != ConnPhase.CONNECTED
             if (!peerResponseSeen && !callEnded && stillWaiting) {
                 AppLog.w(
                     TAG,
@@ -728,6 +1038,21 @@ class CallViewModel(application: Application) :
 
         /** 房间已满：重连语境下由 SignalingClient 有界重试，UI 只提示"重试中"。 */
         const val CODE_ROOM_FULL = "ROOM_FULL"
+
+        /** 【t59】连接状态心跳间隔（推进"已等待 N 秒"与超时判定）。 */
+        const val CONN_TICK_MS = 1_000L
+
+        /** 【t59】`no_selected_pair` 诊断的限频间隔（首次在超时瞬间落盘）。 */
+        const val NO_PAIR_LOG_INTERVAL_MS = 15_000L
+
+        /** 【t59】joiner 重试后延迟重发 offer 的等待时长（给 host 的 offer 让路）。 */
+        const val RETRY_REOFFER_DELAY_MS = 1_200L
+
+        /** 【t53/t59】世代化开启原因：首次进入通话。 */
+        const val REASON_INIT = "init"
+
+        /** 【t53/t59】世代化开启原因：用户一键重试。 */
+        const val REASON_RETRY = "retry"
 
         /**
          * 终态结束提示（doc/14 §8.5 指定的文案）。
