@@ -24,6 +24,14 @@ package com.example.webrtcdemo.ui.call
 
 /** 通话连接阶段（UI 可见）。 */
 enum class ConnPhase {
+    /**
+     * 【t64】等待对端加入：房间已建立但**对端还没来**。
+     *
+     * 此态**不计时**（不推进 `elapsedMs`）、**不给重试/失败** —— 语义上"还没人到，谈不上连接失败"。
+     * 由 `peerJoined`（host）/ `joined`（joiner）/ 首个 `offer` 触发切换到 [CONNECTING] 并开始两档计时。
+     */
+    WAITING_PEER,
+
     /** 尚未连上（含"曾连上又断了、正在自动重连"）。 */
     CONNECTING,
 
@@ -170,6 +178,8 @@ data class ConnStatus(
     val title: String
         get() = when (phase) {
             ConnPhase.CONNECTED -> ""
+            // 【t64】等待对端：不出现"连接中/失败"字样（用户需求：等待期不提示在等待并重试）
+            ConnPhase.WAITING_PEER -> "等待对方加入"
             ConnPhase.CONNECTING -> when (reason) {
                 ConnReason.CONNECTION_LOST -> "连接中断，正在重连…"
                 ConnReason.REMOTE_FRAME_STALLED -> "画面已中断，正在恢复…"
@@ -190,6 +200,8 @@ data class ConnStatus(
     val detail: String
         get() = when (phase) {
             ConnPhase.CONNECTED -> ""
+            // 【t64】等待期**不提时长、不提重试/失败**（计时器尚未启动）
+            ConnPhase.WAITING_PEER -> "对方进入房间后自动开始建立连接"
             ConnPhase.CONNECTING -> when (reason) {
                 ConnReason.CONNECTION_LOST -> "已中断 $sinceLossSeconds 秒，等待自动恢复"
                 ConnReason.REMOTE_FRAME_STALLED -> "已中断 $sinceLossSeconds 秒，等待画面恢复"
@@ -365,9 +377,77 @@ class ConnectionStatusTracker(
     /** 【t63】停滞去抖：连续多少个 tick 超过阈值才判停滞。 */
     private var staleTicks = 0
 
+    /** 【t64】等待态起点（仅诊断用）。 */
+    private var waitingSinceMs = 0L
+
+    /** 【t64】两档重试计时是否已启动（等待期必须为 false）。 */
+    private var retryClockRunning = false
+
+    /**
+     * 【t64】进入/复位到"等待对端加入"态。
+     *
+     * 用途：① 房主创建房间后（还没人到）；② 收到 `peerLeft`（对端走了）后复位。
+     * 语义：**重试计时器归零并停表** —— `elapsedMs=0`、`retryCount=0`、`retryHintReached=false`，
+     * `onTick` 在此态**不推进任何超时判定**，界面因此不会出现"连接中/失败/点击重试"。
+     */
+    fun onWaitingPeer(nowMs: Long): ConnStatus {
+        active = true
+        waitingSinceMs = nowMs
+        startedAtMs = 0L
+        lastFreshMediaMs = 0L
+        hasFreshMedia = false
+        lostAtMs = 0L
+        gatheringCompleteAtMs = 0L
+        mediaSource = MEDIA_SOURCE_NONE
+        mediaAgeMs = -1L
+        iceDown = false
+        staleTicks = 0
+        retryClockRunning = false
+        status = ConnStatus(phase = ConnPhase.WAITING_PEER, retryCount = 0)
+        return status
+    }
+
+    /**
+     * 【t64】**启动两档重试计时**（等待态 → CONNECTING，计时从此刻起算）。
+     *
+     * 触发点由上层决定：host 收到 `peerJoined`、joiner 收到 `joined` 或首个 `offer`。
+     * 幂等：已在计时（CONNECTING/CONNECTED/FAILED）时再次调用只返回当前状态，不重置计时。
+     *
+     * @return 状态机当前状态。
+     */
+    fun startRetryClock(nowMs: Long): ConnStatus {
+        if (retryClockRunning) return status
+        active = true
+        retryClockRunning = true
+        startedAtMs = nowMs
+        gatheringCompleteAtMs = 0L
+        staleTicks = 0
+        status = status.copy(
+            phase = ConnPhase.CONNECTING,
+            reason = ConnReason.NONE,
+            elapsedMs = 0L,
+            sinceLossMs = 0L,
+            retryHintReached = false,
+            relayMissing = false,
+            iceDown = false,
+            mediaSource = mediaSource,
+            mediaAgeMs = mediaAgeMs,
+        )
+        return status
+    }
+
+    /** 【t64】重试计时是否已启动（等待期应为 false；供诊断/单测）。 */
+    val isRetryClockRunning: Boolean
+        get() = retryClockRunning
+
+    /** 【t64】等待态已持续时长（ms；未处于等待态时为 0）——仅**诊断**用，不参与任何超时判定。 */
+    fun waitingMs(nowMs: Long): Long =
+        if (status.phase == ConnPhase.WAITING_PEER && waitingSinceMs > 0L) nowMs - waitingSinceMs else 0L
+
     /** 进入通话（新世代开始 / 重试后重新计时）。 */
     fun onCallStarted(nowMs: Long): ConnStatus {
         active = true
+        retryClockRunning = true
         startedAtMs = nowMs
         lastFreshMediaMs = 0L
         hasFreshMedia = false
@@ -504,6 +584,18 @@ class ConnectionStatusTracker(
         // 【t63】帧龄（供诊断与停滞判定）：无帧来源时用"距上次新鲜媒体"的时长
         val age = if (hasFreshMedia) nowMs - lastFreshMediaMs else -1L
         when (status.phase) {
+            // 【t64】等待对端：**不计时**——不推进 elapsed、不判超时、不给重试提示。
+            // 只同步诊断字段（ICE/媒体事实仍如实记录，便于复测）。
+            ConnPhase.WAITING_PEER -> {
+                status = status.copy(
+                    elapsedMs = 0L,
+                    retryHintReached = false,
+                    mediaSource = mediaSource,
+                    mediaAgeMs = age,
+                    iceDown = iceDown,
+                )
+            }
+
             ConnPhase.CONNECTED -> {
                 // 【t63】画面停滞：曾就绪 且（有每帧时间戳/下行证据时）超过阈值，**且连续 N 个 tick 确认**
                 // （滞回去抖：单个采样抖动不得判停滞）。原因按 ICE 事实归类：
@@ -578,6 +670,7 @@ class ConnectionStatusTracker(
     fun onRetry(nowMs: Long): ConnStatus {
         retries += 1
         active = true
+        retryClockRunning = true
         startedAtMs = nowMs
         lastFreshMediaMs = 0L
         hasFreshMedia = false

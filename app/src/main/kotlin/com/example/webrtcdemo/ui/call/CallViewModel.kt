@@ -167,6 +167,18 @@ class CallViewModel(application: Application) :
     /** 上一次 `remote_frame_liveness` 落盘时刻（按 [FRAME_LIVENESS_LOG_INTERVAL_MS] 限频）。 */
     private var lastFrameLivenessLogMs = 0L
 
+    // ===================== t64：等待对端 / 重试计时起点 =====================
+
+    /**
+     * 本世代是否**真的连上过**（`phase == CONNECTED`）。
+     *
+     * 用途：`peerLeft` 时的收尾口径 —— 见 [onMessage] 的 `PeerLeft` 分支。
+     */
+    private var everConnectedInGeneration = false
+
+    /** 【t64】等待态起点（仅用于 `retry_clock_started` 的 `waited_ms` 诊断）。 */
+    private var waitingSinceMs = 0L
+
     init {
         // 编码目标码率：来自 Vp9VideoEncoder.setRateAllocation（§7.4，本地直通）
         viewModelScope.launch {
@@ -370,10 +382,31 @@ class CallViewModel(application: Application) :
 
         // 【t59】连接状态机复位：首次进入 = 开始计时；重试 = 重试次数 +1 且重新计时。
         // `publishConnStatus` 是 `CallUiState.isConnecting` 的**唯一写入方**（见其 KDoc）。
+        // 【t64】连接计时的**起点**取决于"对端是否已在房间里"：
+        //   * 还没人 ⇒ 进入 `WAITING_PEER`：**不计时、不给重试/失败**（用户需求：等待期不要提示重试）；
+        //   * 已知对端（一键重试、或上一世代对端已出现）⇒ 立即起算（沿用 t59/t61 的两档阈值）。
         val startedAt = System.currentTimeMillis()
         publishConnStatus(
-            if (reason == REASON_RETRY) connTracker.onRetry(startedAt) else connTracker.onCallStarted(startedAt),
+            when {
+                reason == REASON_RETRY -> connTracker.onRetry(startedAt)
+                peerKnownBefore -> connTracker.onCallStarted(startedAt)
+                else -> connTracker.onWaitingPeer(startedAt)
+            },
         )
+        if (connTracker.status.phase == ConnPhase.WAITING_PEER) {
+            AppLog.i(
+                TAG,
+                "ui_conn_state_enter",
+                mapOf(
+                    "phase" to "waiting_peer",
+                    "reason" to "peer_absent",
+                    "room" to roomId,
+                    "role" to role,
+                    "seq" to callSeq.toString(),
+                ),
+            )
+        }
+        everConnectedInGeneration = false
         lastNoPairLogMs = 0L
         autoRegatherDone = false
         val app = getApplication<Application>()
@@ -609,6 +642,8 @@ class CallViewModel(application: Application) :
                 // 服务端保留房间、对端会收到新的 peerJoined，因此发起方必须重新走 offer/answer；
                 // 接收方（joiner）不主动发 offer，等对端的新 offer（maybeCreateOffer 内按 role 判定）。
                 AppLog.i(TAG, "rejoined", mapOf("room" to message.roomId))
+                // 【t64】joiner 侧计时起点：收到 `joined` 即视为"房间里已有对端在等/已在"
+                startRetryClockIfWaiting("joined")
                 if (sessionReady) {
                     peerJoined = true
                     maybeCreateOffer()
@@ -618,17 +653,33 @@ class CallViewModel(application: Application) :
             is SignalingMessage.PeerJoined -> {
                 peerJoined = true
                 AppLog.i(TAG, "peer_joined", mapOf("peer" to message.peerId))
+                // 【t64】host 侧计时起点：对端进入房间 ⇒ 从此刻开始两档计时
+                startRetryClockIfWaiting("peer_joined")
                 maybeCreateOffer()
             }
 
             is SignalingMessage.PeerLeft -> {
                 AppLog.i(TAG, "peer_left")
                 onIceEvent(IceEvent(IceEventType.SELECTED_PAIR, "peer_left"))
-                // 口径 B（doc/14 §8.5 现行口径 + §11.4 D-7，known limitation/low/不得判失败）：
-                // IN_CALL 收到 peerLeft 立即转 DISCONNECTED 并挂断 —— 房间立即销毁（§7），
-                // 掉线方重连得 ROOM_NOT_FOUND（终态），双方回首页并明确提示，不产生半死不活的状态。
-                // 口径 A（有界宽限期）属**后续增强**且**前提是同时实现 ICE restart**，本轮按契约不实施。
-                hangup()
+                // 【t64】对端离开：**先停表并复位回等待态**（不计时、不显示失败/重试）。
+                resetRetryClock("peer_left")
+                // doc/14 §8.5 口径 B（现行口径 + §11.4 D-7，known limitation/low/不得判失败）：
+                // **已建立过通话**时仍按原语义终态结束并回首页（房间随即销毁，不留半死不活的状态）。
+                // 未建立过（仅等待/连接尝试阶段）时不挂断：留在通话页显示「等待对方加入」，
+                // 便于房主继续等下一个设备（用户需求：等待期不要被当成失败）。
+                if (everConnectedInGeneration) {
+                    hangup()
+                } else {
+                    AppLog.i(
+                        TAG,
+                        "peer_left_keep_waiting",
+                        mapOf(
+                            "reason" to "never_connected",
+                            "seq" to callSeq.toString(),
+                            "session" to "s$sessionId",
+                        ),
+                    )
+                }
             }
 
             is SignalingMessage.Offer -> {
@@ -640,6 +691,8 @@ class CallViewModel(application: Application) :
                 // 真机 room 66DZFT：offer 16:18:34.953 < pc_starting 16:18:35.244；候选 16:18:35.105
                 // 当时只打了 `ice_without_session` 就被丢掉。
                 peerResponseSeen = false
+                // 【t64】joiner 侧计时起点之二：收到对端 offer 即视为"对端已在"
+                startRetryClockIfWaiting("offer")
                 val current = session
                 if (current == null) {
                     val queued = pendingRemote.enqueueOffer(message.sdp)
@@ -925,6 +978,56 @@ class CallViewModel(application: Application) :
 
     // ===================== t59：连接状态发布 / 诊断 / 重试重协商 =====================
 
+    // ===================== t64：等待对端 / 重试计时起点 =====================
+
+    /**
+     * 【t64】**收到对端后才启动两档计时**（等待态 ⇒ CONNECTING）。
+     *
+     * 触发点（由调用方给出）：host = `peerJoined`；joiner = `joined` 或首个 `offer`。
+     * 幂等：已经在计时/已连上/已失败时**不重置**（避免重复触发把计时反复归零）。
+     *
+     * @param trigger 触发来源，写入 `retry_clock_started trigger=…` 供复测自证。
+     */
+    private fun startRetryClockIfWaiting(trigger: String) {
+        if (connTracker.status.phase != ConnPhase.WAITING_PEER) return
+        val now = System.currentTimeMillis()
+        val waited = if (waitingSinceMs > 0L) now - waitingSinceMs else 0L
+        waitingSinceMs = 0L
+        publishConnStatus(connTracker.startRetryClock(now))
+        AppLog.i(
+            TAG,
+            "retry_clock_started",
+            mapOf(
+                "trigger" to trigger,
+                "waited_ms" to waited.toString(),
+                "role" to role,
+                "seq" to callSeq.toString(),
+                "session" to "s$sessionId",
+            ),
+        )
+    }
+
+    /**
+     * 【t64】停表并复位回「等待对方加入」（`peerLeft`/对端离开时调用）。
+     *
+     * 之后界面**不显示失败与重试**；若对端再次进入，[startRetryClockIfWaiting] 会重新起算（无残留）。
+     */
+    private fun resetRetryClock(reason: String) {
+        val now = System.currentTimeMillis()
+        waitingSinceMs = now
+        publishConnStatus(connTracker.onWaitingPeer(now))
+        AppLog.i(
+            TAG,
+            "retry_clock_reset",
+            mapOf(
+                "reason" to reason,
+                "role" to role,
+                "seq" to callSeq.toString(),
+                "session" to "s$sessionId",
+            ),
+        )
+    }
+
     /**
      * 发布连接状态（**`isConnecting` 的唯一写入方**）。
      *
@@ -938,6 +1041,8 @@ class CallViewModel(application: Application) :
     private fun publishConnStatus(status: ConnStatus) {
         val previous = _connStatus.value
         _connStatus.value = status
+        // 【t64】记住"本世代是否真的连上过"（决定 peerLeft 时是终态挂断还是回等待态）
+        if (status.phase == ConnPhase.CONNECTED) everConnectedInGeneration = true
         _uiState.update {
             it.copy(
                 isConnecting = status.phase == ConnPhase.CONNECTING,

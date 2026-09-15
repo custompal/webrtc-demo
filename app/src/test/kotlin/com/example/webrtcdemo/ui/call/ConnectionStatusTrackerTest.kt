@@ -451,6 +451,130 @@ class ConnectionStatusTrackerTest {
         assertEquals(MEDIA_SOURCE_DOWN_BPS, tracker.status.mediaSource)
     }
 
+    // ===================== t64：等待对端期间不计时/不给重试 =====================
+    // 对应日志形态：等待期 `ui_conn_state phase=waiting_peer reason=none retry=0`（不推进 elapsed_ms）；
+    // 收到对端后 `retry_clock_started trigger=peer_joined|joined|offer`；
+    // 对端离开后 `retry_clock_reset reason=peer_left` 并回到 `phase=waiting_peer`。
+
+    /**
+     * 【t64① 点名单测】**等待期不得进入 failed/retry**：
+     * 房主创建房间后（对端未加入，`phase=waiting_peer`）无论推进多久，都要停在 `WAITING_PEER`、
+     * 计时器为 0、无可重试。
+     */
+    @Test
+    fun waitingPeerNeverTimesOutNorOffersRetry() {
+        val tracker = ConnectionStatusTracker()
+        tracker.onWaitingPeer(1_000L)
+
+        assertEquals(ConnPhase.WAITING_PEER, tracker.status.phase)
+        assertEquals("等待对方加入", tracker.status.title)
+        assertFalse(tracker.status.detail.contains("重试"))
+        assertFalse(tracker.status.canRetry)
+        assertFalse(tracker.isRetryClockRunning)
+        assertTrue(tracker.status.showOverlay)
+
+        // 推进到远超两档阈值（15 s / 30 s）的时刻，甚至 65 s —— 仍必须停在等待态
+        for (t in listOf(16_000L, 31_000L, 66_000L)) {
+            val st = tracker.onTick(t)
+            assertEquals(ConnPhase.WAITING_PEER, st.phase)
+            assertEquals(ConnReason.NONE, st.reason)
+            assertEquals(0L, st.elapsedMs)
+            assertEquals(0, st.retryCount)
+            assertFalse(st.retryHintReached)
+            assertFalse(st.canRetry)
+        }
+        // 等待时长只作为诊断（不参与任何超时判定）
+        assertEquals(65_000L, tracker.waitingMs(66_000L))
+    }
+
+    /**
+     * 【t64② 点名单测】**收到对端才起算**：等待 60 s 后由 `peerJoined` 触发，
+     * 两档计时（15 s 提示可重试 / 30 s 判失败）从**触发时刻**起算（阈值沿用 t59/t61）。
+     */
+    @Test
+    fun retryClockStartsOnlyAfterPeerArrives() {
+        val tracker = ConnectionStatusTracker()
+        tracker.onWaitingPeer(0L)
+        // 等待 60 s：不动作
+        tracker.onTick(60_000L)
+        assertEquals(ConnPhase.WAITING_PEER, tracker.status.phase)
+
+        // host: peerJoined ⇒ 启动计时（从 60 s 起算）
+        tracker.startRetryClock(60_000L)
+        assertTrue(tracker.isRetryClockRunning)
+        assertEquals(ConnPhase.CONNECTING, tracker.status.phase)
+        assertEquals(0L, tracker.status.elapsedMs)
+
+        val at74 = tracker.onTick(74_000L) // +14 s
+        assertEquals(ConnPhase.CONNECTING, at74.phase)
+        assertFalse(at74.retryHintReached)
+        assertFalse(at74.canRetry)
+
+        val at75 = tracker.onTick(75_000L) // +15 s ⇒ 可重试提示（仍不判失败）
+        assertTrue(at75.retryHintReached)
+        assertTrue(at75.canRetry)
+        assertEquals(ConnPhase.CONNECTING, at75.phase)
+
+        val at90 = tracker.onTick(90_000L) // +30 s ⇒ FAILED
+        assertEquals(ConnPhase.FAILED, at90.phase)
+        assertEquals(ConnReason.TIMEOUT_NO_PAIR, at90.reason)
+
+        // 幂等：重复触发不得把已失败/已连上的状态重置
+        tracker.startRetryClock(95_000L)
+        assertEquals(ConnPhase.FAILED, tracker.status.phase)
+    }
+
+    /**
+     * 【t64③ 点名单测】**对端离开则复位**（`retry_clock_reset`）：`peerLeft` ⇒ 停表、回 `waiting_peer` 态、不显示失败/重试；
+     * 对端再次加入时可**重新**计时（不残留上一轮状态）。
+     */
+    @Test
+    fun peerLeftResetsToWaitingAndClockCanRestart() {
+        val tracker = ConnectionStatusTracker()
+        tracker.onWaitingPeer(0L)
+        tracker.startRetryClock(1_000L)
+        tracker.onTick(31_000L)
+        assertEquals(ConnPhase.FAILED, tracker.status.phase)
+
+        // peerLeft ⇒ 复位到等待态
+        tracker.onWaitingPeer(40_000L)
+        assertEquals(ConnPhase.WAITING_PEER, tracker.status.phase)
+        assertEquals(ConnReason.NONE, tracker.status.reason)
+        assertEquals(0, tracker.status.retryCount)
+        assertFalse(tracker.status.canRetry)
+        assertFalse(tracker.isRetryClockRunning)
+        assertEquals("等待对方加入", tracker.status.title)
+
+        // 复位后仍不超时（再等 50 s）
+        tracker.onTick(90_000L)
+        assertEquals(ConnPhase.WAITING_PEER, tracker.status.phase)
+
+        // 对端再次进入 ⇒ 新一轮计时（窗口从 100 s 起算）
+        tracker.startRetryClock(100_000L)
+        assertEquals(ConnPhase.CONNECTING, tracker.status.phase)
+        assertEquals(0L, tracker.status.elapsedMs)
+        assertTrue(tracker.isRetryClockRunning)
+
+        tracker.onTick(115_000L)
+        assertTrue(tracker.status.retryHintReached)
+        tracker.onTick(130_000L)
+        assertEquals(ConnPhase.FAILED, tracker.status.phase)
+        assertEquals(ConnReason.TIMEOUT_NO_PAIR, tracker.status.reason)
+    }
+
+    /** 【t64】等待态下界面不得显示"连接中"、也不得有重试入口（`isConnecting` 由 phase 派生）。 */
+    @Test
+    fun waitingPeerIsNotConnectingAndHasNoRetryEntry() {
+        val tracker = ConnectionStatusTracker()
+        val waiting = tracker.onWaitingPeer(0L)
+
+        assertNotEquals(ConnPhase.CONNECTING, waiting.phase)
+        assertFalse(waiting.canRetry)
+        assertFalse(waiting.retryHintReached)
+        assertEquals(0, waiting.retryCount)
+        assertTrue(waiting.title.contains("等待"))
+    }
+
     /** 重试：次数 +1、计时归零、重新 CONNECTING（配合 t53 的世代化新会话）。 */
     @Test
     fun retryResetsToConnectingAndCounts() {
