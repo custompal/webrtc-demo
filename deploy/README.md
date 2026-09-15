@@ -88,3 +88,22 @@ systemctl daemon-reload && systemctl enable --now coturn
 1. **信令日志路径**：unit 使用 `-log /var/log/signaling/signaling.log`。该取值已被契约 **C31**（`doc/14-interface-contract.md` §3.2/§9.2/C31/V53）冻结为「以部署事实为准」，旧值 `/opt/signaling/logs/signaling.log` 作废；V53 附加验收即核 `grep -n '\-log' /etc/systemd/system/signaling.service`。**无需切换**；若确需换路径，改 `scripts/deploy_signaling.sh` 的 `LOG_FILE` 变量即可（脚本会重写 unit 并重启，路径与滚动/双写无关）。
 2. `signaling.service` 里的 `-stun/-turn` 使用 **t6 实测**公网 IP `47.238.144.66`；换机器/换 IP 时请用 `PUBLIC_IP=<新IP> bash scripts/deploy_signaling.sh` 重新生成。
 3. 磁盘占用：信令日志单文件上限 2 MiB、最多 3 个（`log_file_open max_bytes=2097152 max_files=3`，程序内滚动），总量 ≲6 MiB。
+
+## 5. coturn 对等端地址策略与诊断探针（t58，2026-09-15）
+
+`turnserver.conf` 已按 t58 更新（与宿主机 `/etc/turnserver.conf` 逐字节一致）：
+
+- **显式固化拒绝**：`denied-peer-ip=0.0.0.0-0.255.255.255`、`denied-peer-ip=127.0.0.0-127.255.255.255`（= coturn 内建默认；**不要**放行 loopback，否则中继可打本机 `127.0.0.1:8080/5766/8443` = SSRF）。
+- **显式放行**：`allowed-peer-ip` 覆盖 `10/8`、`172.16/12`、`192.168/16`、`100.64/10`(CGNAT)、`169.254/16`(link-local)——4G↔WiFi 场景真正需要的对等地址段。
+- **配额/生命周期**：`total-quota=45`（对齐 49 个 relay 端口）、`user-quota=8`、`max-allocate-lifetime=600`。
+- **指纹**：`use-fingerprint` 在 coturn 4.6.1 中是**无效写法**（启动告警 `Bad configuration format`），已改为 `fingerprint`（实测不强制客户端携带 FINGERPRINT）。
+
+诊断探针（零依赖，容器侧运行；宿主机无 node）：
+
+```bash
+node code/webrtc-demo/deploy/turnperm_probe.mjs <turnHost> <port> <user> <pass> <peerIP...>
+# 例：node … 172.21.0.219 3478 demo demopass 0.0.0.0 127.0.0.1 10.0.0.5 192.168.1.101 8.8.8.8
+# 输出：每个 peer 的 SUCCESS / ERROR(code) 与地址类别；403=被 coturn 拒绝
+```
+
+背景与完整证据见 `reports/28-turn-permission-403.md`（403 只针对 `0.0.0.0/8` 与 `127.0.0.0/8`；私网/CGNAT/公网对等地址一律放行；`local_relay=0` 归属客户端 15 s 看门狗，见该报告 §6）。
