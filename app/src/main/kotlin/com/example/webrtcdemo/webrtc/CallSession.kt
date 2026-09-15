@@ -279,13 +279,20 @@ class CallSession(
                 if (ice?.turnUrl?.isNotBlank() == true) {
                     if (isNotEmpty()) append('+')
                     append("turn")
+                    // 【t65/A5】TCP 回退默认开启：让"本次到底带没带 TCP 回退"在会话开始就一行可读
+                    if (WebRtcConfig.turnTcpFallbackActive(ice)) append("+tcp")
                 }
                 if (isEmpty()) append("-")
             }
             AppLog.i(
                 TAG,
                 "pc_starting",
-                mapOf("ice_servers" to iceSummary, "force_relay" to forceRelay.toString()).withKey(),
+                mapOf(
+                    "ice_servers" to iceSummary,
+                    "force_relay" to forceRelay.toString(),
+                    // 【t65/A5】新增字段（既有 `ice_servers` 字段名与形态不变）
+                    "turn_tcp" to WebRtcConfig.turnTcpFallbackActive(ice).toString(),
+                ).withKey(),
             )
             val config = WebRtcConfig.build(ice, forceRelay)
             // 【t60/A4/A7】配了 TURN ⇒ 打开**持续 gathering**：中继候选实测可能晚到
@@ -848,6 +855,8 @@ class CallSession(
                         "local" to candidateCounter.localSummary(),
                         "relay" to candidateCounter.localRelayCount().toString(),
                         "turn_configured" to turnConfigured.toString(),
+                        // 【t65/A5】本次是否带 TCP 回退（判"local_relay=0 时是否已尝试 TCP 路径"）
+                        "turn_tcp" to WebRtcConfig.turnTcpFallbackActive(iceConfig).toString(),
                         "turn_errors" to turnErrorCount.toString(),
                         "filtered_loopback" to (filteredLocalLoopback + filteredRemoteLoopback).toString(),
                     ),
