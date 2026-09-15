@@ -405,3 +405,85 @@ TURN 172.21.0.219:3478  user=demo  ALLOCATE ok  relay=47.238.144.66:49175
 - 回环（`127.0.0.0/8`、`::1`）**继续拒绝**；A2/A3（客户端侧过滤回环候选）由 android-dev 承接 —— 与本附录一致。
 - A5（`turn:…?transport=tcp`）按裁决**暂不做**，保留为"待用户/平台放行 TCP 3478 后可选的回退路径"。
 - 仓库副本 `deploy/turnserver.conf` 已同步为最终配置（`diff` 与宿主机逐字节一致）。
+
+---
+
+## 附录 D：A5 前置复核 —— TCP 3478 外部可达 + 服务端无需改配置（2026-09-15 21:42–21:45，**只读**）
+
+**结论一行**：**A5 前置已具备** —— 用户放行安全组 TCP 3478 后，外部可完成**完整 TURN-over-TCP 流程**（TCP 连接 → 401 挑战 → ALLOCATE 成功拿到 relay → CreatePermission 成功）；coturn 本就在 3478 上监听 TCP；**`/etc/turnserver.conf` 无需任何调整**（未做任何修改）。
+
+### D.1 服务端确在 3478 上监听 TCP
+
+```
+$ ss -ltnp | grep -E ":3478|:5349"
+LISTEN 0 1024 172.21.0.219:3478 0.0.0.0:* users:(("turnserver",pid=838358,fd=33))
+LISTEN 0 1024 172.21.0.219:3478 0.0.0.0:* users:(("turnserver",pid=838358,fd=32))
+LISTEN 0 1024 172.21.0.219:3478 0.0.0.0:* users:(("turnserver",pid=838358,fd=30))
+LISTEN 0 1024 172.21.0.219:3478 0.0.0.0:* users:(("turnserver",pid=838358,fd=25))
+LISTEN 0 1024 172.21.0.219:5349 0.0.0.0:* users:(("turnserver",pid=838358,fd=41)) ...（TLS/DTLS 4 个）
+$ systemctl is-active coturn ; systemctl is-enabled coturn
+active
+enabled
+```
+
+### D.2 外部可达性与完整 TURN-over-TCP ALLOCATE
+
+```
+# ① 外部 TCP 连通性（容器 → EIP）
+$ timeout 5 bash -c "cat < /dev/null > /dev/tcp/47.238.144.66/3478"
+TCP connect 47.238.144.66:3478 → OK
+
+# ② 外部 TURN over TCP：ALLOCATE（UDP relay，A5 常用形态）
+$ XT=17 node deploy/turnperm_probe_tcp.mjs 47.238.144.66 3478 demo demopass 172.21.0.219
+TCP connected to 47.238.144.66:3478
+ALLOCATE(unauth) -> 0x0113 error 401（长凭证挑战，预期 401）
+ALLOCATE -> 0x0103 success  relay=47.238.144.66:49188
+CreatePermission(172.21.0.219) -> 0x0108 success
+
+# ③ 外部 TURN over TCP：TCP relay（RFC 6062，XT=6）
+$ XT=6 node deploy/turnperm_probe_tcp.mjs 47.238.144.66 3478 demo demopass 172.21.0.219
+TCP connected to 47.238.144.66:3478
+ALLOCATE -> 0x0103 success  relay=47.238.144.66:49187
+CreatePermission(172.21.0.219) -> 0x0108 success
+
+# ④ 官方客户端交叉复核（宿主机 → EIP，TCP transport）
+$ turnutils_uclient -v -t -u demo -w demopass -p 3478 -n 3 -m 1 -y 47.238.144.66
+0: : success
+0: : IPv4. Received relay addr: 47.238.144.66:49168
+0: : IPv4. Received relay addr: 47.238.144.66:49169
+0: : IPv4. Received relay addr: 47.238.144.66:49198   （49168/49169/49198/49199）
+```
+
+附加观察：`openssl s_client -connect 172.21.0.219:3478`（内网）与 `47.238.144.66:3478`（外网）**都能完成 TLS 握手**（证书即我方自签 `CN=webrtc-demo`）⇒ coturn 在 TCP 3478 上对明文 TURN 与 TLS **自动识别复用**（日志亦可见 `tcp or tls connected to: …` / `TLS/TCP socket closed remotely`）。这不影响 A5（`?transport=tcp` 走明文 TURN/TCP）。
+
+### D.3 配置是否需要调整：**不需要**
+
+| 检查项 | 结论 | 依据 |
+|---|---|---|
+| 3478 TCP 监听 | 已在（`listening-port=3478` 同时用于 UDP 与 TCP） | `ss -ltnp` |
+| `no-tcp-relay` | **未设置**，RFC 6062 TCP relay 可用（XT=6 实测成功） | 配置无该项；探针 ③ |
+| `no-tls` / `no-dtls` | 未设置；TLS/DTLS 在 5349 提供，且 3478 亦能自动识别 TLS | 配置无该项；`ss -ltnp` 5349；openssl 实测 |
+| `fingerprint` | 已启用，但**不强制客户端携带 FINGERPRINT**（UDP/TCP 探针都不带指纹仍被接受） | 本轮两次探针均成功；UDP 矩阵同 |
+| 服务端配合 A5 的改动 | **零改动** | 全部检查通过 |
+
+> 安全提示（供 captain 决策，非阻塞）：TCP 3478 现对全网放行且为**明文**端口，可被扫描/试探（回环与 link-local 已拒绝，凭证仍为长凭证 demo/demopass）。若希望收敛，可把安全组源限制为手机侧网段；是否收回由用户决定。
+
+### D.4 探针实现踩坑记录（供后续写 TCP 探针者）
+
+STUN over TCP 是**自定帧**：直接使用报文头里的 length 字段（RFC 5389 §7.2.2），**不要再加 2 字节长度前缀**。我最初按"加前缀"实现，coturn 日志回 `error 420: Unknown attribute`（
+`session 000000000000000014: incoming packet message processed, error 420: Unknown attribute: TURN server was configured without RFC 5780 support`），去掉前缀后立刻正常。用具：`deploy/turnperm_probe_tcp.mjs`（零依赖，`XT=6|17` 选择 relay 传输）。
+
+### D.5 `deploy/turnserver.conf` 与宿主机 diff
+
+```
+$ diff /etc/turnserver.conf /opt/dsh-workspaces/code/webrtc-demo/deploy/turnserver.conf
+DIFF-EMPTY(一致)
+$ md5sum /etc/turnserver.conf …/deploy/turnserver.conf
+07baf30bd86a60cb5ed5933d2a51454b  /etc/turnserver.conf
+07baf30bd86a60cb5ed5933d2a51454b  …/deploy/turnserver.conf
+```
+⇒ **一致，无需改动**（本附录全程只读，未修改 `/etc/turnserver.conf`）。
+
+### D.6 A5 交接说明
+
+客户端在 `WebRtcConfig` 增加 `turn:47.238.144.66:3478?transport=tcp` 作为 UDP 被封时的回退后，**服务端无需任何配合改动**（本轮已验证 TCP 通道可完成 ALLOCATE/CreatePermission）。仓库新增探针 `deploy/turnperm_probe_tcp.mjs` 可用于回归。
