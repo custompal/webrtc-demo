@@ -27,7 +27,10 @@
 #include <cstring>
 #include <vector>
 
+#include <sys/auxv.h>
+
 #include "encoder/i420_rotator.h"
+#include "encoder/libvpx_cpu_guard.h"
 #include "jni/callback_bridge.h"
 #include "log/log_macros.h"
 
@@ -58,6 +61,30 @@ int AlignEvenUp(int value) {
 
 int AlignEvenDown(int value) {
   return (value % 2 == 0) ? value : value - 1;
+}
+
+// 【t55】读取 CPU 能力并判断交付 libvpx 是否可安全使用（见
+// encoder/libvpx_cpu_guard.h 的根因说明）。只在首次调用时探测并缓存。
+bool DeliveredLibvpxCpuOk() {
+  static const bool kCpuOk = [] {
+    const unsigned long hwcap = getauxval(AT_HWCAP);
+    const unsigned long hwcap2 = getauxval(AT_HWCAP2);
+    const LibvpxCpuStatus status = CheckLibvpxCpu(hwcap, hwcap2);
+    if (status == LibvpxCpuStatus::kOk) {
+      NLOG_INFO(kTagEncoder,
+                "encoder_cpu_ok hwcap=%lu hwcap2=%lu build=runtime_detect_off",
+                hwcap, hwcap2);
+    } else {
+      // 这一行是下一次真机复测的**判据**：出现它即证明本机 CPU 不满足交付件
+      // 的编译期 SIMD 假定（SVE/SVE2/dotprod/i8mm），而不是我们的配置有问题。
+      NLOG_ERROR(kTagEncoder,
+                 "encoder_cpu_incompatible reason=%s hwcap=%lu hwcap2=%lu "
+                 "need=sve+sve2+dotprod+i8mm",
+                 LibvpxCpuStatusName(status), hwcap, hwcap2);
+    }
+    return status == LibvpxCpuStatus::kOk;
+  }();
+  return kCpuOk;
 }
 
 int64_t NowMicros() {
@@ -282,6 +309,14 @@ int32_t Vp9Encoder::Init(const EncoderConfig& config) {
   }
   if (applied.start_bitrate_bps <= 0) {
     applied.start_bitrate_bps = kDefaultStartBps;
+  }
+
+  // 【t55】交付 libvpx 是“编译期绑定 SIMD”的（--disable-runtime-cpu-detect）：
+  //   真机 CPU 若缺 SVE/SVE2/dotprod/i8mm，首帧 vpx_codec_encode 内的 SVE 指令
+  //   会 SIGILL 直接杀进程（日志停在 encode_vpx_begin）。这里宁可**拒绝启用**并
+  //   回退默认编码器，也不要闪退：返回 FALLBACK_SOFTWARE，Wrapper 会走软件回退。
+  if (!DeliveredLibvpxCpuOk()) {
+    return kVp9FallbackSoftware;
   }
 
   DestroyCodecLocked();
