@@ -133,8 +133,14 @@ object WebRtcEngine {
             // 3) EglBase 单例
             val eglBase = EglBase.create()
             // 4) 工厂（注入自研 VP9 编码器）
+            // 【t92】关闭 FrameDropper：Java 编码器的 EncoderInfo.has_trusted_rate_controller
+            // 恒为 false（native 包装器未设置）⇒ video_stream_encoder.cc:2016-2019 里
+            // frame_dropping_enabled 恒真 ⇒ 拥塞时按目标帧率丢输入帧（真机 `Drop Frame:` 可见）。
+            // 置 "WebRTC-FrameDropper/Disabled/"（:108/:1459-1463）后 dropped 关闭，降级交给
+            // t91 的 ScalingSettings(24,37)（降分辨率）与 t89 的码率地板（保下限）。
             val builder = PeerConnectionFactory.builder()
                 .setOptions(PeerConnectionFactory.Options())
+                .setFieldTrials(FrameDropperFieldTrial.DISABLED_TRIAL)
                 .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
             if (AppConfig.useDefaultEncoder(appContext)) {
                 // 受控偏离（§7.1 允许的诊断对照）：必须在报告中登记
@@ -155,6 +161,7 @@ object WebRtcEngine {
                 )
             }
             val factory = builder.createPeerConnectionFactory()
+            AppLog.i(TAG, "field_trials_set", mapOf("frame_dropper" to FrameDropperFieldTrial.DISABLED_TRIAL))
 
             val audioSource0 = factory.createAudioSource(MediaConstraints())
             val audioTrack0 = factory.createAudioTrack(WebRtcConfig.AUDIO_TRACK_ID, audioSource0)
