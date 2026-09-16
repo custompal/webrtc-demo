@@ -228,6 +228,25 @@ class CallSession(
     /** 本端/对端候选按类型的计数（ICE 超时兜底时一次性打印，供下一轮真机定因）。 */
     private val candidateCounter = IceCandidateCounter()
 
+    // ===================== t83：远端候选计数的去重 / SDP 分账 / 日志限频 =====================
+
+    /** 【t83①】已**计入** `candidateCounter` 的远端候选条数（回放不重复计入）。 */
+    @Volatile
+    private var remoteCandidateTallied = 0
+
+    /** 【t83③】已落盘 `ice_candidate_remote` 日志的次数（限频用；总数另见 [remoteCandidateTallied]）。 */
+    @Volatile
+    private var remoteCandidateLogged = 0
+
+    /**
+     * 【t83②】**SDP 内**携带的远端候选条数（`a=candidate:` 行数累计）。
+     *
+     * 与 `candidateCounter.remoteSummary()`（只统计 trickle 进来的候选）分开记账：
+     * 二者都为 0 才是"确实没有对端候选"，只有 trickled 为 0 而 SDP 有 → 不再是假阴性。
+     */
+    @Volatile
+    private var sdpRemoteCandidateCount = 0
+
     /** ICE/DTLS 连通性看门狗（超时兜底 + 错误上报 UI）。 */
     private var connectivityWatchdog: ScheduledExecutorService? = null
 
@@ -436,6 +455,8 @@ class CallSession(
         // 【t44】先记录"确实收到了 offer"，再做就绪判断 —— 原实现把日志放在 early-return 之后，
         // 一旦 PC 未就绪就**完全没有痕迹**（真机缺陷①无法定因的直接原因之一）。
         AppLog.i(TAG, "offer_received", mapOf("sdp_bytes" to sdp.length.toString()).withKey())
+        // 【t83②】SDP 内候选单独记账（覆盖 ICE restart 后对端重发的新 SDP）
+        accountSdpCandidates(sdp, "offer")
         // 【t53】闸门：PC **未发布**或**本地轨未挂载**时一律先暂存，绝不在这种 PC 上 createAnswer。
         val result = gate { pendingRemoteOffer = sdp }
         val connection = result.connection
@@ -527,6 +548,8 @@ class CallSession(
                 "candidates" to IceCandidateInfo.summarizeSdpCandidates(sdp),
             ).withKey(),
         )
+        // 【t83②】SDP 内候选单独记账（覆盖 ICE restart 后对端重发的新 SDP）
+        accountSdpCandidates(sdp, "answer")
         // 【t53】与 offer 同一把闸门：未就绪（PC 未发布 / 本地轨未挂载）时一律先暂存。
         val result = gate { pendingRemoteAnswer = sdp }
         val connection = result.connection
@@ -562,7 +585,12 @@ class CallSession(
      * @param sdpMid 媒体标识（可空）。
      * @param sdpMLineIndex 媒体行索引（可空；二者至少一个有效，§8.2）。
      */
-    fun onRemoteIceCandidate(candidate: String, sdpMid: String?, sdpMLineIndex: Int?) {
+    fun onRemoteIceCandidate(
+        candidate: String,
+        sdpMid: String?,
+        sdpMLineIndex: Int?,
+        viaReplay: Boolean = false,
+    ) {
         val mid = sdpMid ?: ""
         // §8.2：sdpMid 与 sdpMLineIndex 至少一个有效
         if (mid.isEmpty() && sdpMLineIndex == null) {
@@ -588,7 +616,13 @@ class CallSession(
             )
             return
         }
-        candidateCounter.addRemote(info)
+        // 【t83① 去重计数】只有"首次从信令进入"才计数；`viaReplay=true`（[flushPendingRemote] 回放）
+        // 表示该候选此前已计过一次 ⇒ 跳过，避免同一候选被 `addRemote` 计两次。判据是纯函数便于单测。
+        if (RemoteCandidateAccounting.shouldCount(viaReplay)) {
+            candidateCounter.addRemote(info)
+            remoteCandidateTallied++
+        }
+        logRemoteCandidateIfNeeded(info, viaReplay)
         // 【t53】候选同样走闸门：PC 未发布时暂存（并在同一把锁内记录队列长度）。
         var queued = 0
         val result = gate {
@@ -618,8 +652,62 @@ class CallSession(
             }
             return
         }
-        AppLog.i(TAG, "ice_candidate_remote", mapOf("remote" to info.summary()).withKey())
+        // 【t83③】逐条应用日志已在上方的 `logRemoteCandidateIfNeeded` 里限频（首 3 条 + 每 10 条），
+        // 这里不再无条件落盘；总数仍可通过 `ice_candidate_remote_total`（每次变化落一条）核对。
         connection.addIceCandidate(IceCandidate(mid, sdpMLineIndex ?: 0, candidate))
+    }
+
+    /**
+     * 【t83②】SDP 内候选的独立记账 + 汇总诊断。
+     *
+     * 背景：`candidateCounter` 只统计**trickle** 进来的候选，SDP 内携带的候选从来不进计数器 ⇒
+     * 若对端把候选只写在 SDP 里（不 trickle 或被抑制），真机横幅会显示 `对端候选 -`，
+     * 而链路其实可用 —— 且 `-` 无法区分"确实没有候选"与"候选只在 SDP 里"。这里把两者分开记账。
+     */
+    private fun accountSdpCandidates(sdp: String, trigger: String) {
+        val counted = RemoteCandidateAccounting.countSdpCandidates(sdp)
+        if (counted > 0) {
+            sdpRemoteCandidateCount += counted
+        }
+        logRemoteCandidateTotal(trigger)
+    }
+
+    /**
+     * 【t83③】远端候选应用日志的**限频**落盘（首 3 条 + 每 10 条），避免大候选量时刷屏。
+     *
+     * 限频参数在 [RemoteCandidateAccounting.shouldLogRemoteCandidate]；限频跳过的条目不会丢失总数
+     * ——计数每次变化都会由 [logRemoteCandidateTotal] 落一条 `ice_candidate_remote_total`。
+     *
+     * @param viaReplay 回放路径（日志里显式标注，便于区分"首次进入"与"回放应用"）。
+     */
+    private fun logRemoteCandidateIfNeeded(info: IceCandidateInfo, viaReplay: Boolean) {
+        val total = remoteCandidateTallied
+        if (!RemoteCandidateAccounting.shouldLogRemoteCandidate(remoteCandidateLogged + 1)) return
+        remoteCandidateLogged++
+        AppLog.i(
+            TAG,
+            "ice_candidate_remote",
+            mapOf(
+                "remote" to info.summary(),
+                "total" to total.toString(),
+                "via_replay" to viaReplay.toString(),
+                "sdp_remote" to sdpRemoteCandidateCount.toString(),
+            ).withKey(),
+        )
+    }
+
+    /**
+     * 【t83②】远端候选总账：把"trickled 计数"与"SDP 内计数"分开落盘，消除 `对端候选 -` 的歧义
+     * （`-` 可能是"确实没有候选"，也可能只是"候选只写在 SDP 里没 trickle"）。
+     */
+    private fun logRemoteCandidateTotal(trigger: String) {
+        val tallied = candidateCounter.remoteSummary()
+        AppLog.i(
+            TAG,
+            "ice_candidate_remote_total trickled=${tallied} sdp=${sdpRemoteCandidateCount} " +
+                "summary=${RemoteCandidateAccounting.mergedSummary(tallied, sdpRemoteCandidateCount)}",
+            mapOf("trigger" to trigger).withKey(),
+        )
     }
 
     /** 静音/取消静音（麦克风）。 */
@@ -992,8 +1080,10 @@ class CallSession(
         if (candidates.isNotEmpty()) {
             AppLog.i(TAG, "ice_replayed", mapOf("count" to candidates.size.toString()).withKey())
             for (candidate in candidates) {
-                onRemoteIceCandidate(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex)
+                // 【t83①】回放标记：同一候选此前已计入 `candidateCounter`，回放不得重复计数
+                onRemoteIceCandidate(candidate.sdp, candidate.sdpMid, candidate.sdpMLineIndex, viaReplay = true)
             }
+            logRemoteCandidateTotal("replay")
         }
         AppLog.i(
             TAG,
@@ -1114,7 +1204,13 @@ class CallSession(
             "ice_state" to (iceState?.name ?: "-"),
             "transport" to (transportState?.name ?: "-"),
             "local_candidates" to candidateCounter.localSummary(),
-            "remote_candidates" to candidateCounter.remoteSummary(),
+            // 【t83②】对端口径拆成三项：trickle 摘要 / SDP 内条数 / 合并摘要（消除 `-` 的歧义）
+            "remote_candidates" to RemoteCandidateAccounting.mergedSummary(
+                candidateCounter.remoteSummary(),
+                sdpRemoteCandidateCount,
+            ),
+            "remote_trickled" to candidateCounter.remoteSummary(),
+            "remote_sdp" to sdpRemoteCandidateCount.toString(),
             "local_relay" to relayCount.toString(),
             "turn_configured" to turnConfigured.toString(),
             "turn_errors" to turnErrorCount.toString(),
@@ -1135,15 +1231,21 @@ class CallSession(
                 return
             }
             AppLog.e(TAG, "ice_timeout", fields)
+            // 【t83②】横幅里的"对端候选"改用**合并口径**（trickle 摘要 + SDP 内条数）：
+            // 两侧都为空时显式写 `-（trickled 与 SDP 内均无）`，不再让 `-` 同时代表两种含义。
+            val remoteMerged = RemoteCandidateAccounting.mergedSummary(
+                candidateCounter.remoteSummary(),
+                sdpRemoteCandidateCount,
+            )
             listener.onError(
                 if (relayMissing) {
                     // 【t60/A7】显式区分"中继不可用"与"单纯没配上候选对"，复测时可直接定因
                     "未获取到中继候选（TURN ${if (turnErrorCount > 0) "报错 $turnErrorCount 次" else "无响应"}）——" +
-                        "本端候选 ${candidateCounter.localSummary()}；对端候选 ${candidateCounter.remoteSummary()}。" +
+                        "本端候选 ${candidateCounter.localSummary()}；对端候选 $remoteMerged。" +
                         "可在通话页点「重试」重建中继，或在诊断页打开「强制中继」后重试，并立即导出日志"
                 } else {
                     "ICE 未连通（本端候选 ${candidateCounter.localSummary()}；" +
-                        "对端候选 ${candidateCounter.remoteSummary()}）。" +
+                        "对端候选 $remoteMerged）。" +
                         "可在诊断页打开「强制中继」后重试，并立即导出日志"
                 },
             )
@@ -1539,4 +1641,70 @@ object IceWatchdogPolicy {
         if (tierMs < failMs) return false
         return realElapsedMs(startMs, nowMs) < failMs
     }
+}
+
+// ============================================================================
+// 【t83】远端候选计数策略（纯函数，可 JVM 单测）
+// ----------------------------------------------------------------------------
+// 背景（真机误报横幅的定因质量）：横幅里的"对端候选"取自 `IceCandidateCounter.remoteSummary()`，
+// 而它存在两处使数字**不可信**的缺陷：
+//   ① 重复计数：t51 的"PC 未就绪入队 → 就绪回放"路径会把队列里的候选**再次**送进
+//      `onRemoteIceCandidate()`，同一候选被 `addRemote` 计两次（真机 `host=6,srflx=1,relay=2` 可能被放大）；
+//   ② 假阴性：SDP 内携带的远端候选**从不进计数器** ⇒ 对端只把候选写在 SDP 里时，
+//      `remoteSummary()` 显示 `-`，与"确实没有候选"无法区分。
+// 本对象把三处判定抽成纯函数；生产代码（CallSession）调用同一实现。
+// ============================================================================
+
+/**
+ * 远端候选计数策略（纯函数，无 Android 依赖）。【t83】
+ */
+object RemoteCandidateAccounting {
+
+    /**
+     * 是否应把本次 `onRemoteIceCandidate()` 计入 `candidateCounter`。
+     *
+     * **只有首次进入信令入口才计数**：`viaReplay=true` 表示这是暂存队列的回放（该候选此前已计过），
+     * 必须跳过，否则同一候选被计两次（t83 缺陷①）。
+     */
+    fun shouldCount(viaReplay: Boolean): Boolean = !viaReplay
+
+    /**
+     * 统计 SDP 中携带的远端候选条数（`a=candidate:` / `candidate:` 行）。
+     *
+     * 与 `IceCandidateInfo.summarizeSdpCandidates()`（返回类型摘要字符串）互补：这里要的是**条数**，
+     * 用于与 trickle 计数分账，消除 `对端候选 -` 的假阴性（t83 缺陷②）。
+     */
+    fun countSdpCandidates(sdp: String): Int =
+        sdp.lineSequence().count { line ->
+            val trimmed = line.trim().removePrefix("a=")
+            trimmed.startsWith("candidate:")
+        }
+
+    /**
+     * "对端候选"的**合并口径**（横幅与 `remote_candidates` 诊断字段统一使用）。
+     *
+     * - 两者皆空 ⇒ `-（trickled 与 SDP 内均无）`（明确"确实没有"，不再是裸 `-`）；
+     * - 只有 SDP 有 ⇒ `<trickled 摘要或 -> + SDP内 N`（不再显示为 `-` ⇒ 消除假阴性）；
+     * - 只有 trickle 有 ⇒ 原摘要；
+     * - 两者都有 ⇒ 摘要 + ` + SDP内 N`。
+     */
+    fun mergedSummary(trickledSummary: String, sdpCount: Int): String {
+        val trickledKnown = trickledSummary.isNotBlank() && trickledSummary != "-"
+        return when {
+            !trickledKnown && sdpCount <= 0 -> "-（trickled 与 SDP 内均无）"
+            !trickledKnown -> "-（trickle 无）+ SDP内 $sdpCount"
+            sdpCount <= 0 -> trickledSummary
+            else -> "$trickledSummary + SDP内 $sdpCount"
+        }
+    }
+
+    /**
+     * 逐条应用日志（`ice_candidate_remote`）是否应落盘：**首 3 条 + 每 10 条**。
+     *
+     * 限频只为防刷屏：总数仍由计数变化时的 `ice_candidate_remote_total` 保证可见（t83③）。
+     *
+     * @param ordinal 本条是第几条（从 1 开始）。
+     */
+    fun shouldLogRemoteCandidate(ordinal: Int): Boolean =
+        ordinal <= 3 || ordinal % 10 == 0
 }
