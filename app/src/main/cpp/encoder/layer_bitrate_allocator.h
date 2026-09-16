@@ -75,6 +75,10 @@ struct VpxLayerRates {
   int32_t layer_target_bitrate_kbps[kMaxSpatialLayers * kMaxTemporalLayers];
   uint32_t ts_rate_decimator[kMaxTemporalLayers];  // 契约 §5.6：{2,1,1}
   int32_t increment_kbps[kMaxTemporalLayers];  // 每层增量（仅日志/排查）
+  // 【t85】码率口径埋点：requested（libwebrtc 传入）vs applied（写进 libvpx）
+  int32_t requested_total_bps = 0;   // Compute 输入的总码率（bps）
+  int32_t applied_total_bps = 0;     // 写回 libvpx 的总码率（kbps × 1000）
+  int total_floor_clamped = 0;       // 1 = 本档触发了总码率下限
 
   VpxLayerRates();
 };

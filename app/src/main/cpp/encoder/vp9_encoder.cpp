@@ -28,8 +28,10 @@
 #include <vector>
 
 #include <sys/auxv.h>
+#include <unistd.h>
 
 #include "encoder/i420_rotator.h"
+#include "encoder/encoder_rate_policy.h"
 #include "encoder/libvpx_cpu_guard.h"
 #include "jni/callback_bridge.h"
 #include "log/log_macros.h"
@@ -62,6 +64,13 @@ constexpr int32_t kDefaultStartBps = 300 * 1000;
 //   （encoder/i420_rotator_corners_host_test.cpp）。
 constexpr bool kBakeRotationInEncoder = false;
 
+// 【t85】编码线程数：VP9 实时编码的多线程（row-mt / tile 级并行）。
+//   为什么改：单线程软编在 640×480/3 分层下实测 p50 11.2 ms、p95 18.2 ms（n2），
+//   虽然仍小于帧间隔（p50 59 ms），但抖动大、且与采集/渲染争同一颗核；开多线程
+//   可显著降低尾延迟（宿主 harness 对照见 reports/47 §4）。
+//   为什么上限 4：留核给采集/渲染/网络；`sysconf` 拿不到时退回 2。
+constexpr int kMaxEncoderThreads = 4;
+
 constexpr int64_t kSlowFrameThresholdUs =
     33 * 1000;  // >33 ms 记 WARN（契约 §5.4）
 
@@ -92,6 +101,17 @@ bool DeliveredLibvpxCpuOk() {
   }();
   (void)kProbed;
   return true;
+}
+
+// 本机可用核数 → 编码线程数（上限 kMaxEncoderThreads，至少 1）。
+int ResolveEncoderThreads() {
+  const long cores = sysconf(_SC_NPROCESSORS_ONLN);
+  if (cores <= 1) {
+    return 1;
+  }
+  const long usable = cores - 1;  // 留一颗给采集/渲染/网络线程
+  const long capped = usable > kMaxEncoderThreads ? kMaxEncoderThreads : usable;
+  return capped < 1 ? 1 : static_cast<int>(capped);
 }
 
 int64_t NowMicros() {
@@ -225,7 +245,10 @@ void Vp9Encoder::ApplyFrozenConfigLocked() {
   cfg_.g_timebase.num = 1;
   cfg_.g_timebase.den = 1000000;
   cfg_.g_lag_in_frames = 0;  // 零延迟（实时通话）
-  cfg_.g_threads = 1;  // 契约 §5.5：不额外起线程，帧在编码线程内串行
+  // 【t85】改为多线程（row-mt）：见 reports/47-vp9-encode-perf.md §4。
+  // 注意：这**不是**契约 §5.5 的「不加长锁」约束（那是 Java 侧调用约束）；
+  // libvpx 内部的多线程在其自己的线程池里跑，不阻塞我们的调用方。
+  cfg_.g_threads = static_cast<unsigned int>(ResolveEncoderThreads());
   cfg_.g_profile = 0;             // VP9 profile 0（I420 8bit）
   cfg_.g_pass = VPX_RC_ONE_PASS;  // 单通；也是允许动态改分辨率的前提
   cfg_.g_error_resilient = VPX_ERROR_RESILIENT_DEFAULT;
@@ -362,6 +385,16 @@ int32_t Vp9Encoder::Init(const EncoderConfig& config) {
   }
   codec_open_ = true;
   vpx_codec_control(&codec_, VP8E_SET_CPUUSED, kCpuUsed);
+  // 【t85】row-mt：VP9 实时多线程的行级并行（libvpx ≥1.7；本 checkout 头里有
+  // VP9E_SET_ROW_MT，见 third_party/libvpx/include/vpx/vp8cx.h:576）。
+  int row_mt_result = -1;
+#ifdef VPX_CTRL_VP9E_SET_ROW_MT
+  row_mt_result = vpx_codec_control(&codec_, VP9E_SET_ROW_MT, 1);
+#endif
+  NLOG_INFO(kTagEncoder,
+            "encoder_threads g_threads=%u row_mt=%d cpu_used=%d cores=%ld",
+            cfg_.g_threads, row_mt_result, kCpuUsed,
+            sysconf(_SC_NPROCESSORS_ONLN));
 
   last_pts_us_ = -1;
   force_key_frame_ = true;  // 首帧必须是关键帧，否则对端无法起播
@@ -424,6 +457,37 @@ int32_t Vp9Encoder::SetRates(const LayerBitrate& rates) {
   // 记录 matrix 的 s/t（用于 CSV 的 s,t 列：描述编码器实际分层）
   last_matrix_.num_spatial = computed.configured_spatial;
   last_matrix_.num_temporal = computed.configured_temporal;
+
+  // ---- 【t85】码率口径埋点 + 去抖 -----------------------------------------
+  // requested = libwebrtc `setRates` 传入的分配总量（bps）
+  // applied   = 我们换算后写进 libvpx 的总量（kbps × 1000，向上取整 + 下限）
+  const int32_t requested_bps = rates.total_bps;
+  const int32_t applied_bps = computed.applied_total_bps;
+  const int64_t now_ms = NowMicros() / 1000;
+  if (computed.total_floor_clamped) {
+    NLOG_WARN(kTagBitrate,
+              "encoder_rate_floor requested_bps=%d applied_bps=%d floor_kbps=%d",
+              requested_bps, applied_bps, kDefaultTotalFloorKbps);
+  }
+  if (!ShouldApplyRates(last_applied_bps_, requested_bps, last_rates_ms_,
+                        now_ms)) {
+    // 去抖：变化 <10% 且距上次重配 <2 s ⇒ 跳过 `vpx_codec_enc_config_set`，
+    // 只更新记账与日志（避免高频小幅波动导致重配抖动）。
+    last_matrix_ = rates;
+    NLOG_INFO(kTagBitrate,
+              "encoder_rates requested_bps=%d applied_total_bps=%d fps=%d "
+              "layers=%d,%d debounced=1",
+              requested_bps, applied_bps, rates.framerate_fps,
+              computed.configured_spatial, computed.configured_temporal);
+    return kVp9Ok;
+  }
+  last_applied_bps_ = requested_bps;
+  last_rates_ms_ = now_ms;
+  NLOG_INFO(kTagBitrate,
+            "encoder_rates requested_bps=%d applied_total_bps=%d fps=%d "
+            "layers=%d,%d debounced=0",
+            requested_bps, applied_bps, rates.framerate_fps,
+            computed.configured_spatial, computed.configured_temporal);
 
   // ---- 写回 vpx 并下发 -----------------------------------------------------
   ApplyLayerRatesLocked(computed);
@@ -578,6 +642,9 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
     codec_open_ = true;
     initialized_ = true;
     vpx_codec_control(&codec_, VP8E_SET_CPUUSED, kCpuUsed);
+#ifdef VPX_CTRL_VP9E_SET_ROW_MT
+    vpx_codec_control(&codec_, VP9E_SET_ROW_MT, 1);
+#endif
     // 新码流：取证标记按"首帧"重打；尺寸变化后必须重新出关键帧，否则远端无法起播。
     frame_count_ = 0;
     last_pts_us_ = -1;
@@ -699,8 +766,10 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
                static_cast<long long>(pts_us), duration_us,
                static_cast<unsigned int>(flags));
   }
+  const int64_t encode_start_us = NowMicros();
   const vpx_codec_err_t encode_result = vpx_codec_encode(
       &codec_, raw_img_, pts_us, duration_us, flags, VPX_DL_REALTIME);
+  const int64_t encode_call_us = NowMicros() - encode_start_us;
   NLOG_DEBUG(kTagEncoder, "encode_vpx_done frame=%lld err=%d us=%lld",
              static_cast<long long>(frame_count_ + 1),
              static_cast<int>(encode_result),
@@ -780,8 +849,71 @@ int32_t Vp9Encoder::Encode(const I420Frame& frame, bool request_key_frame) {
                static_cast<long long>(elapsed_us), encoded_bytes,
                meta_.is_key_frame, meta_.temporal_index, qp);
   }
+  // 【t85】逐帧性能埋点：encode_us（本帧 vpx_codec_encode 耗时）+ 产出/未产出。
+  RecordPerfLocked(static_cast<int32_t>(encode_call_us), produced,
+                   frame.capture_time_ns);
   WriteBitrateCsvLocked(encoded_bytes, meta_.is_key_frame, qp);
   return produced ? kVp9Ok : kVp9NoOutput;
+}
+
+// 【t85】逐帧性能聚合：每 kPerfWindowFrames 帧输出一行 encoder_perf，回答
+// 「CPU 是否受限」这个问题：encode_us_p*/max 与帧间隔（1000×frames/in_fps）比较，
+// 以及有多少帧没产出（no_output）。
+void Vp9Encoder::RecordPerfLocked(int32_t encode_us, bool produced,
+                                  int64_t capture_ts_ns) {
+  ++perf_total_frames_;
+  if (!produced) {
+    ++perf_no_output_;
+  }
+  if (perf_count_ >= kPerfWindowFrames) {
+    return;
+  }
+  perf_us_[perf_count_++] = encode_us;
+  if (perf_first_ts_ns_ == 0) {
+    perf_first_ts_ns_ = capture_ts_ns;
+  }
+  perf_last_ts_ns_ = capture_ts_ns;
+  if (perf_count_ < kPerfWindowFrames) {
+    return;
+  }
+  // 60 个样本的插入排序（窗口很小，不值得引入 std::sort）。
+  int32_t sorted[kPerfWindowFrames];
+  for (int i = 0; i < kPerfWindowFrames; ++i) {
+    sorted[i] = perf_us_[i];
+  }
+  for (int i = 1; i < kPerfWindowFrames; ++i) {
+    const int32_t value = sorted[i];
+    int j = i - 1;
+    while (j >= 0 && sorted[j] > value) {
+      sorted[j + 1] = sorted[j];
+      --j;
+    }
+    sorted[j + 1] = value;
+  }
+  const int32_t p50 = sorted[kPerfWindowFrames / 2];
+  const int32_t p95 = sorted[(kPerfWindowFrames * 95) / 100];
+  const int32_t max_us = sorted[kPerfWindowFrames - 1];
+  int in_fps = 0;
+  if (perf_last_ts_ns_ > perf_first_ts_ns_) {
+    const int64_t span_us = (perf_last_ts_ns_ - perf_first_ts_ns_) / 1000;
+    if (span_us > 0) {
+      in_fps = static_cast<int>(static_cast<int64_t>(kPerfWindowFrames - 1) *
+                                1000000 / span_us);
+    }
+  }
+  // 单位：encode_ms_* 为毫秒（整数点三位，避免浮点格式化依赖）；
+  //       in_fps 为窗口内按采集时间戳算出的输入帧率（帧/s）。
+  NLOG_INFO(kTagEncoder,
+            "encoder_perf frames=%d encode_ms_p50=%d.%03d encode_ms_p95=%d.%03d "
+            "encode_ms_max=%d.%03d in_fps=%d no_output=%lld total=%lld",
+            kPerfWindowFrames, p50 / 1000, p50 % 1000, p95 / 1000, p95 % 1000,
+            max_us / 1000, max_us % 1000, in_fps,
+            static_cast<long long>(perf_no_output_),
+            static_cast<long long>(perf_total_frames_));
+  perf_count_ = 0;
+  perf_first_ts_ns_ = 0;
+  perf_last_ts_ns_ = 0;
+  perf_no_output_ = 0;
 }
 
 void Vp9Encoder::WriteBitrateCsvLocked(int32_t encoded_bytes, int key_frame,

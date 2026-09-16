@@ -158,6 +158,20 @@ class Vp9Encoder {
   // 【t57】旋转模式日志只打一次（bake/passthrough）
   bool rotation_mode_logged_ = false;
 
+  // ---- 【t85】逐帧性能埋点（每 kPerfWindowFrames 帧聚合一行 encoder_perf）----
+  static constexpr int kPerfWindowFrames = 60;   // 1s@60fps / 3s@20fps 量级
+  int32_t perf_us_[kPerfWindowFrames] = {0};     // 本窗口内每帧 vpx_codec_encode 耗时
+  int perf_count_ = 0;                           // 已采集样本数
+  int64_t perf_first_ts_ns_ = 0;                 // 窗口内首帧采集时间戳
+  int64_t perf_last_ts_ns_ = 0;                  // 窗口内末帧采集时间戳
+  int64_t perf_no_output_ = 0;                   // 未产出帧计数（NO_OUTPUT/空包）
+  int64_t perf_total_frames_ = 0;                // 累计编码调用次数
+  // 逐帧性能埋点聚合（t85）：每 kPerfWindowFrames 帧打一行 encoder_perf
+  void RecordPerfLocked(int32_t encode_us, bool produced, int64_t capture_ts_ns);
+  // setRates 去抖状态（t85）
+  int32_t last_applied_bps_ = 0;                 // 上次真正重配的 requested（bps）
+  int64_t last_rates_ms_ = 0;                    // 上次重配时刻（ms，单调钟）
+
   // 最近一次 SetRates 的输入与输出（CSV/日志留痕）。
   LayerBitrate last_matrix_;
   VpxLayerRates last_rates_;

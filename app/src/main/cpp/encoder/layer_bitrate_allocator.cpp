@@ -41,6 +41,8 @@
 // （见 layer_bitrate_fold_host_test.cpp：容器内无宿主 libc/libc++ 头）。
 #include "encoder/layer_bitrate_allocator.h"
 
+#include "encoder/encoder_rate_policy.h"
+
 namespace webrtcdemo {
 
 const int32_t
@@ -166,11 +168,19 @@ VpxLayerRates LayerBitrateAllocator::Compute(const LayerBitrate& in,
   }
 
   // ---- ④ 总目标码率（kbps）--------------------------------------------------
-  int32_t rc_kbps = static_cast<int32_t>(total / 1000);
+  // 【t85】口径修正：① **向上取整**（旧实现 total/1000 向下取整 ⇒ applied < requested，
+  //   例如 requested 6732 bps → applied 6 kbps = -11%）；② 施加**总码率下限**
+  //   （requested 极小档位，真机 n3 p50 仅 35.6 kbps，实测 qp 193–224）。
+  out.requested_total_bps = static_cast<int32_t>(total);
+  int32_t rc_kbps = CeilKbpsFromBps(total);
+  bool floor_clamped = false;
+  rc_kbps = ApplyTotalFloorKbps(rc_kbps, kDefaultTotalFloorKbps, &floor_clamped);
   if (rc_kbps < kMinLayerKbps) {
     rc_kbps = kMinLayerKbps;
   }
   out.rc_target_bitrate_kbps = rc_kbps;
+  out.total_floor_clamped = floor_clamped ? 1 : 0;
+  out.applied_total_bps = rc_kbps * 1000;
 
   // ---- ⑤ 逐层累计 → ts_target_bitrate / layer_target_bitrate ----------------
   int64_t cumulative = 0;
