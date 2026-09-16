@@ -135,3 +135,76 @@ requested→applied ≈ 99.6–100%（`encoder_rates requested_bps=143512 applie
 | `reports/49-bitrate-allocation-collapse.md` | 本报告（mode 644） |
 
 未改：`signaling/**`、`doc/**`、`third_party/**`、`app/src/main/cpp/**`（t85 的 C++ 改动仍在工作树，未提交）。
+
+---
+
+## 8. 【t89 追加 1】启用 QP 质量缩放（ScalingSettings 不再 OFF）
+
+**证据（t86 版真机，埋点在 `native*.log`）**：`encoder_threads g_threads=4 row_mt=0 cpu_used=8 cores=8`；
+`encoder_perf` p50 2.9–13.8 ms、**p95 5.3–18.2 ms**、`no_output=0`；`debounced=1` 占比 724/890（n4）、263/391（n5）；
+**`encoder_rate_floor` 触发 18 次（n4）/ 68 次（n5）**（requested 7–27 kbps → 地板 30 kbps）；
+`requested_bps` n5 p10 **12 670** / p50 273 371 / max 754 307，n4 p50 850 606 / p90 1 699 073。
+
+**问题**：`Vp9VideoEncoder.getScalingSettings()` 返回 `ScalingSettings.OFF` ⇒ libwebrtc 日志出现
+`Removing resource "QualityScalerResource"` ⇒ 拥塞时**没有 QP 侧的优雅降级**（分辨率/帧率不会平滑下调，只会码率被饿死，
+真机同时可见 `encoder_rate_floor` 频繁触发 + `VideoStreamAdapter … kLimitReached`）。
+
+**判定：启用**（依据）：① 我们已把 libvpx 的真实 QP 回传（`setQp(meta[5])`，`Vp9VideoEncoder.kt:387`）⇒ 具备 QP 阈值判定的输入；
+② libwebrtc 自带软编 VP9 的参考实现同样在「可缩放」时给出阈值
+（`modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc:1897` `info.scaling_settings = VideoEncoder::ScalingSettings(low, high)`，
+否则 `kOff`）；③ Java 侧有 `VideoEncoder.ScalingSettings(int low, int high)` 构造
+（`sdk/android/api/org/webrtc/VideoEncoder.java:139`）。
+
+**改动**：`app/src/main/kotlin/com/example/webrtcdemo/encoder/Vp9VideoEncoder.kt:89-90` 新增常量
+`LOW_QP_THRESHOLD = 24`、`HIGH_QP_THRESHOLD = 37`；`:339-340` 改为
+`VideoEncoder.ScalingSettings(24, 37)`。
+> 阈值来源说明（如实）：本 checkout 内**没有** `kLowQpThreshold/kHighQpThreshold` 常量（全树 grep 为空），
+> 24/37 是 libwebrtc 生态（H.264/MediaCodec 实现）惯用的一对取值；若真机复测显示降级过于激进/保守，
+> 按 U1 调整这两个常量即可（单点可回退）。
+
+**启用后对「糊/卡」的实际影响（预期）**：QP 高于 37 时 libwebrtc 逐档下调分辨率（每次经过 SDK 的 VideoAdapter；
+我们的 C++ 侧会按 t50 的「destroy + enc_init」重建一次编码器并强制关键帧），QP 低于 24 时回升 ⇒
+在 8% 丢包/63–72 ms RTT 的中继链路上，宁可**先降分辨率保帧率**，而不是把码率饿到 30 kbps 地板后画面糊且卡。
+**代价**：分辨率每变一档 = 一次 reinit（关键帧 + RC 复位）；若真机出现 reinit 风暴（`encoder_reinit` 次数激增、
+关键帧占比升高），把 `getScalingSettings()` 改回 `ScalingSettings.OFF` 即恢复原状（单行回退）。
+
+## 9. 【t89 追加 2】渲染侧是否是二次瓶颈 —— 归因结论
+
+**证据**（`eglrenderer` 行，n4/n5 导出）：
+```
+Duration 4002ms Frames received  95 Dropped 0 Rendered  95 Render fps 23.7 Avg render time 1074us
+Duration 4002ms Frames received  75 Dropped 0 Rendered  75 Render fps 18.7 Avg render time  528us
+Duration 4001ms Frames received  87 Dropped 0 Rendered  87 Render fps 21.7 Avg render time 1361us
+Duration 4007ms Frames received  53 Dropped 0 Rendered  53 Render fps 13.2 Avg render time 1276us
+Duration 4005ms Frames received  28 Dropped 0 Rendered  28 Render fps  7.0 Avg render time  530us
+```
+
+**结论：渲染侧不是瓶颈，是「到达就这么多」**。判据三条：
+1. **`Dropped = 0` 且 `Rendered == Frames received`**（每个 4 s 窗口）⇒ 渲染队列没有丢帧、没有节流；
+2. **`Average render time 0.53–1.36 ms`**（远小于 40 ms 的 25 fps 帧间隔）⇒ EGL/绘制不是限制；
+3. 渲染 fps（7.0–23.7）与同期编码侧 `encoder_perf in_fps=18–23` 大体同量级，但**出现 7.0/13.2 这类低谷**——
+   低谷与网络侧指标同期（`OnBitrateUpdated … packet_loss 8`、NACK 700+、RTT 63–72 ms、`mode=RELAY`）。
+
+**归因分离（按用户/你的要求）**：
+
+| 侧 | 观测事实 | 判定 |
+| --- | --- | --- |
+| 网络 | `mode=RELAY`（两端 Symmetric NAT ⇒ 无法 P2P）、`packet_loss 8%`、NACK 700+ 次、RTT 63–72 ms | **主因之一**：丢包/重传造成到达帧率的周期性低谷（4 s 窗口内 28 帧 = 7 fps） |
+| 我们侧·编码 | `encode_ms` p50 2.9–13.8 ms、p95 5.3–18.2 ms（< 帧间隔）、`no_output=0`、`g_threads=4 row_mt=0` | **不是瓶颈**（t85 的多线程已生效） |
+| 我们侧·码率 | `encoder_rate_floor` 18/68 次、requested p10 12.7 kbps（n5） | 地板已生效（30 kbps），但**分配本身过低**是分配/估计侧问题（t89 §2） |
+| 我们侧·渲染 | `Dropped 0`、`Rendered == received`、渲染耗时 0.5–1.4 ms | **不是瓶颈**（无本地丢帧/节流） |
+| 帧率口径 | `in_fps` 18–23、`setrates fps` 17–23 | 跟随 libwebrtc 入参（t85 已证），且被丢包/重传压低 |
+
+**你的问题：在 8% 丢包 + 63–72 ms RTT 的中继链路上，默认编码路径是否也会掉到 18–23 fps？**
+**结论：未验证**（本轮无真机、未重打包）。可比对的**部分** A/B 只有 n3：同一台 Mi 10 Pro、同 `mode=RELAY`，
+默认编码 `up_bps` 1.36–1.97 Mbps；但两段的丢包/RTT 并不相同（n3 未记录 `packet_loss 8`）⇒ 存在混淆变量，
+**不能据此断言默认路径在 8% 丢包下仍不掉帧**。建议的 A/B（一次复测即可判定，需你派构建+真机）：
+同一对设备、同一条 RELAY 路径、`use_default_encoder` 真/假各跑 60 s，**同窗口**采集
+`eglrenderer Render fps / Frames received / Dropped`、`stats_sample up_bps/avail_bps`、
+`OnBitrateUpdated … packet_loss … rtt …`；判据：若默认编码的 `Render fps` 在同级丢包/RTT 下仍 ≥25，
+则说明我们侧仍有优化空间；若两者同为 7–23 fps，则瓶颈在网络（RELAY + 丢包），与编码器实现无关。
+
+**未验证项（追加）**：
+- V-6：ScalingSettings 启用后真机的降级行为（分辨率档位变化次数、`encoder_reinit` 频率、观感）——见 U1（在本报告 §4 判据之外，另看 `encoder_reinit` 与关键帧占比）。
+- V-7：渲染侧结论基于 `eglrenderer` 的 4 s 窗口计数；接收侧解码器统计（`frames_decoded/frames_dropped`）不在本轮导出中，建议下一轮一并导出。
+- V-8：默认编码路径在同等丢包/RTT 下的帧率对照（如上，需真机 A/B）。

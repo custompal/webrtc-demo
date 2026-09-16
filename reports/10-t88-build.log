@@ -52,3 +52,54 @@ ASSEMBLE_EXIT=0  T1=2026-09-16T20:09:49+08:00  T2=2026-09-16T20:12:27+08:00  raw
       strings in .so: g_threads              2
 
 ===== 4. --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest =====
+TEST_EXIT=0   raw=/opt/dsh-workspaces/tmp/t88/test-20260916-200755.log
+  BUILD SUCCESSFUL in 2m 37s
+  24 actionable tasks: 24 executed
+===== 4b. 单测计数闸门（类数>=20 且 用例数>=206）=====
+  XML 汇总: 类数=23  tests=213 failures=0 errors=0 skipped=0  (XML 最新 mtime=2026-09-16 20:15:04)
+    AppConfigUrlTest                                     tests=8   fail=0 err=0 skip=0
+    EncoderFallbackControllerTest                        tests=5   fail=0 err=0 skip=0
+    EncoderFallbackPolicyTest                            tests=10  fail=0 err=0 skip=0
+    Vp9BitrateLimitsTest                                 tests=7   fail=0 err=0 skip=0
+    LogLevelFilterTest                                   tests=6   fail=0 err=0 skip=0
+    NativeInterfaceContractTest                          tests=4   fail=0 err=0 skip=0
+    PongLivenessTest                                     tests=8   fail=0 err=0 skip=0
+    ReconnectBudgetTest                                  tests=5   fail=0 err=0 skip=0
+    SignalingErrorPolicyTest                             tests=21  fail=0 err=0 skip=0
+    SignalingIdentityTest                                tests=11  fail=0 err=0 skip=0
+    CallSessionSlotTest                                  tests=8   fail=0 err=0 skip=0
+    CallSurvivabilityTest                                tests=19  fail=0 err=0 skip=0
+    ConnectionStatusTrackerTest                          tests=29  fail=0 err=0 skip=0
+    MediaAliveSuppressionTest                            tests=10  fail=0 err=0 skip=0
+    PendingRemoteMessagesTest                            tests=7   fail=0 err=0 skip=0
+    IceCandidateInfoTest                                 tests=8   fail=0 err=0 skip=0
+    IceWatchdogPolicyTest                                tests=6   fail=0 err=0 skip=0
+    JniBindingClasspathTest                              tests=6   fail=0 err=0 skip=0
+    LoopbackCandidatesTest                               tests=5   fail=0 err=0 skip=0
+    RemoteCandidateAccountingTest                        tests=5   fail=0 err=0 skip=0
+    RendererRecoveryPolicyTest                           tests=7   fail=0 err=0 skip=0
+    SessionLifecycleTest                                 tests=10  fail=0 err=0 skip=0
+    TurnTcpFallbackTest                                  tests=8   fail=0 err=0 skip=0
+  GATE: 类数 23>=20 ? True ; 用例 213>=206 ? True ; failures=0 errors=0 ⇒ PASS
+  GATE_EXIT=0
+
+===== 4c. 包体旁证：dex 侧（t87/t83/t80）与 .so 侧（t85）=====
+  dex 侧:
+    encoder_fallback_decision      1
+    encoder_fallback_applied       1
+    encoder_fallback_probe         2
+    encoder_fallback_requested     1
+    encoder_fallback_switch_signal 1
+    encoder_fallback_config        1
+    ice_watchdog_stale_tier        1
+    ice_error_cleared              1
+    ice_candidate_remote_total     1
+  .so 侧（libwebrtcdemo_native.so）:
+    encoder_perf                   1
+    encoder_rates                  2
+    encoder_rate_floor             1
+    encoder_threads                1
+
+===== 5. 属主归一 =====
+  app/build root 条目=0  .gradle=0  app/.cxx=0
+# T3=2026-09-16T20:15:06+08:00 结束（CHECK=0 COMPILE=0 ASSEMBLE=0 TEST=0 GATE=0）

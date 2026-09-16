@@ -76,6 +76,19 @@ class Vp9VideoEncoder : VideoEncoder {
         /** 编码结果缓冲上限（§6.7 冻结 8 MiB）。 */
         private const val MAX_DST_BYTES = 8 * 1024 * 1024
 
+        /**
+         * 【t89 追加 1】QP 质量缩放阈值（libwebrtc 生态惯用值：低 24 / 高 37）。
+         *
+         * 为什么启用：此前返回 `ScalingSettings.OFF`，libwebrtc 日志出现
+         * `Removing resource "QualityScalerResource"` ⇒ 拥塞时**没有任何 QP 侧的优雅降级**，
+         * 只能被码率饿死（真机 n5：`encoder_rate_floor` 触发 68 次、requested p10 12.7 kbps）。
+         * 我们已把 libvpx 的真实 QP 回传（`setQp(meta[5])`）⇒ 具备启用条件。
+         * 阈值取值：libwebrtc 软编/硬编实现通用的 24/37（本 checkout 未包含这些常量，
+         * 故引用为社区/生态惯例值，详见 reports/49 §8；真机需按 U1 复测确认）。
+         */
+        private const val LOW_QP_THRESHOLD = 24
+        private const val HIGH_QP_THRESHOLD = 37
+
         /** 单帧编码耗时告警阈值（§5.5）。 */
         private const val SLOW_FRAME_WARN_MS = 33L
     }
@@ -312,8 +325,19 @@ class Vp9VideoEncoder : VideoEncoder {
         }
     }
 
-    /** 质量缩放交给本项目策略，避免与 SDK quality scaler 双控制（§5.4）。 */
-    override fun getScalingSettings(): VideoEncoder.ScalingSettings = VideoEncoder.ScalingSettings.OFF
+    /**
+     * 【t89 追加 1】启用 QP 质量缩放（不再返回 OFF）。
+     *
+     * 旧行为：`ScalingSettings.OFF` ⇒ libwebrtc `QualityScalerResource` 被移除
+     * （`Removing resource "QualityScalerResource"`），拥塞时不会平滑下调分辨率/帧率，
+     * 只会把码率饿到几十 kbps（n5 requested p10 12.7 kbps、`encoder_rate_floor` 68 次）。
+     * 新行为：给出 [LOW_QP_THRESHOLD]/[HIGH_QP_THRESHOLD] ⇒ libwebrtc 在 QP 高于 37 时
+     * 逐档下调分辨率、低于 24 时回升；与带宽侧（VideoStreamAdapter）共同构成两级降级。
+     * 注意：分辨率变化会走到 C++ 侧 t50「destroy + enc_init」重建（每档一次关键帧），
+     * 若真机出现 reinit 风暴则回退本项（见 reports/49 §8 的 U1/回退方式）。
+     */
+    override fun getScalingSettings(): VideoEncoder.ScalingSettings =
+        VideoEncoder.ScalingSettings(LOW_QP_THRESHOLD, HIGH_QP_THRESHOLD)
 
     /** 自研软编（§5.4）。 */
     override fun isHardwareEncoder(): Boolean = false
