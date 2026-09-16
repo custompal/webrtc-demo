@@ -8,6 +8,8 @@
 - 时间：2026-09-16 20:07 → 20:16（+0800）
 - 结论：**ABORT —— 构建窗口内源码被第三方改写（3 件），输入不连贯 ⇒ 按纪律不发布；现役锚点未变动。**
 - 状态：任务在平台侧为 **failed（终态不可改）**；captain 若需改为 `cancelled` 需 reassign 收回。
+- **日志版本说明（captain ③）**：本目录 `reports/10-t88-build.log` 的**最终版（105 行 / 6,767 B / sha256 `1392b7984d1d7588ff58fe14e0c4745342cd4db549606cf21c5d74f1191d13bc`）覆盖了 captain 提交 `c1d06cf` 时带入的 54 行中间态**，完整保留中止运行输出（含判据行「构建窗口内 app/src 写入(>T1)=3」）。统一构建的最终日志为 `reports/10-t90-build.log`（155 行 / 9,757 B / sha256 `6a811bc7e43eb9c6cca4a2da70f2bcf0d4455b92bc33c6f88f724d096b2605e7`）。
+- **混入产物隔离哈希（captain ②）**：`f1eacbf4036c1ade0a5dcb27840cee746eaed776d8a19c440a0c8f47dea20298` / 33,472,645 B / mtime 20:12:26 —— 已在本文 §3 与 t90 报告 §7 留证；其在 `/opt/apk-http/artifacts/` 与 `/opt/dsh-workspaces/artifacts/` 的副本计数均为 **0**，原文件已被 t90 的 `clean assembleDebug` 覆盖。
 
 ---
 
