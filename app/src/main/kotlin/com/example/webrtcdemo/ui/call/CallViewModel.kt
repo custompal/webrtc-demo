@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.webrtcdemo.config.AppConfig
 import com.example.webrtcdemo.diag.LogExporter
+import com.example.webrtcdemo.encoder.EncoderFallbackController
 import com.example.webrtcdemo.encoder.EncoderRateBus
 import com.example.webrtcdemo.log.AppLog
 import com.example.webrtcdemo.model.CallUiState
@@ -432,6 +433,9 @@ class CallViewModel(application: Application) :
         // 不再上报、残留的 ICE 事件会串到新通话。
         callEnded = false
         natTypeSent = false
+        // 【t87】新一代通话 = 新编码器：复位降级兜底的窗口/滞回/次数状态，
+        // 并兑现上一次通话留下的「下次通话生效」标记（不改 CallSession 生命周期）。
+        EncoderFallbackController.onCallStarted(reason)
         _iceEvents.value = emptyList()
         this.role = role
         _uiState.update {
@@ -627,6 +631,8 @@ class CallViewModel(application: Application) :
         releaseSession("hangup")
         // 【t59】停止连接状态心跳
         connTracker.onCallEnded()
+        // 【t87】停采样（`pendingFallbackForNextCall` 保留，等下一次通话兑现）
+        EncoderFallbackController.onCallEnded("hangup")
         IceServerCache.clear()
         NatTypeRepository.cancel()
         SignalingHolder.release()

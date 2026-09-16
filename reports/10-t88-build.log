@@ -1,0 +1,54 @@
+==============================================================
+# t88 构建：t87 自研编码自动降级兜底重编交付 APK（第七次构建发布）
+# T0=2026-09-16T20:07:55+08:00  脚本=/opt/dsh-workspaces/tmp/t88-build.sh  TS=20260916-200755
+# HEAD=8f51e8e13d8a708061188c684c363d630e360fb9  dirty=13 行
+# T1 界（t87 报告实测 app/src 最后写入，排除 jniLibs 固定件）= 2026-09-16+20:00:48.4814899440 app/src/test/kotlin/com/example/webrtcdemo/encoder/EncoderFallbackControllerTest.kt
+# 前置静默（check-only 之前）：java/gradle 进程=0  近5min app/src(非jniLibs)=0  signaling=0
+# 前置静默断言：PASS
+# T0 cpp 源码: vp9_encoder.cpp=83a54c491411b84a vp9_encoder.h=c83ceb687ff06762 layer_bitrate_allocator.cpp=3802c7f42206f220 encoder_rate_policy.h=cde75a731db8609c
+# T0 上一锚点(served) native .so:
+    size=1278784 sha256=043e851ac358d844f783423dfcef8f0aca0e94a190b9995fa201a6b0018e6fff
+===== 1. build_app.sh --check-only =====
+CHECK_ONLY_EXIT=0   raw=/opt/dsh-workspaces/tmp/t88/checkonly-20260916-200755.log
+  tail: ===== == --check-only：不执行构建 == ===== 前置校验全部通过（未构建） 
+===== 1b. 静默断言（check-only 之后；jniLibs 固定件同哈希重拷豁免）=====
+  java/gradle 进程=0
+  豁免（内容不变重拷）: app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so  757cef8128bf9151
+  非豁免写入件数=0   豁免件数=1
+  静默断言：PASS
+
+===== 2. :app:compileDebugKotlin =====
+COMPILE_EXIT=0   raw=/opt/dsh-workspaces/tmp/t88/compile-20260916-200755.log
+  BUILD SUCCESSFUL in 1m 49s
+  15 actionable tasks: 1 executed, 14 up-to-date
+
+===== 3. --no-daemon --no-build-cache clean assembleDebug（含 native 构建）=====
+ASSEMBLE_EXIT=0  T1=2026-09-16T20:09:49+08:00  T2=2026-09-16T20:12:27+08:00  raw=/opt/dsh-workspaces/tmp/t88/assemble-20260916-200755.log
+  BUILD SUCCESSFUL in 2m 37s
+  43 actionable tasks: 42 executed, 1 up-to-date
+  FROM-CACHE 行数=0   :app:clean 出现=1
+  native 构建痕迹: externalNativeBuild 任务数=2  ninja/cmake 行=2
+  构建窗口内 app/src 写入(>T1)=3  signaling 写入(>T1)=0
+  APK sha256=f1eacbf4036c1ade0a5dcb27840cee746eaed776d8a19c440a0c8f47dea20298
+  APK size=33472645  mtime=2026-09-16 20:12:26.394918211 +0800
+  T2 双钉 jar=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+  T2 双钉 aar=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+  T2 双钉 so =757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+  T2 双钉 lcxx=c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+  四 .so p_align（APK 内）:
+    libandroidx.graphics.path.so               41e9a793c43a0f4f p_align=['0x4000']
+    libc++_shared.so                           c9dbf4ec15e931f5 p_align=['0x4000']
+    libjingle_peerconnection_so.so             757cef8128bf9151 p_align=['0x4000']
+    libwebrtcdemo_native.so                    043e851ac358d844 p_align=['0x4000']
+  自有库 native .so 详情（新 vs 上一锚点）:
+    new size=1278784 sha256=043e851ac358d844f783423dfcef8f0aca0e94a190b9995fa201a6b0018e6fff
+    old size=1278784 sha256=043e851ac358d844f783423dfcef8f0aca0e94a190b9995fa201a6b0018e6fff
+    CHANGED = False
+      strings in .so: encoder_perf           1
+      strings in .so: encoder_rates          2
+      strings in .so: encoder_rate_floor     1
+      strings in .so: encoder_threads        1
+      strings in .so: row_mt                 6
+      strings in .so: g_threads              2
+
+===== 4. --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest =====

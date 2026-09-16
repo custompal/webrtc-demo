@@ -2,6 +2,8 @@ package com.example.webrtcdemo.webrtc
 
 import android.content.Context
 import com.example.webrtcdemo.config.AppConfig
+import com.example.webrtcdemo.encoder.EncoderFallbackController
+import com.example.webrtcdemo.encoder.EncoderOverrideMode
 import com.example.webrtcdemo.encoder.Vp9VideoEncoder
 import com.example.webrtcdemo.encoder.Vp9VideoEncoderFactory
 import com.example.webrtcdemo.log.AppLog
@@ -141,7 +143,16 @@ object WebRtcEngine {
                     DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true)
                 )
             } else {
-                builder.setVideoEncoderFactory(Vp9VideoEncoderFactory())
+                // 【t87】降级兜底的默认实现来源：**只**在判定需要降级时用于创建编码器，
+                // 不参与 getSupportedCodecs ⇒ 协商列表仍是「只有 VP9」（§5.4 契约不变）。
+                val defaultEncoderFactory = DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true)
+                EncoderFallbackController.configure(
+                    EncoderOverrideMode.fromWire(AppConfig.encoderOverride(appContext)),
+                    AppConfig.encoderFallbackEnabled(appContext),
+                )
+                builder.setVideoEncoderFactory(
+                    Vp9VideoEncoderFactory(defaultEncoderFactory = defaultEncoderFactory)
+                )
             }
             val factory = builder.createPeerConnectionFactory()
 
@@ -161,6 +172,9 @@ object WebRtcEngine {
                 mapOf(
                     "impl" to Vp9VideoEncoder.IMPL_NAME,
                     "use_default_encoder" to AppConfig.useDefaultEncoder(appContext).toString(),
+                    // 【t87】兜底配置一并落盘，便于真机判断「是没触发还是没开」
+                    "encoder_mode" to EncoderFallbackController.uiState.value.mode.wire,
+                    "encoder_fallback" to EncoderFallbackController.uiState.value.fallbackEnabled.toString(),
                 )
             )
             // t25：关键事件同步直写，保证 app.log 中必有（不依赖异步队列）。
@@ -170,6 +184,8 @@ object WebRtcEngine {
                 mapOf(
                     "impl" to Vp9VideoEncoder.IMPL_NAME,
                     "use_default_encoder" to AppConfig.useDefaultEncoder(appContext).toString(),
+                    "encoder_mode" to EncoderFallbackController.uiState.value.mode.wire,
+                    "encoder_fallback" to EncoderFallbackController.uiState.value.fallbackEnabled.toString(),
                 )
             )
             true

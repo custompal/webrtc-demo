@@ -127,6 +127,13 @@ class Vp9VideoEncoder : VideoEncoder {
         }
         handle = newHandle
         released = false
+        // 【t87】把「请求帧率/尺寸」交给降级兜底控制器：采样口径的来源（JNI 边界在 encode 侧）
+        EncoderFallbackController.onEncoderInit(
+            IMPL_NAME,
+            settings.width,
+            settings.height,
+            settings.maxFramerate,
+        )
         AppLog.i(
             TAG,
             "encoder_init",
@@ -169,6 +176,8 @@ class Vp9VideoEncoder : VideoEncoder {
         }
 
         val startedNs = System.nanoTime()
+        // 【t87】产出判定：只有 `encode()` 真正回调了一帧非空编码帧才算产出（用于 out_fps）
+        var produced = false
         try {
             // 与 t7 的接口约定（reports/07-native-dev.md §2.5）：nativeEncode 要求 3 个平面为
             // **direct** 且容量 >= stride*(rows-1)+row_bytes，否则返回 -4 ERR_PARAMETER。
@@ -204,7 +213,7 @@ class Vp9VideoEncoder : VideoEncoder {
                 normalizeRotation(frame.rotation),
                 keyFrame,
             )
-            return when (rc) {
+            val status = when (rc) {
                 NativeVp9Encoder.STATUS_OK -> deliverFrame(currentHandle, frame.timestampNs, cb)
                 NativeVp9Encoder.STATUS_NO_OUTPUT -> VideoCodecStatus.NO_OUTPUT
                 else -> {
@@ -212,8 +221,12 @@ class Vp9VideoEncoder : VideoEncoder {
                     statusOf(rc)
                 }
             }
+            produced = status == VideoCodecStatus.OK
+            return status
         } finally {
             val elapsedMs = (System.nanoTime() - startedNs) / 1_000_000L
+            // 【t87】JNI 边界的单帧耗时/产出计数交给降级兜底控制器（编码线程内极廉价：计数 + 每秒一次投递）
+            EncoderFallbackController.onEncodeResult(elapsedMs, produced)
             if (elapsedMs > SLOW_FRAME_WARN_MS) {
                 AppLog.w(TAG, "encoder_slow_frame", mapOf("ms" to elapsedMs.toString()))
             }
@@ -253,6 +266,8 @@ class Vp9VideoEncoder : VideoEncoder {
         val total = allocation.sum
         val rc = NativeVp9Encoder.nativeSetRates(currentHandle, flat, spatial, temporal, total, framerate)
         EncoderRateBus.publish(total, framerate)
+        // 【t87】降级判据的「请求帧率」输入：GCC 每次 SetRates 都会带来最新目标帧率
+        EncoderFallbackController.onRequestedFps(framerate)
         if (rc != NativeVp9Encoder.STATUS_OK) {
             // 字段与 t7 的 nativeSetRates_rejected（reason=length_mismatch/bad_dim）对齐，便于真机配对定位
             AppLog.w(
@@ -325,11 +340,8 @@ class Vp9VideoEncoder : VideoEncoder {
      * —— 是**单个像素总数**，不是 (width, height)。故此处按 `w * h` 传入
      * （class 文件实测：字段 `frameSizePixels/minStartBitrateBps/minBitrateBps/maxBitrateBps`）。
      */
-    override fun getResolutionBitrateLimits(): Array<VideoEncoder.ResolutionBitrateLimits> = arrayOf(
-        VideoEncoder.ResolutionBitrateLimits(320 * 180, 0, 0, 500_000),
-        VideoEncoder.ResolutionBitrateLimits(640 * 360, 0, 0, 1_000_000),
-        VideoEncoder.ResolutionBitrateLimits(1280 * 720, 0, 0, 2_000_000),
-    )
+    override fun getResolutionBitrateLimits(): Array<VideoEncoder.ResolutionBitrateLimits> =
+        Vp9BitrateLimits.limits()   // 【t89】官方 VP9 单播参考表，含 30 kbps 地板与启动码率
 
     // ============================ 内部实现 ============================
 

@@ -47,6 +47,21 @@ object AppConfig {
     /** 弱设备降级开关（§7.2/R4：480x360@24）。 */
     const val KEY_USE_LOW_RES = "use_low_resolution"
 
+    /** 编码实现三态覆盖（t87：`AUTO`（默认）/`SELF`/`DEFAULT`）。 */
+    const val KEY_ENCODER_OVERRIDE = "encoder_override"
+
+    /** 自动降级兜底开关（t87：默认 **开启**）。 */
+    const val KEY_ENCODER_FALLBACK = "encoder_fallback_enabled"
+
+    /** 编码实现三态：自动（默认）。 */
+    const val ENCODER_OVERRIDE_AUTO = "AUTO"
+
+    /** 编码实现三态：强制自研。 */
+    const val ENCODER_OVERRIDE_SELF = "SELF"
+
+    /** 编码实现三态：强制默认（硬件优先）。 */
+    const val ENCODER_OVERRIDE_DEFAULT = "DEFAULT"
+
     /** ICE 策略取值：全部候选。 */
     const val ICE_POLICY_ALL = "ALL"
 
@@ -153,6 +168,43 @@ object AppConfig {
     /** 写入默认编码器开关。 */
     fun setUseDefaultEncoder(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_USE_DEFAULT_ENCODER, enabled).apply()
+    }
+
+    /**
+     * 编码实现三态覆盖（t87 验收第 3 条）。
+     *
+     * 取值口径与 `EncoderOverrideMode.wire` 一致（`AUTO`/`SELF`/`DEFAULT`）；
+     * 本方法只做**字符串**读写，枚举映射交给 `EncoderOverrideMode.fromWire`，
+     * 保持 `config` 包不依赖 `encoder` 包（避免配置层被业务类型侵入）。
+     *
+     * @param context 任意 Context。
+     * @return 持久化值；未设置时 [ENCODER_OVERRIDE_AUTO]。
+     */
+    fun encoderOverride(context: Context): String =
+        prefs(context).getString(KEY_ENCODER_OVERRIDE, ENCODER_OVERRIDE_AUTO) ?: ENCODER_OVERRIDE_AUTO
+
+    /**
+     * 写入编码实现三态覆盖。
+     *
+     * 生效时机：AUTO 下的降级判定实时生效；`SELF`/`DEFAULT` 在**下一次创建编码器**时生效
+     * （通话中切换由 selector 通道完成，见 `FallbackVideoEncoderSelector`）。
+     */
+    fun setEncoderOverride(context: Context, mode: String) {
+        prefs(context).edit().putString(KEY_ENCODER_OVERRIDE, mode).apply()
+    }
+
+    /**
+     * 自动降级兜底开关（t87：默认 **开启**）。
+     *
+     * @param context 任意 Context。
+     * @return 是否开启自动兜底。
+     */
+    fun encoderFallbackEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_ENCODER_FALLBACK, true)
+
+    /** 写入自动降级兜底开关。 */
+    fun setEncoderFallbackEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_ENCODER_FALLBACK, enabled).apply()
     }
 
     private fun prefs(context: Context): SharedPreferences =

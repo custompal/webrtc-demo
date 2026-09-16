@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import com.example.webrtcdemo.BuildConfig
 import com.example.webrtcdemo.R
 import com.example.webrtcdemo.config.AppConfig
+import com.example.webrtcdemo.encoder.EncoderFallbackController
+import com.example.webrtcdemo.encoder.EncoderOverrideMode
 import com.example.webrtcdemo.encoder.Vp9VideoEncoder
 import com.example.webrtcdemo.log.AppLog
 import com.example.webrtcdemo.log.FileLogger
@@ -68,6 +71,12 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
     var urlInput by remember { mutableStateOf(AppConfig.signalingUrl(context)) }
     var effectiveUrl by remember { mutableStateOf(AppConfig.signalingUrl(context)) }
     var useLowRes by remember { mutableStateOf(AppConfig.useLowResolution(context)) }
+    // 【t87】编码实现三态 + 自动降级兜底开关（默认 = 自动 + 兜底开启）
+    var encoderOverride by remember {
+        mutableStateOf(EncoderOverrideMode.fromWire(AppConfig.encoderOverride(context)))
+    }
+    var encoderFallback by remember { mutableStateOf(AppConfig.encoderFallbackEnabled(context)) }
+    val fallbackState by EncoderFallbackController.uiState.collectAsState()
     var pendingSaveFile by remember { mutableStateOf<java.io.File?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var exporting by remember { mutableStateOf(false) }
@@ -182,6 +191,64 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                 },
             )
         }
+
+        // ---- 【t87】编码实现三态 + 自动降级兜底----
+        // 三态语义：自动（默认，按实测指标自动兜底）/ 强制自研（看自研极限）/ 强制默认（硬件优先）。
+        // 判定与生效机制见 encoder/EncoderFallbackPolicy.kt 与 encoder/EncoderFallbackController.kt。
+        Text(text = "编码实现（自动兜底）", style = MaterialTheme.typography.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (candidate in EncoderOverrideMode.entries) {
+                OutlinedButton(
+                    enabled = candidate != encoderOverride,
+                    onClick = {
+                        encoderOverride = candidate
+                        AppConfig.setEncoderOverride(context, candidate.wire)
+                        EncoderFallbackController.configure(candidate, encoderFallback)
+                        message = when (candidate) {
+                            EncoderOverrideMode.AUTO -> "编码实现：自动（实测跟不上 ⇒ 兜底切默认）"
+                            EncoderOverrideMode.SELF -> "编码实现：强制自研（关闭自动降级判定）"
+                            EncoderOverrideMode.DEFAULT -> "编码实现：强制默认（硬件优先，下次创建编码器生效）"
+                        }
+                    },
+                ) {
+                    Text(text = encoderModeLabel(candidate), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "自动降级兜底",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Switch(
+                checked = encoderFallback,
+                onCheckedChange = { checked ->
+                    encoderFallback = checked
+                    AppConfig.setEncoderFallbackEnabled(context, checked)
+                    EncoderFallbackController.configure(encoderOverride, checked)
+                    message = if (checked) "已开启自动兜底（编码跟不上即切默认）" else "已关闭自动兜底（仅记录 probe 日志）"
+                },
+            )
+        }
+        Text(
+            text = buildString {
+                append("当前实现: ").append(fallbackState.implName)
+                append("（").append(fallbackState.impl.wire).append("）")
+                append(" / 原因: ").append(fallbackState.reason)
+                append(" / 本次切换: ").append(fallbackState.switchesThisCall).append(" 次")
+                append(if (fallbackState.pendingNextCall) " / 已标记下次通话用默认" else "")
+                appendLine()
+                append("最近窗口: p95=").append(fallbackState.encodeP95Ms).append(" ms, out=")
+                append(
+                    com.example.webrtcdemo.encoder.EncoderFallbackPolicy.formatFps(fallbackState.outFps)
+                )
+                append(" fps, 请求=").append(fallbackState.requestedFps).append(" fps")
+                append(" / 生效机制: ").append(fallbackState.mech)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         // ---- 弱设备降级（§7.2/R4：480x360@24，下次通话生效）----
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -311,6 +378,9 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
                 appendLine("单文件上限: ${FileLogger.MAX_FILE_BYTES} B × ${FileLogger.MAX_FILES}")
                 appendLine("native 库: ${if (NativeLoader.isLoaded()) "已加载" else "未加载"}")
                 appendLine("编码实现名: ${Vp9VideoEncoder.IMPL_NAME}")
+                // 【t87】兜底状态（真机复测按这里 + 日志 encoder_fallback_* 键核对）
+                appendLine("兜底当前实现: ${fallbackState.implName}（${fallbackState.impl.wire}，机制 ${fallbackState.mech}）")
+                appendLine("兜底配置: 三态=${fallbackState.mode.wire} / 开关=${fallbackState.fallbackEnabled} / 本次切换=${fallbackState.switchesThisCall}")
                 appendLine("本端 NAT: ${NatTypeRepository.localNat.value.wire}")
                 appendLine("对端 NAT: ${NatTypeRepository.remoteNat.value.wire}")
                 appendLine("信令地址: $effectiveUrl（默认 ${BuildConfig.SIGNALING_URL}）")
@@ -326,4 +396,16 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
             Text(stringResource(R.string.diag_back))
         }
     }
+}
+
+/**
+ * 三态覆盖的中文短标签（t87 诊断页按钮文案）。
+ *
+ * @param mode 三态覆盖取值。
+ * @return 「自动」/「自研」/「默认」。
+ */
+private fun encoderModeLabel(mode: EncoderOverrideMode): String = when (mode) {
+    EncoderOverrideMode.AUTO -> "自动"
+    EncoderOverrideMode.SELF -> "自研"
+    EncoderOverrideMode.DEFAULT -> "默认"
 }
