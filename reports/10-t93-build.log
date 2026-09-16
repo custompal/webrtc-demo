@@ -1,0 +1,155 @@
+==============================================================
+# t93 构建：打包 t92 关闭 FrameDropper（field trial WebRTC-FrameDropper/Disabled/）
+# T0=2026-09-16T20:41:31+08:00  脚本=/opt/dsh-workspaces/tmp/t93-build.sh  TS=20260916-204131
+# HEAD=4130ddc68061d9012e373bef7d1f2d40e28563aa  dirty=1 行
+# T1 界（t92 报告实测 app/src 最后写入，排除 jniLibs 固定件）= 2026-09-16+20:35:46.4669551650 app/src/test/kotlin/com/example/webrtcdemo/webrtc/FrameDropperFieldTrialTest.kt
+# 前置静默（check-only 之前）：java/gradle 进程=0  近5min app/src(非jniLibs)=0  signaling=0
+# 前置静默断言：PASS
+# T0 cpp 源码: vp9_encoder.cpp=83a54c491411b84a vp9_encoder.h=c83ceb687ff06762 layer_bitrate_allocator.cpp=3802c7f42206f220 encoder_rate_policy.h=cde75a731db8609c
+# T0 上一锚点(served) native .so:
+    size=1278784 sha256=043e851ac358d844f783423dfcef8f0aca0e94a190b9995fa201a6b0018e6fff
+===== 1. build_app.sh --check-only =====
+CHECK_ONLY_EXIT=0   raw=/opt/dsh-workspaces/tmp/t93/checkonly-20260916-204131.log
+  tail: ===== == --check-only：不执行构建 == ===== 前置校验全部通过（未构建） 
+===== 1b. 静默断言（check-only 之后；jniLibs 固定件同哈希重拷豁免）=====
+  java/gradle 进程=0
+  豁免（内容不变重拷）: app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so  757cef8128bf9151
+  非豁免写入件数=0   豁免件数=1
+  静默断言：PASS
+
+===== 2. :app:compileDebugKotlin =====
+COMPILE_EXIT=0   raw=/opt/dsh-workspaces/tmp/t93/compile-20260916-204131.log
+  BUILD SUCCESSFUL in 1m 47s
+  15 actionable tasks: 1 executed, 14 up-to-date
+
+===== 3. --no-daemon --no-build-cache clean assembleDebug（含 native 构建）=====
+ASSEMBLE_EXIT=0  T1=2026-09-16T20:43:23+08:00  T2=2026-09-16T20:46:04+08:00  raw=/opt/dsh-workspaces/tmp/t93/assemble-20260916-204131.log
+  BUILD SUCCESSFUL in 2m 40s
+  43 actionable tasks: 42 executed, 1 up-to-date
+  FROM-CACHE 行数=0   :app:clean 出现=1
+  native 构建痕迹: externalNativeBuild 任务数=2  ninja/cmake 行=2
+  构建窗口内 app/src 写入(>T1)=0  signaling 写入(>T1)=0
+  APK sha256=59c75778fb457e8c6d4c7955b349dfa4fde784fa616e852419e3b007e1e41d07
+  APK size=33472645  mtime=2026-09-16 20:46:03.435559563 +0800
+  T2 双钉 jar=0c776934c1452b7bf43d57d8174a6c1d8504c43814b8320e8c624a29d63dc757
+  T2 双钉 aar=8e8f2bafce23b4195884002b392c1cf78dabf8abb78196d0bf5a08e08fd4a099
+  T2 双钉 so =757cef8128bf915109864ab92df29984dea17493dfe3417a73cd00fdc233259e
+  T2 双钉 lcxx=c9dbf4ec15e931f565e32c5a159dec87b27caccde5c2dda14bbae466797d1e36
+  四 .so p_align（APK 内）:
+    libandroidx.graphics.path.so               41e9a793c43a0f4f p_align=['0x4000']
+    libc++_shared.so                           c9dbf4ec15e931f5 p_align=['0x4000']
+    libjingle_peerconnection_so.so             757cef8128bf9151 p_align=['0x4000']
+    libwebrtcdemo_native.so                    043e851ac358d844 p_align=['0x4000']
+  自有库 native .so 详情（新 vs 上一锚点）:
+    new size=1278784 sha256=043e851ac358d844f783423dfcef8f0aca0e94a190b9995fa201a6b0018e6fff
+    old size=1278784 sha256=043e851ac358d844f783423dfcef8f0aca0e94a190b9995fa201a6b0018e6fff
+    CHANGED = False
+      strings in .so: encoder_perf           1
+      strings in .so: encoder_rates          2
+      strings in .so: encoder_rate_floor     1
+      strings in .so: encoder_threads        1
+      strings in .so: row_mt                 6
+      strings in .so: g_threads              2
+
+===== 4. --no-daemon --no-build-cache --rerun-tasks :app:testDebugUnitTest =====
+TEST_EXIT=0   raw=/opt/dsh-workspaces/tmp/t93/test-20260916-204131.log
+  BUILD SUCCESSFUL in 2m 25s
+  24 actionable tasks: 24 executed
+===== 4b. 单测计数闸门（类数>=24 且 用例数>=216）=====
+  XML 汇总: 类数=24  tests=216 failures=0 errors=0 skipped=0  (XML 最新 mtime=2026-09-16 20:48:29)
+    AppConfigUrlTest                                     tests=8   fail=0 err=0 skip=0
+    EncoderFallbackControllerTest                        tests=5   fail=0 err=0 skip=0
+    EncoderFallbackPolicyTest                            tests=10  fail=0 err=0 skip=0
+    Vp9BitrateLimitsTest                                 tests=7   fail=0 err=0 skip=0
+    LogLevelFilterTest                                   tests=6   fail=0 err=0 skip=0
+    NativeInterfaceContractTest                          tests=4   fail=0 err=0 skip=0
+    PongLivenessTest                                     tests=8   fail=0 err=0 skip=0
+    ReconnectBudgetTest                                  tests=5   fail=0 err=0 skip=0
+    SignalingErrorPolicyTest                             tests=21  fail=0 err=0 skip=0
+    SignalingIdentityTest                                tests=11  fail=0 err=0 skip=0
+    CallSessionSlotTest                                  tests=8   fail=0 err=0 skip=0
+    CallSurvivabilityTest                                tests=19  fail=0 err=0 skip=0
+    ConnectionStatusTrackerTest                          tests=29  fail=0 err=0 skip=0
+    MediaAliveSuppressionTest                            tests=10  fail=0 err=0 skip=0
+    PendingRemoteMessagesTest                            tests=7   fail=0 err=0 skip=0
+    FrameDropperFieldTrialTest                           tests=3   fail=0 err=0 skip=0
+    IceCandidateInfoTest                                 tests=8   fail=0 err=0 skip=0
+    IceWatchdogPolicyTest                                tests=6   fail=0 err=0 skip=0
+    JniBindingClasspathTest                              tests=6   fail=0 err=0 skip=0
+    LoopbackCandidatesTest                               tests=5   fail=0 err=0 skip=0
+    RemoteCandidateAccountingTest                        tests=5   fail=0 err=0 skip=0
+    RendererRecoveryPolicyTest                           tests=7   fail=0 err=0 skip=0
+    SessionLifecycleTest                                 tests=10  fail=0 err=0 skip=0
+    TurnTcpFallbackTest                                  tests=8   fail=0 err=0 skip=0
+  GATE: 类数 24>=24 ? True ; 用例 216>=216 ? True ; failures=0 errors=0 ⇒ PASS
+  GATE_EXIT=0
+
+===== 4c. 包体旁证：dex 侧（t92/t89/t87）与 .so 侧（t85）=====
+  dex 侧:
+    WebRTC-FrameDropper/Disabled   1
+    FrameDropperFieldTrial         3
+    encoder_fallback_decision      1
+    encoder_fallback_applied       1
+    minStartBitrateBps             1
+    bitrate_limit                  1
+    ice_watchdog_stale_tier        1
+  .so 侧（libwebrtcdemo_native.so）:
+    encoder_perf                   1
+    encoder_rates                  2
+    encoder_rate_floor             1
+    encoder_threads                1
+
+===== 5. 属主归一 =====
+  app/build root 条目=0  .gradle=0  app/.cxx=0
+# T3=2026-09-16T20:48:31+08:00 结束（CHECK=0 COMPILE=0 ASSEMBLE=0 TEST=0 GATE=0）
+== apk-http 发布（uid=1000）==
+  源 APK : /opt/dsh-workspaces/code/webrtc-demo/app/build/outputs/apk/debug/app-debug.apk
+  新件   : 59c75778fb457e8c6d4c7955b349dfa4fde784fa616e852419e3b007e1e41d07  (33472645 B)
+  现行   : 0f60d90138f6f7bde0f583d0626cbcd0050564287d56fd47d022467a80cafe45
+  模式   : 正式
+  权限预检：served/parts/artifacts/parts-archive 均可写 ✔
+
+① 切分片到 staging 并校验（/opt/apk-http/parts/.new，PART_SIZE=8388608）
+  拼接 sha 校验通过 = 59c75778fb457e8c6d4c7955b349dfa4fde784fa616e852419e3b007e1e41d07（4 片：8388608 8388608 8388608 8306821 ）
+  SHA256SUMS 自校验通过
+
+② 归档旧 served / 旧 parts
+  旧 served → /opt/apk-http/artifacts/app-debug-0f60d901.apk（0f60d90138f6f7bd）
+  旧 parts → /opt/apk-http/parts-archive/parts-0f60d901-20260916-204838（6 件）
+
+③ 安装新 parts（逐文件 mv 原子替换 + 清理多余旧分片）
+  parts 就位并校验通过（4 片；模式已归一 0644）
+
+④ 安装新 served（.new + mv 原子替换）
+  served 已替换 = 59c75778fb457e8c
+
+⑤ 【提交点·最后一步】写 parts/SOURCE.sha256 = 59c75778fb457e8c6d4c7955b349dfa4fde784fa616e852419e3b007e1e41d07
+  已提交（此步之前任何中断都视为未发布）
+
+⑥ 四方对账
+  构建输出 = 59c75778fb457e8c6d4c7955b349dfa4fde784fa616e852419e3b007e1e41d07
+  served   = 59c75778fb457e8c6d4c7955b349dfa4fde784fa616e852419e3b007e1e41d07
+  归档     = 59c75778fb457e8c6d4c7955b349dfa4fde784fa616e852419e3b007e1e41d07  (/opt/dsh-workspaces/artifacts/app-debug-59c75778.apk)
+  parts    = 59c75778fb457e8c6d4c7955b349dfa4fde784fa616e852419e3b007e1e41d07
+  SOURCE   = 59c75778fb457e8c6d4c7955b349dfa4fde784fa616e852419e3b007e1e41d07
+  四方一致 ✔
+
+⑦ 服务与下载复验（服务为 root 只读，未重启）
+  enabled=enabled active=active MainPID=664402
+  回环 HEAD : code=200 len=0（len 为 body 长度，HEAD 恒 0）
+  回环 HDR  : Content-Length: 33472645 Accept-Ranges: bytes 
+  回环 Range: code=206 bytes=1024
+  公网 HEAD : HTTP/1.1 200 OK Content-Length: 33472645 Accept-Ranges: bytes Last-Modified: Wed, 16 Sep 2026 12:48:39 GMT 
+  公网 Range: code=206 bytes=1024
+  公网全量下载 sha = 59c75778fb457e8c6d4c7955b349dfa4fde784fa616e852419e3b007e1e41d07
+  公网全量校验 ✔
+
+⑧ 回滚命令（如需回到 0f60d901）
+  cp -f /opt/apk-http/artifacts/app-debug-0f60d901.apk /opt/apk-http/served/app-debug.apk
+  rm -f /opt/apk-http/parts/app-debug.apk.part* /opt/apk-http/parts/SHA256SUMS
+  cp -f /opt/apk-http/parts-archive/parts-0f60d901-20260916-204838/app-debug.apk.part* /opt/apk-http/parts-archive/parts-0f60d901-20260916-204838/SHA256SUMS /opt/apk-http/parts/
+  printf '%s\n' 0f60d90138f6f7bde0f583d0626cbcd0050564287d56fd47d022467a80cafe45 > /opt/apk-http/parts/SOURCE.sha256   # 提交标记最后写
+  (cd /opt/apk-http/parts && sha256sum -c SHA256SUMS)
+  注：演练模式下新=旧（0f60d901），上述回滚即恢复同一内容。
+
+== 发布完成 2026-09-16T20:50:10+08:00 ==
