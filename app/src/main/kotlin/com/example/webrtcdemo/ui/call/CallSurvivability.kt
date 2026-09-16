@@ -184,9 +184,37 @@ object CallSurvivability {
      */
     fun shouldSurfaceError(message: String, mediaAlive: Boolean): Boolean {
         if (!mediaAlive) return true
+        return !isIceErrorText(message)
+    }
+
+    /**
+     * 文案是否属于"ICE/连接类失败"（t80 抽为共享判定）。
+     *
+     * 与 [shouldSurfaceError] 同一口径：含 `ICE` / `未连通` / `中继` 字样即视为链路类失败文案。
+     */
+    fun isIceErrorText(message: String): Boolean {
         val upper = message.uppercase()
-        val iceRelated = upper.contains("ICE") || message.contains("未连通") || message.contains("中继")
-        return !iceRelated
+        return upper.contains("ICE") || message.contains("未连通") || message.contains("中继")
+    }
+
+    /**
+     * 【t80】是否应**清除**已显示的 ICE 失败横幅（恢复清除路径）。
+     *
+     * 真机缺陷：看门狗误报产生的一次性错误文本（`CallUiState.error`）**没有任何清除路径** ——
+     * t68 只压住了 `phase=failed` 的相位文案，这条 notice 会一直挂在屏幕上（而通话完全正常）。
+     * 规则：横幅确实存在且属于 ICE 类文案时，只要会话已连通（[phaseConnected]）或有媒体证据
+     * （[mediaAlive]：帧新鲜 / `down_bps>0`）⇒ 清除；非 ICE 类文案（如"服务端错误: ROOM_FULL"）
+     * **不得**被本路径清掉。
+     *
+     * @param bannerText 当前要展示的错误文案（`null` 表示没有横幅）。
+     * @param phaseConnected 连接状态机是否已 `CONNECTED`。
+     * @param mediaAlive 是否有可用媒体证据。
+     * @return `true` 表示应清除该横幅。
+     */
+    fun shouldClearIceError(bannerText: String?, phaseConnected: Boolean, mediaAlive: Boolean): Boolean {
+        if (bannerText.isNullOrBlank()) return false
+        if (!isIceErrorText(bannerText)) return false
+        return phaseConnected || mediaAlive
     }
 }
 

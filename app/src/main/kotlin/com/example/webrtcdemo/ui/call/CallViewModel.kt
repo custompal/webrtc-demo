@@ -1460,6 +1460,11 @@ class CallViewModel(application: Application) :
                 isRemoteVideoReady = status.phase == ConnPhase.CONNECTED && status.remoteFrameReady,
             )
         }
+        // 【t80 恢复清除路径】看门狗误报留下的"ICE 未连通"横幅是**一次性错误文本、没有清除路径**：
+        // 一旦会话连通或媒体判活（帧新鲜 / down_bps>0）就必须把它清掉，否则通话正常时横幅会一直挂着
+        // （真机 03:34:24 误报 → 03:34:25.438 已 CONNECTED、down≈2.0 Mbps，横幅却持续显示）。
+        // 判据在 CallSurvivability.shouldClearIceError（纯函数，可 JVM 单测）；非 ICE 类文案不受影响。
+        clearIceErrorBannerIfRecovered(status)
         if (status.phase != previous.phase || status.reason != previous.reason) {
             AppLog.i(
                 TAG,
@@ -1717,6 +1722,35 @@ class CallViewModel(application: Application) :
      * 且未被确认为中断）—— 与 `ConnStatus.mediaAgeMs`/`hasSelectedPair` 同源，避免多处口径分叉。
      */
     private fun mediaAliveForUi(): Boolean = connStatus.value.mediaAlive
+
+    /**
+     * 【t80】恢复后清除一次性 ICE 失败横幅。
+     *
+     * 触发条件（纯判定 [CallSurvivability.shouldClearIceError]）：横幅存在、属 ICE 类文案，且
+     * 连接状态机已 `CONNECTED`（`reason=connected`）或有媒体判活（`reason=media_alive`）。
+     * 清除时落 `ice_error_cleared` 诊断，供复测一行确认"误报横幅已被自动收回"。
+     */
+    private fun clearIceErrorBannerIfRecovered(status: ConnStatus) {
+        val banner = _uiState.value.error
+        if (!CallSurvivability.shouldClearIceError(banner, status.phase == ConnPhase.CONNECTED, status.mediaAlive)) {
+            return
+        }
+        _uiState.update { it.copy(error = null) }
+        AppLog.i(
+            TAG,
+            "ice_error_cleared",
+            mapOf(
+                "reason" to if (status.phase == ConnPhase.CONNECTED) "connected" else "media_alive",
+                "phase" to status.phase.name.lowercase(),
+                "media_source" to status.mediaSource,
+                "media_age_ms" to status.mediaAgeMs.toString(),
+                "pair" to status.hasSelectedPair.toString(),
+                "banner" to (banner ?: "-"),
+                "seq" to callSeq.toString(),
+                "session" to "s$sessionId",
+            ),
+        )
+    }
 
     /**
      * 是否处于"**曾经在房内**（等待/通话/重连）"的语境（t68）。

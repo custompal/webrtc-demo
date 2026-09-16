@@ -1064,6 +1064,27 @@ class CallSession(
             stopConnectivityWatchdog(ifConnected = true)
             return
         }
+        // 【t80 档位/时长一致性守卫】`afterMs` 的语义是**档位**（ICE_WARN_MS / ICE_FAIL_MS，或顺延后的档位），
+        // 而调用点曾把"**已用时长**"当它传入（rearmWatchdogOnRelay）——基数未初始化时该时长是 epoch 毫秒。
+        // 这里按看门狗基数复核**真实耗时**：档位已到失败档、但真实耗时不足（或基数无效）⇒ 一律跳过，
+        // **不上报失败、不回调 onError**（真机症状：`ice_timeout after_ms=1789529664872 ice_state=NEW`，
+        // 同一秒就 `ice_watchdog_ok elapsed_ms=306` 并 `state=CONNECTED`）。
+        val watchdogStartedAt = connectivityWatchdogStartMs
+        val nowForTier = System.currentTimeMillis()
+        if (IceWatchdogPolicy.isStaleTier(afterMs, watchdogStartedAt, nowForTier, ICE_FAIL_MS)) {
+            AppLog.w(
+                TAG,
+                "ice_watchdog_stale_tier",
+                mapOf(
+                    "tier_ms" to afterMs.toString(),
+                    "elapsed_ms" to IceWatchdogPolicy.realElapsedMs(watchdogStartedAt, nowForTier).toString(),
+                    "action" to "skip",
+                    "watchdog_active" to (connectivityWatchdog != null).toString(),
+                    "ice_state" to (iceState?.name ?: "-"),
+                ).withKey(),
+            )
+            return
+        }
         val relayCount = candidateCounter.localRelayCount()
         val relayMissing = turnConfigured && relayCount == 0
         // 【t60/A1②】中继场景下"还没收集完"就不该判失败：等 relay 候选到位或收集完成再起算。
@@ -1213,7 +1234,26 @@ class CallSession(
     private fun rearmWatchdogOnRelay(candidateSummary: String) {
         if (closed) return
         val connection = peerConnection ?: return
-        val elapsed = System.currentTimeMillis() - connectivityWatchdogStartMs
+        // 【t80 基数守卫】relay 候选常**早于** `startConnectivityWatchdog()` 到达（真机 evt=16/18 早于 evt=22），
+        // 或上一世代 stop 后基数未复位 ⇒ 此时 `now - connectivityWatchdogStartMs` 等于 **epoch 毫秒**。
+        // 旧实现把它当"档位"传给 checkConnectivity ⇒ `afterMs >= ICE_FAIL_MS` 恒真 ⇒ 在 `ice_state=NEW`、
+        // 远端候选还没到时立刻误报「ICE 未连通」（真机 03:34:24.873 `ice_timeout after_ms=1789529664872`）。
+        // 这里：看门狗未启动/基数无效时**只落诊断、绝不触发检查**。
+        val startedAt = connectivityWatchdogStartMs
+        if (!IceWatchdogPolicy.shouldRearmCheck(connectivityWatchdog != null, startedAt)) {
+            AppLog.i(
+                TAG,
+                "ice_watchdog_rearmed reason=relay_candidate skipped=no_watchdog",
+                mapOf(
+                    "elapsed_ms" to "-",
+                    "relay" to candidateCounter.localRelayCount().toString(),
+                    "candidate" to candidateSummary,
+                    "watchdog_started" to (startedAt > 0L).toString(),
+                ).withKey(),
+            )
+            return
+        }
+        val elapsed = IceWatchdogPolicy.realElapsedMs(startedAt, System.currentTimeMillis())
         AppLog.i(
             TAG,
             "ice_watchdog_rearmed",
@@ -1241,6 +1281,9 @@ class CallSession(
                 mapOf("elapsed_ms" to (System.currentTimeMillis() - connectivityWatchdogStartMs).toString()),
             )
         }
+        // 【t80】基数必须复位：否则下一世代（或本世代后续的 relay 候选回调）会把**旧基数**当起点，
+        // 算出跨世代的巨大"时长"，再次被误当档位 ⇒ 误报失败。
+        connectivityWatchdogStartMs = 0L
         timer.shutdownNow()
     }
 
@@ -1450,5 +1493,50 @@ object LoopbackCandidates {
             if (value < 0 || value > 255) return false
         }
         return first == 127
+    }
+}
+
+// ============================================================================
+// 【t80】看门狗"档位 vs 真实耗时"纯判定（可 JVM 单测）
+// ----------------------------------------------------------------------------
+// 真机缺陷（webrtcdemo-logs-20260916-033453Z）：房主端持续显示「ICE 未连通（…对端候选 -）」
+// 而通话完全正常（P2P/RELAY 双形态 down≈2.0 Mbps / up≈1.5–2.4 Mbps）。日志铁证：
+//   03:34:24.872 ice_watchdog_rearmed … elapsed_ms=1789529664872  ← epoch 毫秒被当"已用时长"
+//   03:34:24.873 ice_timeout after_ms=1789529664872 ice_state=NEW  ← 立刻误判失败
+//   03:34:25.130 ice_watchdog_started evt=22                       ← 看门狗其实**这时**才启动
+//   03:34:25.436 ice_watchdog_ok elapsed_ms=306 → 25.438 state=CONNECTED
+// 根因：`rearmWatchdogOnRelay()` 拿 `now - connectivityWatchdogStartMs` 当**档位**传给
+// `checkConnectivity(connection, afterMs)`；基数未初始化（relay 候选早于看门狗启动）时该差值等于
+// epoch 毫秒 ⇒ `afterMs >= ICE_FAIL_MS` 恒真 ⇒ 在 `ice_state=NEW` 时直接上报 `onError`。
+// 本对象把两处判定抽成纯函数，便于单测钉住（生产代码 `CallSession` 调用同一实现）。
+// ============================================================================
+
+/**
+ * 看门狗判定（纯函数，无 Android 依赖）。【t80】
+ */
+object IceWatchdogPolicy {
+
+    /**
+     * relay 候选触发的"重新校准"是否**允许**调用 [checkConnectivity]。
+     *
+     * 看门狗未启动（`watchdogActive=false`）或基数无效（`startMs <= 0`）时必须为假 ——
+     * 否则会把 epoch 量级的"时长"当档位，在 `ice_state=NEW` 时立刻误报失败。
+     */
+    fun shouldRearmCheck(watchdogActive: Boolean, startMs: Long): Boolean =
+        watchdogActive && startMs > 0L
+
+    /** 按看门狗基数算出的**真实**已用时长（ms）；基数无效时返回 `-1`（"未知"）。 */
+    fun realElapsedMs(startMs: Long, nowMs: Long): Long =
+        if (startMs > 0L) nowMs - startMs else -1L
+
+    /**
+     * 传入的"档位"是否**陈旧/被误传**（⇒ 必须跳过，不得据此上报失败）。
+     *
+     * 判据：档位已到失败档（`tierMs >= failMs`）**但**按基数算出的真实耗时仍不足 `failMs`
+     * （含"基数无效 ⇒ 耗时未知"这种形态 —— 等价于把 epoch 毫秒当档位）。
+     */
+    fun isStaleTier(tierMs: Long, startMs: Long, nowMs: Long, failMs: Long): Boolean {
+        if (tierMs < failMs) return false
+        return realElapsedMs(startMs, nowMs) < failMs
     }
 }
