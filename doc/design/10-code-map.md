@@ -218,6 +218,10 @@ Architecture decision records live under `doc/adr/`:
 [ADR-003](../adr/ADR-003-1to1-p2p-first.md),
 [ADR-004](../adr/ADR-004-split-runtime-and-build-vms.md).
 
+The repository root README.md is the planned entry point of the documentation set and is not yet written at
+authoring time. It is deliberately left as plain text here: a link or a code span naming a file that does not
+exist fails the documentation gate, so the link is restored once the entry point exists.
+
 ## 5. Symptom to code
 
 | Observed symptom | Where to read | Evidence |
