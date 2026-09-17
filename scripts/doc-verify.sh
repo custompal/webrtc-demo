@@ -137,6 +137,9 @@ extract_doc() {
     # globs, placeholders and shell metacharacters are patterns, not paths
     if (t ~ /[*?<>|{}[\]$]/) return 0
     if (t ~ /\.\.\./) return 0
+    # a repository path never contains a colon; this keeps `host:port/path.apk`
+    # URLs and `report:<file>:<line>` provenance out of the path classes
+    if (t ~ /:/) return 0
     if (t ~ /^\.\.?\//) return 1
     if (is_abs(t)) return abs_is_fs(t)
     base = t; sub(/.*\//, "", base)
@@ -412,23 +415,22 @@ for doc in "${DOCS[@]}"; do
         esac
         ;;
       RETIRED)
-        # Captain's frozen vocabulary (2026-09-17): WORKSPACE:/ARTIFACT: are no
-        # longer scope tokens. A prefix on an auto-classified path (P2/P5) is
-        # read as a hint and tolerated; applying either marker to a
-        # version-controlled path stays a violation (SPEC T5 core rule).
+        # Captain's frozen vocabulary (2026-09-17; normative text in SPEC T5, V8,
+        # §7.4 and the §7.2 note): WORKSPACE:/ARTIFACT: are not scope tokens.
+        # Writing either one is a writing violation regardless of how the path it
+        # names would be classified — auto-classified (P2/P5) or version-controlled
+        # (P1). Only a line explicitly marked NEGATIVE EXAMPLE is exempt (SPEC §8 R11).
         CHECKS=$((CHECKS + 1))
         marker="${payload%% *}"
         mpath="${payload#* }"
-        if [ "$mpath" != "$payload" ] && [ -n "$mpath" ] && [ "$mpath" != "-" ]; then
-          classify_path "$mpath"; mcls="$PATH_CLASS"
-          if [ "$mcls" = "p1-repo" ]; then
-            fail "$file" "$line" "$marker is a retired marker and must not be applied to a version-controlled path: \`$mpath\`" \
-              "drop the prefix — P2/P5 are auto-classified (SPEC T5)"
-          else
-            note "$file" "$line" "retired marker accepted as a hint on an auto-classified path: $marker $mpath"
-          fi
+        if [ "$neg" = "1" ]; then
+          note "$file" "$line" "retired marker exempted as a NEGATIVE EXAMPLE: $payload"
+        elif [ "$mpath" != "$payload" ] && [ -n "$mpath" ] && [ "$mpath" != "-" ]; then
+          fail "$file" "$line" "retired marker used as a path prefix: $marker $mpath" \
+            "drop the prefix — P2/P5 are auto-classified, markers are retired (SPEC T5/V8)"
         else
-          note "$file" "$line" "retired marker in notation, accepted as a hint: $payload"
+          fail "$file" "$line" "retired marker used in a scope notation: $payload" \
+            "keep only HOST/CONTAINER/DEVICE/REPO notation (SPEC T5/§7.2)"
         fi
         ;;
       PATH)
@@ -461,7 +463,15 @@ for doc in "${DOCS[@]}"; do
             fi
             ;;
           p5-artifact)
-            [ -e "$payload" ] || note "$file" "$line" "UNVERIFIED (build output, gitignored): \`$payload\`"
+            if [ ! -e "$payload" ]; then
+              note "$file" "$line" "UNVERIFIED (build output, gitignored): \`$payload\`"
+              # Captain ruling C: `git check-ignore` also reports IGNORED for
+              # non-existent paths, so an absent ignored path is flagged unless
+              # the line itself marks it as an artifact. Warning only (A6).
+              if ! sed -n "${line}p" "$file" 2>/dev/null | grep -qiE 'ARTIFACT[ \t]*:'; then
+                warn "$file" "$line" "typo-suspect (gitignored path absent): \`$payload\`"
+              fi
+            fi
             ;;
           *)
             if [ ! -e "$payload" ]; then
