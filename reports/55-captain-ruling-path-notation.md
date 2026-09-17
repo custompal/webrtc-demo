@@ -445,3 +445,18 @@ Either close it as `completed` with the residual recorded as a finding (a low/me
 delivery when the gate is green), or create the downstream tasks with no dependency on it. The captain's own
 `t22` closure caused this deadlock and the workaround cost a full round — the residual belonged in a finding, not
 in the task status.
+
+### 12.11 Delivery closed — final verdict `pass`
+
+`t27` returned **`pass`** (`reports/58-docs-verification-final.md`, digest `7e6e2c67…`, committed `15cf66c`):
+full gate `PASS (2466 checks, 2 warnings)`, exit 0, failures 0; triple binding verified two ways plus the
+carrying commit; the amended manifest describes **19/19 artefacts with 0 DRIFT**; R2-02, R3-01 and R3-02 are
+closed with no residual findings. The captain closed the task directly after the member's update was rejected as
+stale for the third time (§12.9).
+
+Three ledger entries remain **dead but harmless**: `t8`, `t23` and `t26` are blocked behind the terminal-failed
+`t22` and cannot be claimed, cancelled or taken over (the dependency check runs before takeover). Their intent is
+fully delivered by other means: the root README and the index by the captain under §12.10, the manifest
+amendment by the same commit, and the verification by `t27`. They should be ignored rather than revived.
+
+Capstone summary of the whole delivery: `reports/59-docs-delivery-report.md`.
