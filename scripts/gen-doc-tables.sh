@@ -946,7 +946,9 @@ header "Host/workspace command inventory" \
   printf '> deploy unit; `report:<file>:<line>` = an engineering report recording a historical invocation;\n'
   printf '> `workspace-only, outside git repo` = `../tmp/*.sh` at the workspace root (not part of the repository).\n'
   printf '> A document that cites a name whose only provenance is `workspace-only` must also cite an in-repo\n'
-  printf '> `reports/<file>:<line>`; `scripts/doc-verify.sh` enforces this.\n\n'
+  printf '> `reports/<file>:<line>`; `scripts/doc-verify.sh` enforces this.\n'
+  printf '> **Path fact (SPEC §7.4):** the repository contains no `*.cc` files — `app/src/main/cpp/jni/` holds 7\n'
+  printf '> `.cpp`/`.h` files, so JNI sources are cited as `.cpp`.\n\n'
   printf '## 1. Names provable from repository scripts (`in-repo`)\n\n'
   printf '| Token | Kind | Provenance |\n|---|---|---|\n'
   awk -F'\t' '$3=="in-repo" { printf "%s\t%s\t%s\n", $1, $2, $4 }' "$WORK/cmd_repo.tsv" | sort -u \

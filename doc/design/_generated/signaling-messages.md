@@ -1,7 +1,7 @@
 # Signalling messages (Go <-> Kotlin)
 
 > **GENERATED — do not edit.** Regenerate with `bash scripts/gen-doc-tables.sh`.
-> Generator: `scripts/gen-doc-tables.sh` (sha256 `e7951ef4e950858588103cb1e5714d390612fd8db625f570759c20e5c8c156c5`)
+> Generator: `scripts/gen-doc-tables.sh` (sha256 `075b6da2442121b352a7342105bf13540327f907bf82b74f21cd22a485e52f9f`)
 > Deterministic: no timestamp is embedded, so repeated runs are byte-identical.
 > Sources (sha256 of the exact revision this table was built from):
 > - `signaling/protocol/message.go` — sha256 `35e671787e561d3023c859f578627f36d922c0a9e919d61cb2627429ecc35641`

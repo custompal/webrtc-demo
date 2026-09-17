@@ -112,7 +112,9 @@ extract_doc() {
       rest = substr(s, p + length(key))
       sub(/^[ \t`]+/, "", rest)
       tok = rest; sub(/[^A-Za-z0-9_.\/-].*/, "", tok)
-      if (tok ~ /[A-Za-z]/ && (tok ~ /\// || tok ~ /\./ || tok ~ /^(env|tmp)/)) {
+      # only a real path counts: a directory separator, a file extension, or a
+      # workspace-root shape — never prose such as "the `ARTIFACT:` tag."
+      if (tok ~ /[A-Za-z]/ && (tok ~ /\// || tok ~ /\.[A-Za-z0-9]+$/ || tok ~ /^(env|tmp)/)) {
         res = (res == "" ? key " " tok : res "; " key " " tok)
       }
     }
@@ -241,6 +243,7 @@ extract_doc() {
 # =============================================================================
 declare -A PATHCLASS=()
 declare -A LINECOUNT=()
+declare -A DRIFT_NOTE=()
 
 # Both helpers return through a global: a `$(...)` would run in a subshell and
 # discard the cache, making large generated tables quadratic.
@@ -250,11 +253,11 @@ classify_path() { # <path> -> $PATH_CLASS  (SPEC §7.1: git check-ignore decides
   if [ -n "${PATHCLASS[$t]:-}" ]; then PATH_CLASS="${PATHCLASS[$t]}"; return; fi
   local cls="p1-repo"
   case "$t" in
-    "$CONTAINER_ROOT"/*) cls="p4-container" ;;
+    "$CONTAINER_ROOT"|"$CONTAINER_ROOT"/*) cls="p4-container" ;;
     /*) cls="p3-host" ;;
     ../*|tmp/*|*"env.sh"|*"env-container.sh"|*"env-go.sh")
       case "$t" in
-        "$CONTAINER_ROOT"/*) cls="p4-container" ;;
+        "$CONTAINER_ROOT"|"$CONTAINER_ROOT"/*) cls="p4-container" ;;
         /*) cls="p3-host" ;;
         *) cls="p2-workspace" ;;
       esac
@@ -396,11 +399,37 @@ for doc in "${DOCS[@]}"; do
           fail "$file" "$line" "citation range end $hi exceeds \`$path\` ($total lines)" \
             "update the range (SPEC A2)"
         fi
+        # Captain D③: a report citation is historical evidence — its existence is
+        # checked, but its line numbers must never be reused as source pointers.
+        # Reported once per document per report file to stay readable.
+        case "$path" in
+          reports/*)
+            if [ -z "${DRIFT_NOTE["$file|$path"]:-}" ]; then
+              DRIFT_NOTE["$file|$path"]=1
+              note "$file" "$line" "historical evidence, may drift: \`$path\` (report line numbers are not source pointers)"
+            fi
+            ;;
+        esac
         ;;
       RETIRED)
+        # Captain's frozen vocabulary (2026-09-17): WORKSPACE:/ARTIFACT: are no
+        # longer scope tokens. A prefix on an auto-classified path (P2/P5) is
+        # read as a hint and tolerated; applying either marker to a
+        # version-controlled path stays a violation (SPEC T5 core rule).
         CHECKS=$((CHECKS + 1))
-        fail "$file" "$line" "retired marker used as a path prefix: $payload" \
-          "P2/P5 are auto-classified; drop the WORKSPACE:/ARTIFACT: prefix (SPEC T5/§7.1)"
+        marker="${payload%% *}"
+        mpath="${payload#* }"
+        if [ "$mpath" != "$payload" ] && [ -n "$mpath" ] && [ "$mpath" != "-" ]; then
+          classify_path "$mpath"; mcls="$PATH_CLASS"
+          if [ "$mcls" = "p1-repo" ]; then
+            fail "$file" "$line" "$marker is a retired marker and must not be applied to a version-controlled path: \`$mpath\`" \
+              "drop the prefix — P2/P5 are auto-classified (SPEC T5)"
+          else
+            note "$file" "$line" "retired marker accepted as a hint on an auto-classified path: $marker $mpath"
+          fi
+        else
+          note "$file" "$line" "retired marker in notation, accepted as a hint: $payload"
+        fi
         ;;
       PATH)
         CHECKS=$((CHECKS + 1))
@@ -447,10 +476,17 @@ for doc in "${DOCS[@]}"; do
         cls="${CMDCLASS[$payload]:-}"
         case "$cls" in
           in-repo) : ;;
-          report) : ;;
-          workspace-only)
-            # §7.3: a workspace-only script may never be the sole evidence; the
-            # statement needs an in-repo citation or a host-commands.md reference.
+          "")
+            fail "$file" "$line" "\`$payload\` is neither in repository scripts nor in $HOST_CMD_TABLE" \
+              "run scripts/gen-doc-tables.sh, or correct the task/flag name (SPEC V7)"
+            ;;
+          *)
+            # SPEC §7.3: citing a host- or workspace-only command name requires
+            # in-repository evidence in the same statement, in either form:
+            # an inline `reports/<file>:<line>` or a host-commands.md reference.
+            # The generated inventory itself is the evidence source, so it is
+            # exempt (its rows carry the provenance).
+            case "$doc" in "$GENERATED_DIR"/*) continue ;; esac
             ok_ev=0
             if sed -n "${line}p" "$file" 2>/dev/null | grep -qE 'reports/|host-commands\.md'; then
               ok_ev=1
@@ -459,15 +495,10 @@ for doc in "${DOCS[@]}"; do
               if sed -n "${sec_start},${line}p" "$file" | grep -qE 'reports/[A-Za-z0-9._-]+|host-commands\.md'; then ok_ev=1; fi
             fi
             if [ "$ok_ev" != "1" ]; then
-              fail "$file" "$line" "\`$payload\` is only provable from a workspace script; no in-repo evidence" \
-                "cite \`reports/<file>:<line>\` or the host-commands.md entry in the same statement (SPEC §7.3)"
+              fail "$file" "$line" "\`$payload\` is host/workspace-only and is cited without in-repository evidence" \
+                "add \`reports/<file>:<line>\` or refer to the $HOST_CMD_TABLE entry (SPEC §7.3)"
             fi
             ;;
-          "")
-            fail "$file" "$line" "\`$payload\` is neither in repository scripts nor in $HOST_CMD_TABLE" \
-              "run scripts/gen-doc-tables.sh, or correct the task/flag name (SPEC V7)"
-            ;;
-          *) : ;;
         esac
         ;;
       SYM)

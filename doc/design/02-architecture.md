@@ -11,8 +11,8 @@
 
 This document is the system-level map: what the components are, how they are deployed, which plane each
 concern belongs to, and which specialist document owns the detail. It deliberately does not restate protocol
-fields (see `doc/design/05-protocols.md`), App internals (see `doc/design/03-app-architecture.md`), or the
-release procedure (see `doc/design/07-build-and-deploy.md`).
+fields (see doc/design/05-protocols.md), App internals (see doc/design/03-app-architecture.md), or the
+release procedure (see doc/design/07-build-and-deploy.md).
 
 ## 2. System in one paragraph
 
@@ -75,10 +75,10 @@ Each plane has one owner document; this table exists so that a reader can jump s
 
 | Plane | Question it answers | Owner document |
 |---|---|---|
-| Signaling | How do the peers find each other and exchange SDP/ICE? | `doc/design/04-signaling-service.md`, `doc/design/05-protocols.md` |
-| Media | How do the frames and audio get across, and what shapes the bitrate? | `doc/design/03-app-architecture.md`, `doc/design/05-protocols.md` |
-| Diagnostics | How do I see what happened? | `doc/design/03-app-architecture.md` §Diagnostics, `doc/design/_generated/` log table |
-| Release | How does code become a downloadable APK? | `doc/design/07-build-and-deploy.md` |
+| Signaling | How do the peers find each other and exchange SDP/ICE? | doc/design/04-signaling-service.md, doc/design/05-protocols.md |
+| Media | How do the frames and audio get across, and what shapes the bitrate? | doc/design/03-app-architecture.md, doc/design/05-protocols.md |
+| Diagnostics | How do I see what happened? | doc/design/03-app-architecture.md §Diagnostics, `doc/design/_generated/` log table |
+| Release | How does code become a downloadable APK? | doc/design/07-build-and-deploy.md |
 
 ### 5.1 Signaling plane
 
@@ -109,10 +109,10 @@ Each plane has one owner document; this table exists so that a reader can jump s
 
 * All three producers (Kotlin, C++ native, webrtc) write into one directory `<filesDir>/logs/`
   (`app/src/main/kotlin/com/example/webrtcdemo/log/FileLogger.kt:508`) with 2 MiB × 3 rotation
-  (`…FileLogger.kt:502`, `…FileLogger.kt:505`).
+  (`app/src/main/kotlin/com/example/webrtcdemo/log/FileLogger.kt:502`, `:505`).
 * Every event carries `session=sN` plus an event sequence number, so lines from different sessions can be
   separated (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:140`,
-  `…CallSession.kt:173`).
+  `app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:173`).
 * The user-facing entry point is the diagnostics page (`app/src/main/kotlin/com/example/webrtcdemo/diag/DiagnosticsScreen.kt`)
   and the log zip export (`app/src/main/kotlin/com/example/webrtcdemo/diag/LogExporter.kt:139`).
 * The full event-key inventory is generated from the code into `doc/design/_generated/` (never hand-written).
@@ -123,7 +123,7 @@ Each plane has one owner document; this table exists so that a reader can jump s
   NDK 26.1.10909125, CMake 3.22.1, Go 1.22).
 * `scripts/build_app.sh` is **host-only**: it hard-codes `WS=/opt/dsh-workspaces` at
   `scripts/build_app.sh:33` and sources `. "$WS/env.sh"` at `scripts/build_app.sh:62`, so it cannot run inside
-  the container (`HOST`-scoped script; container-equivalent Gradle steps in `doc/design/07-build-and-deploy.md`).
+  the container (`HOST`-scoped script; container-equivalent Gradle steps in doc/design/07-build-and-deploy.md).
 * Publishing is a host manual procedure: `HOST: /opt/apk-http/publish_apk.sh` (no such file exists in this
   repository) — see `doc/design/SPEC.md` §2.5 and `reports/10-app-build.md:1093`.
 * The publish chain refuses to overwrite a same-named artifact with different bytes and treats the last-written
@@ -140,20 +140,24 @@ Each plane has one owner document; this table exists so that a reader can jump s
 | `doc/design/SPEC.md` | Frozen writing and citation standard, directory conventions, checker rules |
 | `doc/design/01-requirements.md` | Functional and non-functional requirements with citations and status |
 | `doc/design/02-architecture.md` | This document |
-| `doc/design/03-app-architecture.md` | App layers, threads, lifecycle, recovery, switches |
-| `doc/design/04-signaling-service.md` | Go service structure and room/seat state machine |
-| `doc/design/05-protocols.md` | Field-level messages, reconnect policy, ICE/TURN/SDP, JNI contract |
-| `doc/design/06-flows.md` | Mermaid flows with step lists and real log evidence |
-| `doc/design/07-build-and-deploy.md` | Toolchain, build stages, invariants, release chain, host services |
-| `doc/design/08-issues-and-solutions.md` | Defect history with rejected/disproven alternatives |
-| `doc/design/09-verification-and-limitations.md` | Verification matrix, known limitations, errata |
-| `doc/design/10-code-map.md` | Code map, report index, symptom-to-code lookup |
-| `doc/design/11-coding-standards.md` | Language conventions and change-safety checklist |
+| doc/design/03-app-architecture.md | App layers, threads, lifecycle, recovery, switches |
+| doc/design/04-signaling-service.md | Go service structure and room/seat state machine |
+| doc/design/05-protocols.md | Field-level messages, reconnect policy, ICE/TURN/SDP, JNI contract |
+| doc/design/06-flows.md | Mermaid flows with step lists and real log evidence |
+| doc/design/07-build-and-deploy.md | Toolchain, build stages, invariants, release chain, host services |
+| doc/design/08-issues-and-solutions.md | Defect history with rejected/disproven alternatives |
+| doc/design/09-verification-and-limitations.md | Verification matrix, known limitations, errata |
+| doc/design/10-code-map.md | Code map, report index, symptom-to-code lookup |
+| doc/design/11-coding-standards.md | Language conventions and change-safety checklist |
 | `doc/design/_generated/signaling-messages.md` | Generated signalling message/field table with Go↔Kotlin divergence |
 | `doc/design/_generated/log-events.md` | Generated log event key table (emitter file and line) |
 | `doc/design/_generated/jni-contract.md` | Generated JNI contract, cross-checked Kotlin ↔ C++ `RegisterNatives` |
 | `doc/design/_generated/host-commands.md` | Generated command/flag inventory with its evidentiary status |
 | `doc/README.md` | Legacy vs current explanation, full archive inventory and stub mechanism |
+
+Rows without backticks above (03 through 11) are **planned, not yet written at authoring time**; they are plain
+text on purpose so a clean checkout does not present them as existing files (`doc/design/SPEC.md` C7). Each row
+returns to `path` form once the file lands.
 
 ## 7. Decisions carried from the ADRs
 
@@ -168,8 +172,8 @@ The seven ADRs were moved verbatim to `doc/archive/adr/`; each original path kee
 | ADR-003 | 1:1 P2P first | room capacity 2 (`signaling/room/room.go:13`) |
 | ADR-004 | Split runtime and build machines | build runs on the host (`scripts/build_app.sh` header usage note) |
 | ADR-005 | Go signaling plus an RFC 5780 NAT test | `signaling/`, `app/src/main/cpp/nat/nat_detector.cpp` |
-| ADR-006 | Code design decisions | `doc/design/03-app-architecture.md` |
-| ADR-007 | Code style and comment rules | `doc/design/11-coding-standards.md` |
+| ADR-006 | Code design decisions | doc/design/03-app-architecture.md |
+| ADR-007 | Code style and comment rules | doc/design/11-coding-standards.md |
 
 ## 8. Cross-plane invariants
 
@@ -183,7 +187,7 @@ The seven ADRs were moved verbatim to `doc/archive/adr/`; each original path kee
 * **I-4** — A local liveness judgement must never end a call whose media is still flowing
   (`app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallSurvivability.kt:105`).
 * **I-5** — Media geometry (rotation, stride, buffer capacity) is decided in exactly one place per direction;
-  see the rejected rotation-baking experiment in `doc/design/08-issues-and-solutions.md`.
+  see the rejected rotation-baking experiment in doc/design/08-issues-and-solutions.md.
 
 ## 8.1 JNI boundary and evidence classes
 

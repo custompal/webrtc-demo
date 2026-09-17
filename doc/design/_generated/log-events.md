@@ -1,7 +1,7 @@
 # Log events (Kotlin AppLog + C++ NLOG_*)
 
 > **GENERATED — do not edit.** Regenerate with `bash scripts/gen-doc-tables.sh`.
-> Generator: `scripts/gen-doc-tables.sh` (sha256 `e7951ef4e950858588103cb1e5714d390612fd8db625f570759c20e5c8c156c5`)
+> Generator: `scripts/gen-doc-tables.sh` (sha256 `075b6da2442121b352a7342105bf13540327f907bf82b74f21cd22a485e52f9f`)
 > Deterministic: no timestamp is embedded, so repeated runs are byte-identical.
 > Sources (sha256 of the exact revision this table was built from):
 > - `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingMessage.kt` — sha256 `4fd325e1f0c0646b50b719c94750c459467e9957d43151f68c1b104a07f3c9b1`

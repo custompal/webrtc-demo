@@ -1,7 +1,7 @@
 # Host/workspace command inventory
 
 > **GENERATED — do not edit.** Regenerate with `bash scripts/gen-doc-tables.sh`.
-> Generator: `scripts/gen-doc-tables.sh` (sha256 `e7951ef4e950858588103cb1e5714d390612fd8db625f570759c20e5c8c156c5`)
+> Generator: `scripts/gen-doc-tables.sh` (sha256 `075b6da2442121b352a7342105bf13540327f907bf82b74f21cd22a485e52f9f`)
 > Deterministic: no timestamp is embedded, so repeated runs are byte-identical.
 > Sources (sha256 of the exact revision this table was built from):
 > - `scripts/build_app.sh` — sha256 `aafd4e48f19889dcea4b3f809b8a529bc5b7883dfcf96190fdc664d237314f39`
@@ -12,6 +12,8 @@
 > `workspace-only, outside git repo` = `../tmp/*.sh` at the workspace root (not part of the repository).
 > A document that cites a name whose only provenance is `workspace-only` must also cite an in-repo
 > `reports/<file>:<line>`; `scripts/doc-verify.sh` enforces this.
+> **Path fact (SPEC §7.4):** the repository contains no `*.cc` files — `app/src/main/cpp/jni/` holds 7
+> `.cpp`/`.h` files, so JNI sources are cited as `.cpp`.
 
 ## 1. Names provable from repository scripts (`in-repo`)
 

@@ -1,6 +1,6 @@
 # SPEC — Documentation Standard (frozen)
 
-> Status: **frozen** v1.4.0 (owner: `architect`). Task id: t1 (attempt 1), 2026-09-17.
+> Status: **frozen** v1.5.1 (owner: `architect`). Task id: t1 (attempt 1), 2026-09-17. Captain v3 is FINAL: no further version changes.
 > Scope: every file under `doc/design/**` and the repository root `README.md`.
 > This document is normative. Writers must not silently deviate: if a rule is wrong, report it to the
 > captain and let the owner (architect) amend this file.
@@ -12,7 +12,7 @@
 ## 1. Purpose and scope
 
 This repository had 15 legacy documents under `doc/` describing an intended design. The shipped
-implementation diverged from parts of them (see `doc/design/09-verification-and-limitations.md` for the
+implementation diverged from parts of them (see doc/design/09-verification-and-limitations.md — planned, not yet written at authoring time — for the
 registered errata D-1..D-6). The replacement documentation set has two hard properties:
 
 1. **Faithful** — every design statement is traceable to code (`path/file.ext:LINE`) or to a verification
@@ -91,7 +91,10 @@ Binding rules:
   not cite a project `*_jni.h` path as if it existed.
 * **J4** — Upstream `J.N` / `GEN_JNI` details are descriptive: reference the report evidence
   (`reports/99-t34-appendix.md` §J/N fingerprint, `reports/15-java-jar-rebuild.md` §synthesis) and never
-  generate a table for them from this repository.
+  generate a table for them from this repository. Those symbols are defined only inside the vendored binary
+  build input `third_party/libwebrtc/java/libwebrtc-java.jar`; the V2 symbol check records them as
+  `UNVERIFIED (vendored binary)` and **must not fail**, because a symbol whose only definition is a non-text
+  vendored artefact is not a documentation defect.
 * **J5** — Because the binding is `RegisterNatives`, a document must not describe this project's native entry
   points as `Java_*` functions.
 
@@ -108,62 +111,63 @@ generation command, the source paths and their sha256:
 | `doc/design/_generated/jni-contract.md` | JNI contract per §2.1 | authorities 1, 2 and 3 (see §2.1), optional 4 |
 | `doc/design/_generated/host-commands.md` | command/flag inventory and its evidentiary status per §7 A12 | repository scripts, report line numbers, workspace-only scripts |
 
-### 2.3 Path vocabulary (frozen)
+### 2.3 Path vocabulary (frozen, captain v3 — final)
 
 Every path written in the documentation set belongs to exactly one of the five classes of §7.1 (levels
-**P1–P5**). v1.3.0 narrowed the vocabulary: the only scope tokens are **`HOST`, `CONTAINER`, `DEVICE`,
-`REPO`** (default `REPO`), written in any of the four notations of §7.2; the classification of a path is
-otherwise derived from its shape and, for P5, from `git check-ignore`. `WORKSPACE:` and `ARTIFACT:` are **no
-longer markers** — those classes are auto-classified and must not be written with a prefix.
+**P1–P5**). The final rule set (captain v3) makes **tagging mandatory**: a path that is not repository-relative
+carries one of the **five tags** below, written in any of the four notations of §7.2. An **untagged path is read
+as repository-relative and is hard-checked** — that is the mechanism which catches misspelled paths.
 
-| Scope token | Meaning | Examples | Judgement (level) |
+| Tag | Meaning | Examples | Judgement (level) |
 |---|---|---|---|
-| `HOST` | host absolute path, not visible in the container | `HOST: /opt/dsh-workspaces`, `HOST: /opt/apk-http/publish_apk.sh`, `HOST: /etc/systemd/system/signaling.service` | never existence-checked → `UNVERIFIED (host-only path)` (**P3**) |
-| `CONTAINER` | absolute path under the container workspace root | `/data/dsh/home/workspace/tmp/n6/x/app.log` | hard-checked against the real container root (**P4**); the token is optional because P4 is the shape default |
-| `DEVICE` | path that exists only on the test phone, quoted from device evidence | device-side paths inside quoted log lines | never existence-checked (**P3**) |
-| `REPO` | default; repository-relative path | `signaling/protocol/message.go:1`, `deploy/signaling.service:28`, `scripts/build_app.sh:33` | hard-checked: exists and covers the cited line (**P1**) |
-| *(shape-derived, no token)* | `../`-prefixed, `tmp/`-prefixed, or named `env.sh` / `env-container.sh` / `env-go.sh` | `tmp/t47b-captain-build.sh`, `env.sh` | hard-checked relative to the workspace root, `workspace-only, outside git repo` (**P2**) |
-| *(ignored+untracked, no token)* | repository-relative path that `git check-ignore` reports as ignored/untracked and that matches `app/build/**`, `**/*.apk`, `jniLibs/**/*.so`, `app/.cxx/**` | `app/build/intermediates/**`, `libwebrtcdemo_native.so` | existence optional; missing → `UNVERIFIED (build output, gitignored)`, **never a failure** (**P5**) |
+| `HOST:` | host absolute path, not visible in the container | `HOST: /opt/dsh-workspaces`, `HOST: /opt/apk-http/publish_apk.sh`, `HOST: /etc/systemd/system/signaling.service` | never existence-checked → `UNVERIFIED (host path)` (**P3**) |
+| `WORKSPACE:` | workspace-root file, written in **workspace-relative** form (the container root is `/data/dsh/home/workspace`) | `WORKSPACE: tmp/t42-captain-build.sh`, `WORKSPACE: env.sh`, `WORKSPACE: env-container.sh`, `WORKSPACE: env-go.sh` | **must exist** relative to the workspace root → `workspace-only, outside git repo` (**P2**) |
+| `ARTIFACT:` | build product, not in VCS | `ARTIFACT: app/build/**`, `ARTIFACT: app-debug.apk`, `ARTIFACT: libwebrtcdemo_native.so` | existence optional; missing → `UNVERIFIED (build product, not in VCS)` (**P5**) |
+| `DEVICE:` | device-side path or command that exists only on the test phone | `DEVICE: /sdcard/Android/data/...`, `DEVICE: adb` | never existence-checked; recorded `UNVERIFIED (device-side)` (**P3**) |
+| `CONTAINER:` | notation alias for an absolute path under the container workspace root; equivalent to `WORKSPACE:` + the relative path | `CONTAINER: /data/dsh/home/workspace/tmp/n6/x/app.log` | **must exist** against the real container root (**P2/P4**) |
+| *(none)* | **P1** repository-relative path | `signaling/protocol/message.go:1`, `deploy/signaling.service:28` | **hard check**: exists and covers the cited line (`missing repo path`) |
 
 Binding rules (**T1–T6**; the captain's path-classification levels keep the separate names **P1–P5** of §7.1):
 
-* **T1** — A `HOST` path must be marked with the `HOST` scope (any of the four notations of §7.2). An
-  unmarked host path is a **failure** (`unmarked host path`), not a warning. P2, P4 and P5 need no marker:
-  they are derived from the path's shape and ignore state.
-* **T2** — In the line-prefix notation the token is written immediately before the path, inside the same
-  backticks or code span, with one space: `` HOST: /opt/signaling ``. The uppercase tag form (`HOST:`) is the
-  shorthand of `scope=host`; the scope names are `HOST`, `CONTAINER`, `DEVICE`, `REPO` (§7.2).
-* **T3** — A scope marker is a claim about provenance, not a substitute for evidence: `HOST` statements must
-  still be paired with a repository-readable citation (a report line or a source line) when they support a
+* **T1** — A path that is not repository-relative **must** carry one of the five tags (any of the four notations
+  of §7.2). A missing tag on a host path is a **failure** (`unmarked host path`, V11); an untagged
+  repository-relative path is hard-checked (V9) and fails when it does not exist.
+* **T2** — In the line-prefix notation the tag is written immediately before the path, inside the same backticks
+  or code span, with one space: `` HOST: /opt/signaling ``. The uppercase tag form is the shorthand of
+  `scope=`; the scope names are `host`, `workspace`, `artifact`, `device`, `container`, `repo` (§7.2), and tag
+  names are case-insensitive.
+* **T3** — A tag is a claim about provenance, not a substitute for evidence: `HOST:` and `DEVICE:` statements
+  must still be paired with a repository-readable citation (a report line or a source line) when they support a
   design statement.
-* **T4** — A `HOST` path must never be written as if the repository contained it; for example the publish
+* **T4** — A `HOST:` path must never be written as if the repository contained it; for example the publish
   script is `HOST: /opt/apk-http/publish_apk.sh` and **no `publish_apk.sh` exists in this repository** (see
   §2.5).
-* **T5** — `WORKSPACE:` and `ARTIFACT:` are not valid markers and must not be written: the P2 and P5 classes
-  are auto-classified (§7.1). A marker must never be applied to a version-controlled file.
-* **T6** — §2.3 (this subsection) is the normative definition site for the scope vocabulary and T1–T6; §7.1
+* **T5** — A tag must never be applied to a version-controlled file: `ARTIFACT:` is for untracked build outputs
+  only (`.gitignore:29 *.apk`, `.gitignore:56 *.so`, `app/.gitignore:2 /build/`), and a `WORKSPACE:`/
+  `CONTAINER:` path must not resolve inside the repository.
+* **T6** — §2.3 (this subsection) is the normative definition site for the tag vocabulary and T1–T6; §7.1
   states how a path is classified and judged (P1–P5), and §7.2 defines the notation syntax.
 
 Correct and incorrect examples:
 
 ```
-# correct: repository path, no marker, hard-checked
+# correct: repository path, no tag, hard-checked
 bash scripts/build_app.sh        # host-only script; see reports/37-t76-build-publish.md §3
 
-# correct: host path marked + repository-readable evidence in the same statement
+# correct: host path tagged + repository-readable evidence in the same statement
 HOST: /opt/apk-http/publish_apk.sh   # see reports/37-t76-build-publish.md §7
 
-# correct: workspace-root file, auto-classified P2, no marker
-tmp/t47b-captain-build.sh            # workspace-only, outside git repo
+# correct: workspace-root file, workspace-relative form
+WORKSPACE: tmp/t47b-captain-build.sh    # workspace-only, outside git repo
 
-# correct: build output, auto-classified P5, no marker, never a failure
-app/build/intermediates/cxx/**/libwebrtcdemo_native.so
+# correct: build output, existence optional
+ARTIFACT: app/build/intermediates/cxx/**/libwebrtcdemo_native.so
 
 # WRONG: unmarked host path (fails V11, `unmarked host path`)
 /opt/apk-http/publish_apk.sh        <!-- NEGATIVE EXAMPLE — must stay unmarked on purpose -->
 
-# WRONG: retired marker on a host/workspace path (fails T5)
-WORKSPACE: tmp/t47b-captain-build.sh   <!-- NEGATIVE EXAMPLE — must stay retired on purpose -->
+# WRONG: ARTIFACT: pointing at a path that neither exists nor matches a product pattern
+ARTIFACT: app/build/does-not-exist.so   <!-- NEGATIVE EXAMPLE — triggers WARN typo-suspect, A10 -->
 ```
 
 The host workspace (`/opt/dsh-workspaces/**`) maps to the container workspace (`/data/dsh/home/workspace/**`);
@@ -172,8 +176,8 @@ the container path is the one a reader can actually open.
 ### 2.4 Build products are not repository facts
 
 Some paths a reader will meet in reports or in a build tree are **build products, not version-controlled
-sources**. Documents must never present them as repository facts; they are the auto-classified P5 class of
-§7.1 and carry **no** marker.
+sources**. Documents must never present them as repository facts; they are the P5 class of §7.1 and carry the
+`ARTIFACT:` tag when cited as a path.
 
 | Build product | Ignored by | Where it exists |
 |---|---|---|
@@ -184,12 +188,12 @@ sources**. Documents must never present them as repository facts; they are the a
 Rules:
 
 * **B1** — A document may cite a source path for these artefacts (`app/src/main/cpp/CMakeLists.txt:32`,
-  `app/src/main/jniLibs/arm64-v8a/`), or it may mention the built file when it labels it explicitly as a
-  **build product**. It must not write a `.so` path inside `app/build/**` as if it were a checked-in repository
-  fact.
-* **B2** — `scripts/doc-verify.sh` path-existence (rule V1) applies to **repository sources**. For a
-  `.so`/build-output path the checker records `UNVERIFIED (build product, not in VCS)` and **must not fail**,
-  whether or not the file currently exists on disk.
+  `app/src/main/jniLibs/arm64-v8a/`), or cite the built file with the `ARTIFACT:` tag. It must not write a
+  `.so` path inside `app/build/**` as if it were a checked-in repository fact.
+* **B2** — `scripts/doc-verify.sh` path-existence (rule V1) applies to **repository sources**. For an
+  `ARTIFACT:` path the checker records `UNVERIFIED (build product, not in VCS)` and **must not fail**, whether
+  or not the file currently exists on disk (a missing path that also fails the product-pattern match raises
+  `WARN typo-suspect`, A10).
 * **B3** — Hashes and sizes of build products may be quoted only as report evidence (`reports/**`), never as a
   repository-verifiable claim.
 
@@ -203,7 +207,7 @@ Two facts change how build and release documentation must be written:
   `HOST:` and present the container-equivalent Gradle steps alongside it (for example
   `./gradlew --no-daemon assembleDebug`, the recipe recorded at `reports/37-t76-build-publish.md:44`). That
   the script is not container-portable is also registered as a known limitation in
-  `doc/design/09-verification-and-limitations.md` and as an improvement item (accept a `WS` environment
+  doc/design/09-verification-and-limitations.md (planned, not yet written at authoring time) and as an improvement item (accept a `WS` environment
   override) — no code change in this phase.
 * **There is no `publish_apk.sh` in this repository.** Publishing is a *host manual procedure plus report
   evidence*: `HOST: /opt/apk-http/publish_apk.sh` (`reports/37-t72-build-publish.md`,
@@ -245,11 +249,11 @@ Use the **English term** in English prose. The Chinese column is a lookup aid fo
 | relay | 中继 | Media through TURN |
 | forced relay | 强制中继 | ICE policy `RELAY` (diagnostics toggle) (`app/src/main/kotlin/com/example/webrtcdemo/config/AppConfig.kt:69`) |
 | loopback candidate | 回环候选 | Candidate for a `127/8` or `0/8` address; filtered on both sides |
-| NAT type | NAT 类型 | RFC 5780 result (`Open`/`FullCone`/`RestrictedCone`/`PortRestrictedCone`/`Symmetric`/`Unknown`) |
+| NAT type | NAT 类型 | RFC 5780 result (`Open`/`FullCone`/`RestrictedCone`/`PortRestrictedCone`/`Symmetric`/`Unknown`; enum `signaling/protocol/message.go:31-36`) |
 | bitrate floor | 码率地板 | Per-resolution minimum from the official VP9 table (30 kbps per step) |
-| quality scaling | 质量降级 | `ScalingSettings` that lowers resolution before dropping frames |
+| quality scaling | 质量降级 | `ScalingSettings` that lowers resolution before dropping frames (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcEngine.kt:140`)  |
 | encoder fallback | 编码兜底 | Switching to the platform encoder when the custom VP9 encoder cannot keep up |
-| frame dropper | 帧丢弃器 | libwebrtc `FrameDropper`; disabled here via field trial `WebRTC-FrameDropper/Disabled` |
+| frame dropper | 帧丢弃器 | libwebrtc `FrameDropper`; disabled here via field trial `WebRTC-FrameDropper/Disabled` (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/FrameDropperFieldTrial.kt:12`)  |
 | watchdog | 看门狗 | Timed ICE/connectivity checker (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:1111`) |
 | diagnostics export | 诊断导出 | Log zip built by `LogExporter` (`app/src/main/kotlin/com/example/webrtcdemo/diag/LogExporter.kt:139`) |
 | pinned artifact | 固定件 | Toolchain artifact whose hash must not change across a build (jar/aar/so/libc++) |
@@ -295,6 +299,12 @@ document must drop the "planned" marker for its inbound links once the target fi
 **C8 — Line number drift.** Line numbers in a citation are a *pointer*, not a contract: if code is edited and
 the pointer moves, the **document** must be updated (doc-verify fails on out-of-range lines and on missing
 symbols). Never "fix" the code to satisfy a document.
+
+**C9 — Cite this SPEC by section, never by line.** Because `SPEC.md` itself is amended frequently (six versions
+on 2026-09-17 alone), any line-number anchor into it goes stale within minutes. References to this document use
+the **section form** — `doc/design/SPEC.md` §2.3, §7.1, §9 — and never `SPEC.md:LINE`. Rule identifiers
+(`T1–T6`, `P1–P5`, `V1–V13`, `A1–A13`, `J1–J5`, `B1–B3`, `F1–F3`, `R1–R11`, `C1–C9`, `E1–E7`) are stable and
+preferred over any line pointer. This applies to messages, task outputs and every document in `doc/design/**`.
 
 ### 4.1 Machine-readable citation syntax
 
@@ -393,12 +403,12 @@ The checker is the delivery gate. Its rules, in the order it applies them:
 | V5 | Every legacy stub under `doc/*.md` **and `doc/adr/*.md`** is one line and names a file that exists under `doc/archive/` (the archive mirrors the relative structure) | historical reference dangling |
 | V6 | `docs` is a symlink to `doc/design`, and `doc/design/_generated/**` files carry a `GENERATED — do not edit` header when present | convention violated |
 | V7 | Every Gradle task name and every build/publish flag used in a document matches a real literal in the file that owns it (see the ownership table below) | non-existent command or flag presented as usable |
-| V8 | **Scope notation (A8, §7.2).** Scope tokens are exactly `HOST`/`CONTAINER`/`DEVICE`/`REPO` (default `REPO`) in four equivalent notations (line prefix, line-end comment, fence `scope=`, section comment; precedence line > fenced > section > default; case-insensitive); a retired `WORKSPACE:`/`ARTIFACT:` marker anywhere is a writing violation | `retired marker` / `unknown scope token` |
+| V8 | **Scope notation (A8, §7.2).** Tags are exactly `HOST:`/`WORKSPACE:`/`ARTIFACT:`/`DEVICE:`/`CONTAINER:` in four equivalent notations (line prefix, line-end comment, fence `scope=`, section comment; precedence line > fenced > section > default; case-insensitive); every non-repository path must be tagged, and an unknown tag is a writing violation | `unknown tag` / `untagged non-repository path` |
 | V9 | **P1 REPO** — repository-relative path exists and covers the cited line | `missing repo path` |
-| V10 | **P2 WORKSPACE** — path starting with `../` or `tmp/`, or named `env.sh` / `env-container.sh` / `env-go.sh`, exists relative to the workspace root; recorded `workspace-only, outside git repo` | `missing workspace path` |
-| V11 | **P3 HOST** — absolute path under `/opt`, `/etc`, `/var`, `/home`, `/root`, `/usr`, `/srv`, `/tmp` is never existence-checked (recorded `UNVERIFIED (host-only path)`), but must be in HOST or DEVICE scope | `unmarked host path` |
-| V12 | **P4 CONTAINER** — absolute path under `/data/dsh/home/workspace/**` exists relative to the real container root | `missing container path` |
-| V13 | **P5 ARTIFACT** — repository-relative path that `git check-ignore` reports as ignored/untracked and that matches `app/build/**`, `**/*.apk`, `jniLibs/**/*.so`, `app/.cxx/**`: existence optional; when absent recorded `UNVERIFIED (build output, gitignored)` and **never a failure** (a warning-level `typo-suspect` diagnostic may accompany it, A10) | *(none — informational)* |
+| V10 | **P2 WORKSPACE / P4 CONTAINER** — `WORKSPACE:` (workspace-relative) or `CONTAINER:` (absolute) path must exist against the container root `/data/dsh/home/workspace`; recorded `workspace-only, outside git repo` | `missing workspace path` / `missing container path` |
+| V11 | **P3 HOST** — a `HOST:` path under `/opt`, `/etc`, `/var`, `/var/log`, `/home`, `/root`, `/usr`, `/srv`, `/tmp` is never existence-checked (recorded `UNVERIFIED (host path)`); an unmarked host path fails; `DEVICE:` paths are recorded `UNVERIFIED (device-side)` and never fail | `unmarked host path` |
+| V12 | **P4 CONTAINER** — `CONTAINER:` absolute path exists under the real container root (alias of the `WORKSPACE:` judgement) | `missing container path` |
+| V13 | **P5 ARTIFACT** — an `ARTIFACT:` path (`app/build/**`, `**/*.apk`, `**/*.so`, `app/.cxx/**`) has optional existence; when absent it is recorded `UNVERIFIED (build product, not in VCS)` and **never fails**, but a missing path that also does not match a product pattern raises `WARN typo-suspect` (A10) | *(none — warning only)* |
 
 Ambiguity handling (binding for both the checker and the writers):
 
@@ -421,30 +431,32 @@ Ambiguity handling (binding for both the checker and the writers):
   **fails** with `unmarked host path` (V11). This is the same judgement as §2.3 T1 and §7.1 P3, and it is the
   only marker-driven failure in the rule set. Repository-relative paths (for example
   `deploy/signaling.service:28`) **are** checked by V1 and must exist.
-* **A8** — Scope notation. The scope tokens are exactly `HOST`, `CONTAINER`, `DEVICE`, `REPO` (default `REPO`),
-  and there are four equivalent notations with precedence **line > fenced section > section > default**:
-  (1) line prefix (`- HOST: <content>`, `<SCOPE>: <path>`); (2) **line-end comment**
+* **A8** — Scope notation. The tags are exactly `HOST:`, `WORKSPACE:`, `ARTIFACT:`, `DEVICE:`, `CONTAINER:`
+  (plus the untagged default, which is the repository-relative P1 class), and there are four equivalent
+  notations with precedence **line > fenced section > section > default**:
+  (1) line prefix (`- HOST: <content>`, `<TAG>: <path>`); (2) **line-end comment**
   (`bash scripts/build_app.sh   # HOST (WS=/opt/dsh-workspaces, scripts/build_app.sh:33)`, the
   captain-recommended form); (3) fenced info string (```` ```bash scope=host ````); (4) section comment
-  (`<!-- scope: host -->`, effective until the next `##`/`###` heading). Tag names are case-insensitive.
-  `WORKSPACE:` and `ARTIFACT:` are **retired markers**: writing either prefix is a failure (T5). §7.2 is the
-  normative syntax reference.
+  (`<!-- scope: host -->`, effective until the next `##`/`###` heading). Tag names are case-insensitive, and
+  tagging is mandatory for every non-repository path (§2.3 T1). §7.2 is the normative syntax reference.
 * **A9** — Path classification P1–P5, enforced by **V9–V13** with the levels of §7.1 and the notation of §7.2:
   **P1** repository-relative paths (no marker) must exist and cover the cited line; **P2** paths starting with
-  `../` or `tmp/`, and files named `env.sh` / `env-container.sh` / `env-go.sh`, are auto-classified and must
-  exist relative to the workspace root (labelled `workspace-only, outside git repo`); **P3** absolute paths
-  under `/opt`, `/etc`, `/var`, `/home`, `/root`, `/usr`, `/srv`, `/tmp` are never existence-checked but must
-  be in HOST or DEVICE scope, otherwise `unmarked host path` fails; **P4** `/data/dsh/home/workspace/**` is
-  hard-checked against the real container root; **P5** is auto-classified by `git check-ignore` plus the
-  patterns `app/build/**`, `**/*.apk`, `jniLibs/**/*.so`, `app/.cxx/**` — its existence is optional and a
-  missing path is never a failure. Warnings never become successes; the only marker-driven failure is
-  `unmarked host path`.
-* **A10** — `WARN typo-suspect (gitignored path absent)`: a P5 reference that `git check-ignore` classifies as
-  ignored/untracked but that **does not exist on disk** is reported as a warning-level diagnostic (for example
-  a mistyped artifact path). The warning **does not change the exit code** (A6). Carrying the retired
-  `ARTIFACT:` marker does not exempt the line — the marker itself already fails T5; the exemption exists only
-  for a document that intentionally discusses a not-yet-built artifact and says so in prose. `git check-ignore`
-  returns IGNORED for non-existent paths as well, which is why the classification itself cannot fail.
+  `../` or `tmp/`, and files named `env.sh` / `env-container.sh` / `env-go.sh`, must be written with the
+  `WORKSPACE:` tag in workspace-relative form and must exist against the workspace root (labelled
+  `workspace-only, outside git repo`); **P3** absolute paths under `/opt`, `/etc`, `/var`, `/var/log`,
+  `/home`, `/root`, `/usr`, `/srv`, `/tmp` are never existence-checked but must carry `HOST:` (or `DEVICE:`),
+  otherwise `unmarked host path` fails; **P4** `CONTAINER:` absolute paths under
+  `/data/dsh/home/workspace/**` are hard-checked against the real container root; **P5** `ARTIFACT:` build
+  outputs (`app/build/**`, `**/*.apk`, `**/*.so`, `app/.cxx/**`) have optional existence and a missing file is
+  never a failure. Warnings never become successes; the only marker-driven failure is `unmarked host path`.
+* **A10** — Tag totality and `WARN typo-suspect`. Every non-repository path carries one of the five tags (T1),
+  and an untagged path is hard-checked as repository-relative, which is what catches misspellings. A path
+  marked `ARTIFACT:` whose file **does not exist and does not match a build-product pattern** is reported as
+  `WARN typo-suspect (artifact path absent and not a product pattern)`; the warning **does not change the exit
+  code** (A6). A missing `ARTIFACT:` path that *does* match a product pattern (`app/build/**`, `**/*.apk`,
+  `**/*.so`, `app/.cxx/**`) is simply recorded `UNVERIFIED (build product, not in VCS)` with no warning —
+  a clean checkout is expected to lack build outputs. (`git check-ignore` returns IGNORED for non-existent
+  paths too, which is why the product-pattern match, not existence, decides the warning.)
 * **A11** — V7 resolves each command through the file that owns it. Ownership is frozen as follows:
 
   | Command / flag | Owner | Checkable from the container |
@@ -480,13 +492,20 @@ Ambiguity handling (binding for both the checker and the writers):
 
 ### 7.1 Writing rule for off-repository references (owner: `architect`)
 
-This subsection states how the scope rule of §2.3 is **judged**, and settles its relationship with A1. The
-scope vocabulary is normative in **§2.3**; the notation syntax is §7.2. §7.1 may not be redefined by an
-implementation note: a note added under the §7 extension point contributes only its mechanism (scope/token
-regex, message text, exit-code mapping) and must cite §2.3, §7.1 and §7.2.
+**Definition in §2.3, not redefined here.** This subsection states how the scope rule of §2.3 is **judged**;
+the tag set, the mandatory-tagging duty (T1) and the P1 hard check for untagged repository-relative paths are
+defined in §2.3, and the notation syntax is §7.2. §7.1 may not be redefined by an implementation note: a note
+added under the §7 extension point contributes only its mechanism (tag regex, message text, exit-code mapping)
+and must cite §2.3, §7.1 and §7.2.
 
-**Scope tokens.** Exactly four: `REPO` (default), `CONTAINER`, `HOST`, `DEVICE`. `ARTIFACT` is not a scope
-token: it is the fifth **path class** (P5), auto-classified from `git check-ignore` and needing no marker.
+**The two judgement faces.** A1 (citation classification) and A6 (exit code) describe *how a citation is
+graded*; A10 and the P-level rows describe the *writer's tagging duty*. Definition of both lives in §2.3 plus
+the table below — this subsection only records the split: an off-repository token is a `warning` on the
+citation face (A1) whether or not it is tagged, while an **untagged** non-repository path is a **failure** on
+the duty face (V11 `unmarked host path`), and an untagged repository-relative path is hard-checked (V9 P1).
+
+**Scope tags.** Exactly five: `HOST:`, `WORKSPACE:`, `ARTIFACT:`, `DEVICE:`, `CONTAINER:` (plus the untagged
+default, which is P1 repository-relative). Tagging is mandatory for every non-repository path (§2.3 T1).
 
 **Canonical writing example** (the captain-recommended line-end comment form; §7.2):
 
@@ -499,26 +518,31 @@ bash scripts/build_app.sh        # HOST (WS=/opt/dsh-workspaces, scripts/build_a
 | Level | Scope / marker | Paths | Judgement | Failure message |
 |---|---|---|---|---|
 | **P1 REPO** | scope `REPO` (default), or no marker | repository-relative paths **that are not gitignored** (`signaling/protocol/message.go:1`, `deploy/signaling.service:28`) | **hard check**: exists and covers the cited line | `missing repo path` |
-| **P2 WORKSPACE** | shape-derived, **no marker** | paths starting with `../` or `tmp/`, and files named `env.sh`, `env-container.sh`, `env-go.sh` | **hard check relative to the workspace root**; recorded `workspace-only, outside git repo` | `missing workspace path` |
-| **P3 HOST** | scope `HOST` (or `DEVICE`) | absolute paths `/opt`, `/etc`, `/var`, `/home`, `/root`, `/usr`, `/srv`, `/tmp` | **never existence-checked**; recorded `UNVERIFIED (host-only path)`; if it is in neither HOST nor DEVICE scope the run **fails** | `unmarked host path` |
-| **P4 CONTAINER** | shape-derived (scope `CONTAINER` optional) | absolute paths under `/data/dsh/home/workspace/**` | **hard check against the real container root** | `missing container path` |
-| **P5 ARTIFACT** | **auto-classified, no marker required** (an `ARTIFACT:`/`scope=artifact` prefix is read as a hint but must not be used on a tracked file) | repository-relative, reported by `git check-ignore` as ignored/untracked, and matching `app/build/**`, `**/*.apk`, `jniLibs/**/*.so`, `app/.cxx/**` | existence **optional**: present → verify like a repo path; missing → recorded `UNVERIFIED (build output, gitignored)` and **never a failure** | *(none — informational only)* |
+| **P2 WORKSPACE** | `WORKSPACE:` (workspace-relative form) or `CONTAINER:` (absolute form) | `WORKSPACE: tmp/t47b-captain-build.sh`, `WORKSPACE: env.sh`, `CONTAINER: /data/dsh/home/workspace/tmp/n6/x/app.log` | **must exist** against the real container root; recorded `workspace-only, outside git repo` | `missing workspace path` |
+| **P3 HOST** | `HOST:` (or `DEVICE:`) | absolute paths `/opt`, `/etc`, `/var`, `/var/log`, `/home`, `/root`, `/usr`, `/srv`, `/tmp`; device-side `/sdcard/**`, `adb` | **never existence-checked**; recorded `UNVERIFIED (host path)` / `UNVERIFIED (device-side)`; an unmarked host path **fails** | `unmarked host path` |
+| **P4 CONTAINER** | `CONTAINER:` (absolute alias of P2) | absolute paths under `/data/dsh/home/workspace/**` | **must exist** against the real container root | `missing container path` |
+| **P5 ARTIFACT** | `ARTIFACT:` | untracked build outputs: `app/build/**`, `**/*.apk`, `**/*.so`, `app/.cxx/**` | existence **optional**: present → verified; missing → `UNVERIFIED (build product, not in VCS)` and **never a failure**; a missing path that also does not match a product pattern raises `WARN typo-suspect` (A10) | *(none — the warning does not fail)* |
 
 Rules that follow:
 
-* A path belongs to exactly one level. Marker precedence is **line > fenced > section > default**, but only
-  the `HOST` class *requires* a marker; P2, P4 and P5 are derived from the path's shape and its
-  `git check-ignore` state (`app/.gitignore:2` for `app/build/**`, `.gitignore:29` for `*.apk`, `.gitignore:56`
-  for `*.so`). Classification is mechanical: `git check-ignore` decides, not a regex guess — a repository-relative
-  path that is ignored/untracked is P5, a repository-relative path that is not ignored is P1.
-* P4 takes precedence over P3 by prefix: a path under the container workspace root (for example
-  `/data/dsh/home/workspace/tmp/n6/x/app.log`) is hard-checked, while a bare `/tmp/...` outside it is P3 and
-  must be in HOST or DEVICE scope.
+* The captain's v3 additions map onto the table above as: `DEVICE:` → **P3** (V11, never existence-checked,
+  recorded `UNVERIFIED (device-side)`); `CONTAINER:` → **P2/P4** (V10/V12, hard check against the container
+  root, alias of `WORKSPACE:` + workspace-relative path); `ARTIFACT:` whose path is absent **and** does not
+  match a product pattern → **`WARN typo-suspect`** (A10, surfaced by V13), warning only.
+
+* A path belongs to exactly one level. Tag precedence is **line > fenced > section > default**, and every
+  non-repository path must be tagged (§2.3 T1): `HOST:`/`DEVICE:` (host/device), `WORKSPACE:`/`CONTAINER:`
+  (workspace root, must exist), `ARTIFACT:` (build outputs, existence optional). An untagged path is
+  repository-relative and hard-checked — P1 when it is not ignored, P5 when `git check-ignore` reports it as
+  ignored/untracked *and* it matches a product pattern (`app/.gitignore:2` for `app/build/**`, `.gitignore:29`
+  for `*.apk`, `.gitignore:56` for `*.so`).
+* P4 takes precedence over P3 by prefix: a `CONTAINER:` path under the container workspace root (for example
+  `/data/dsh/home/workspace/tmp/n6/x/app.log`) is hard-checked, while a bare `/tmp/...` outside it is P3.
 * A deliberately unmarked negative example in this SPEC, marked in its own line as one, is exempt from the
   P3 failure rule.
-* Because P5 is auto-classified, a missing `app/build/**` tree or a missing `*.so` in a clean checkout can
-  never fail a document; and because markers are forbidden on tracked files (T5), the retired `WORKSPACE:` and
-  `ARTIFACT:` prefixes must not appear anywhere.
+* Because P5 has optional existence, a missing `app/build/**` tree or a missing `*.so` in a clean checkout can
+  never fail a document; a missing `ARTIFACT:` path that does not match a product pattern raises the
+  warning-only `typo-suspect` diagnostic (A10). A tag must never be applied to a version-controlled file (T5).
 
 **Relationship to A1 — the same reference judged on two axes.** A1 is the **citation checker's classification
 rule**: a `path:LINE`-shaped token whose target lies outside the repository is graded as a *warning* for the
@@ -551,25 +575,27 @@ The line-end comment form is preferred for command examples because it keeps the
 command; the parenthesised anchor is written as a repository path with `:LINE` when one exists.
 
 Scope names in the notations are the lowercase tokens `host`, `container`, `device`, `repo`; the
-line-prefix tag form is uppercase (`HOST:`, `CONTAINER:`, `DEVICE:`, `REPO:`). The two surfaces are
-interchangeable and map onto the same path classification P1–P5:
+line-prefix tag form is uppercase (`HOST:`, `WORKSPACE:`, `ARTIFACT:`, `DEVICE:`, `CONTAINER:`). The two
+surfaces are interchangeable and map onto the same path classification P1–P5:
 
 | Notation / token | Classification |
 |---|---|
-| `scope=repo`, `REPO:` or no marker | P1 |
+| `scope=repo` or no tag | P1 (repository-relative, hard-checked) |
 | `scope=host` or `HOST:` | P3 |
-| `scope=device` or `DEVICE:` | P3 (device-side path: never existence-checked; used for paths that exist only on the test phone) |
-| `scope=container` or `CONTAINER:` | P4 (optional: P4 is the shape default for `/data/dsh/home/workspace/**`) |
-| *(no token)* | P2 and P5, auto-classified by path shape and `git check-ignore` (§7.1) |
+| `scope=device` or `DEVICE:` | P3 (device-side path/command: never existence-checked) |
+| `scope=workspace` or `WORKSPACE:` (workspace-relative form) | P2 (must exist against the container root) |
+| `scope=container` or `CONTAINER:` (absolute form) | P4 (must exist against the real container root) |
+| `scope=artifact` or `ARTIFACT:` | P5 (build products; existence optional) |
 
-`WORKSPACE:` and `ARTIFACT:` are **retired markers**: the P2 and P5 classes are auto-classified, and writing
-either prefix is a failure (T5).
+All five tags are **valid and mandatory** for their class (captain v3, final): a path that is not
+repository-relative must carry its tag, and an untagged path is read as repository-relative and hard-checked
+(§2.3 T1). The tag set is exactly `HOST:`, `WORKSPACE:`, `ARTIFACT:`, `DEVICE:`, `CONTAINER:`.
 
-**`typo-suspect` warning (A10).** A P5 path that is absent (for example a `*.so` or `app/build/**` entry in a
-clean checkout) is recorded as `UNVERIFIED (build output, gitignored)` at informational level and may be
-reported as `WARN typo-suspect (gitignored path absent)` to catch mistyped artifact paths. The warning **does
-not change the exit code** (A6): P5 existence is optional and never fails. `git check-ignore` returns IGNORED
-even for non-existent paths, which is exactly why the classification itself must not fail.
+**`typo-suspect` warning (A10).** An `ARTIFACT:`-tagged path that neither exists nor matches a build-product
+pattern is reported as `WARN typo-suspect (artifact path absent and not a product pattern)` to catch mistyped
+artifact paths. The warning **does not change the exit code** (A6). A missing `ARTIFACT:` path that does match a
+product pattern (`app/build/**`, `**/*.apk`, `**/*.so`, `app/.cxx/**`) is merely recorded
+`UNVERIFIED (build product, not in VCS)` with no warning.
 
 Example of a fenced and a section-scoped block:
 
@@ -612,23 +638,25 @@ owned by `architect` (see §8).
 Mechanism only: the rules are normative in §2.3 (T1–T6), §7.1 (P1–P5) and §7.2 (notation). Added under R7.
 
 * **Scope detection.** `scripts/doc-verify.sh` tests each line's uppercase form against
-  `(^|[^A-Z])(HOST|CONTAINER|DEVICE|REPO)[ \t]*[:(]`, so all four notations of §7.2 — line prefix, line-end
-  comment, fenced `scope=...` info string, section comment — are recognised with precedence
-  line > fence > section > default `REPO`.
-* **Retired markers.** `WORKSPACE:`/`ARTIFACT:` are reported only when used as a *path prefix* (marker
-  followed by a path-shaped token) or as a fence `scope=` value; a prose mention of the retired vocabulary,
-  and a line labelled `NEGATIVE EXAMPLE`, do not fail.
-* **Path classification.** `git check-ignore -q` decides the P1/P5 split; path shape decides P2 (`../` or
-  `tmp/` prefix, or one of `env.sh`/`env-container.sh`/`env-go.sh`) and P4 (`/data/dsh/home/workspace/**`);
-  any other absolute path is P3. A bare root mention (`/opt`, `/etc`) in rule prose is not a path reference;
-  globs and `...` placeholders are not paths.
-* **P2/P4 existence.** P2 resolves against the workspace root (`<repo>/../..`) and P4 against the real
-  container root; both are hard checks, so their failure messages are `missing workspace path` and
-  `missing container path`. P5 never fails (absent → `UNVERIFIED (build output, gitignored)`).
+  `(^|[^A-Z])(HOST|WORKSPACE|ARTIFACT|DEVICE|CONTAINER)[ \t]*[:(]`, so all four notations of §7.2 — line
+  prefix, line-end comment, fenced `scope=...` info string, section comment — are recognised with precedence
+  line > fence > section > default (repository-relative).
+* **Tag totality.** Every non-repository path must carry one of the five tags (§2.3 T1); an untagged path is
+  classified as repository-relative and hard-checked, which is what catches a misspelled path. Tag names are
+  case-insensitive; the `scope=` fence values are `host`, `workspace`, `artifact`, `device`, `container`,
+  `repo`.
+* **Path classification.** The tag decides the class; for untagged paths `git check-ignore -q` decides the
+  P1/P5 split (ignored/untracked **and** matching a product pattern ⇒ P5). `WORKSPACE:`/`CONTAINER:` are
+  hard checks against the workspace root, `HOST:`/`DEVICE:` are never existence-checked, and `ARTIFACT:` has
+  optional existence.
+* **P2/P4 existence.** P2/P4 resolve against the workspace root (`<repo>/../..`, i.e. the container root
+  `/data/dsh/home/workspace`) and are hard checks, so their failure messages are `missing workspace path` and
+  `missing container path`. P5 never fails (absent → `UNVERIFIED (build product, not in VCS)`); a missing
+  `ARTIFACT:` path that does not match a product pattern raises `WARN typo-suspect` (A10).
 * **Messages and exit codes.** Failures print `file:line → problem → suggested fix`. Failure texts:
   `missing repo path`, `missing workspace path`, `unmarked host path`, `missing container path`,
-  `retired marker used as a path prefix`. P3 and P5 emit `NOTE … UNVERIFIED (…)` diagnostics. The exit code
-  is `0` only when no failure was recorded (A6); `NOTE`/`WARN` never change it.
+  `unknown tag`. P3 and P5 emit `NOTE … UNVERIFIED (…)` diagnostics. The exit code is `0` only when no failure
+  was recorded (A6); `NOTE`/`WARN` never change it.
 * **Reading the two axes.** A P3 reference is graded twice: the citation face (A1, a `WARN` because there is
   nothing to open) and the writing face (V11, a failure only when unmarked) — §7.1 settles their coexistence.
 * **V2 scope.** A symbol is accepted when it is greppable in **any** file cited in its own subsection (the
@@ -654,9 +682,10 @@ Mechanism only: the rules are normative in §2.3 (T1–T6), §7.1 (P1–P5) and 
   exemption:** a documentation line is exempt from the marker-discipline checks (V8 and V11) when it is a
   **definition row** of the §2.3 vocabulary table or of the §7.1–§7.2 rule tables, or when the line is
   explicitly marked `NEGATIVE EXAMPLE`, or when it cites a **planned but not yet written** document with the
-  prose marker of C7. The exemption exists so the standard's own vocabulary, counter-examples and forward
-  references do not register as violations of the standard; it must be removed from a document's inbound
-  references once the target file exists.
+  prose marker of C7, or when the line discusses a symbol whose only definition is a **vendored binary** build
+  input (J4). The exemption exists so the standard's own vocabulary, counter-examples and forward references do
+  not register as violations of the standard; it must be removed from a document's inbound references once the
+  target file exists.
 
 ## 9. Delivery gate
 
@@ -681,3 +710,5 @@ sampling; its verdict is the release criterion for the documentation set.
 | 1.2.0 | 2026-09-17 | Captain-approved integration of doc-tooling's frozen scope system: §7.1 carries the five path-classification levels **P1 REPO / P2 WORKSPACE / P3 HOST / P4 CONTAINER / P5 ARTIFACT** with judgement and failure messages, and the A1 two-axis coexistence table; **§7.2** defines the three equivalent scope notations (line prefix, fence `scope=`, section comment; precedence line > fenced > section > default); **§7.3** records the command-name classification; **§7.4** records the layout facts (no `*.cc`; `cpp/jni/` = 7 files; host-only `build_app.sh`; no `publish_apk.sh` in the repository); §7 rule table extended with **V9–V13** (one row per level); §2.3 tag rules renamed **T1–T6** to avoid collision with the P1–P5 names; A10 rewritten to the P1–P5 enforcement model |
 | 1.3.0 | 2026-09-17 | Captain revision replacing the v1.2.0 marker vocabulary: the **only scope tokens are `HOST`, `CONTAINER`, `DEVICE`, `REPO`** (default `REPO`) in the four notations of §7.2 (line prefix, line-end comment, fence, section comment; precedence line > fenced > section > default); §2.3 rewritten to that vocabulary and now states that `WORKSPACE:`/`ARTIFACT:` are **retired markers** (T5 — writing them is a failure); §7.1 P2 extended to `tmp/`-prefixed paths and made shape-derived with **no marker**, P3 marker-driven only (`unmarked host path`), P4 shape-derived, and **P5 made auto-classified** via `git check-ignore` + `app/build/**` / `**/*.apk` / `jniLibs/**/*.so` / `app/.cxx/**` with **optional existence, `UNVERIFIED (build output, gitignored)`, never a failure**; §7 rule table V8–V13 updated accordingly (V8 now covers the retired markers, V13 informational); §7.2 mapping table rewritten to the four tokens; the **line-end comment form** `# <SCOPE> (<evidence>)` recognised as a notation (captain-recommended) alongside the line prefix, fence and section comment; A10 and A1 aligned so the A1 warning layer and the V11 `unmarked host path` failure layer cannot be read as contradictory; **no** "missing artifact"/typo-suspect warning exists for P5 (existence is optional and never fails). Content retained from 1.2.0: §7.3 command-name classification, §7.4 layout facts (no `*.cc`; `cpp/jni/` = 7 files; host-only `build_app.sh`; no `publish_apk.sh` in the repository) |
 | 1.4.0 | 2026-09-17 | **Captain ruling registered (task t11)**: §7 A-rules renumbered and extended so the final vocabulary has规范效力 — **A7** host-path referencing (existence never fails, but a line/fence/section lacking HOST or DEVICE scope **FAILS** `unmarked host path`), **A8** scope notation (tokens `HOST`/`CONTAINER`/`DEVICE`/`REPO`, four equivalent notations — line prefix, line-end comment, fence `scope=`, section comment — precedence line > fenced > section > default, case-insensitive), **A9** path classification P1–P5, **A10** `WARN typo-suspect (gitignored path absent)` for P5 paths that are gitignored but absent (warning only, no exit-code change, per A6); A1 rewritten to the same口径 as A7 (a correctly marked off-repository citation is not a failure; only the missing marker fails); former A8/A9/A10/A11 became **A11/A12** (command ownership and determinacy) and **A13** (current-HEAD line numbers); V8 restated as scope-notation discipline; C7 gained the "planned, not yet written" prose marker for forward references; §8 gained **R11**, whose self-reference exemption covers definition rows, `NEGATIVE EXAMPLE` lines and C7 forward references so the standard does not violate itself |
+| 1.5.0 | 2026-09-17 | **Captain v3 (FINAL) — tag-mandatory model.** Supersedes the v1.3.0 "auto-classified, marker-free" model: **five mandatory tags** — `HOST:` (host absolute `/opt|/etc|/var/log|/usr|…`; never existence-checked → `UNVERIFIED (host path)`), `WORKSPACE:` (workspace-root file written in **workspace-relative** form, e.g. `tmp/t42-captain-build.sh`; **must exist** against the container root `/data/dsh/home/workspace` → `workspace-only, outside git repo`), `ARTIFACT:` (build products `app/build/**`, `*.apk`, `*.so`; existence optional → `UNVERIFIED (build product, not in VCS)`), **new** `DEVICE:` (device-side paths/commands `/sdcard/...`, `adb`; never existence-checked), **new** `CONTAINER:` (absolute form of the workspace-root path, alias of `WORKSPACE:`); an **untagged path is repository-relative and hard-checked** (V9), which is the misspelling trap. §2.3 rewritten (T1–T6); §7.1 P2/P4/P5 rows and the precedence bullet rewritten as tag-driven; §7 rule table V8 (five tags) and V10–V13 updated; §7.2 mapping table extended to the five tags with tag names case-insensitive; **A10 redefined** — `ARTIFACT:`-tagged path that neither exists nor matches a build-product pattern ⇒ `WARN typo-suspect (artifact path absent and not a product pattern)`, warning only, exit code unchanged per A6; §2.4 B1/B2 aligned. Retained unchanged: four notations (line prefix, line-end comment, fence `scope=`, section comment) and their precedence, A11–A13 (command ownership/determinacy, current-HEAD line numbers), C7 forward-reference marker, R11 self-reference exemption |
+| 1.5.1 | 2026-09-17 | **C9 added** (writer-ops proposal, adopted): `SPEC.md` must be cited **by section, never by line** (`doc/design/SPEC.md` §2.3 / §7.1 / §9), because the document is amended frequently and line anchors go stale within minutes (the same day saw six revisions). Rule identifiers (`T*`,`P*`,`V*`,`A*`,`J*`,`B*`,`F*`,`R*`,`C*`,`E*`) are stable and preferred; this applies to messages, task outputs and every document under `doc/design/**`. No rule semantics changed. |

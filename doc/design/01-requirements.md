@@ -98,13 +98,13 @@ requirement → implementation → evidence chain is machine-checkable by `scrip
   `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:91`
   (`PONG_MISS_TOLERANCE = 4`), reconnect budget
   `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:145`
-  (`MAX_REJOIN_ATTEMPTS = 10`), backoff `…SignalingClient.kt:156` (`rejoinDelayMs`);
+  (`MAX_REJOIN_ATTEMPTS = 10`), backoff `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:156` (`rejoinDelayMs`);
   ICE restart decision `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallSurvivability.kt:127`
   (`shouldRestartIceOnRejoin`).
 * **Evidence.** `reports/99-final-report.md` §15.4 (hard socket close: online peer saw `peerLeft` count 0
   within 12 s; same-identity rejoin got `joined` with the same `peerId`); budget test
   `app/src/test/kotlin/com/example/webrtcdemo/signaling/ReconnectBudgetTest.kt:50` (63 000 ms) and
-  `…ReconnectBudgetTest.kt:52` (< 75 000 ms); `reports/35-room-grace.md`, `reports/39-reconnect-budget-ice-restart.md`.
+  `app/src/test/kotlin/com/example/webrtcdemo/signaling/ReconnectBudgetTest.kt:52` (< 75 000 ms); `reports/35-room-grace.md`, `reports/39-reconnect-budget-ice-restart.md`.
 * **Status.** implemented, with an unverified margin: the real-device behaviour of a 30–90 s outage and the
   8 s offer fallback are not measured (`reports/52-release-closure.md` §5, item 6).
 
@@ -115,9 +115,9 @@ requirement → implementation → evidence chain is machine-checkable by `scrip
 * **Implementation.** Peer-left decision `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallSurvivability.kt:76`
   (`peerLeftAction`, keep the call when the generation ever connected); waiting state
   `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallViewModel.kt:448` (phase `waiting_peer`, no timer,
-  no retry prompt); clock reset `…CallViewModel.kt:903` (`resetRetryClock("peer_left")`);
-  keep-call branch `…CallViewModel.kt:914` (`peer_left action=keep_call`); waiting state is not treated as a
-  retry/failure condition `…CallViewModel.kt:460`.
+  no retry prompt); clock reset `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallViewModel.kt:903` (`resetRetryClock("peer_left")`);
+  keep-call branch `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallViewModel.kt:914` (`peer_left action=keep_call`); waiting state is not treated as a
+  retry/failure condition `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallViewModel.kt:460`.
 * **Evidence.** `app/src/test/kotlin/com/example/webrtcdemo/ui/call/CallSurvivabilityTest.kt`;
   `reports/33-waiting-peer-no-retry.md`; `reports/36-call-survivability.md`.
 * **Status.** implemented.
@@ -130,7 +130,7 @@ requirement → implementation → evidence chain is machine-checkable by `scrip
 * **Implementation.** Decision `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallSurvivability.kt:88`
   (`roomLostAction`); keep-call branch with the `room_not_found action=keep_call` log
   `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallViewModel.kt:1052-1064`; signal-lost decision
-  `…CallSurvivability.kt:105` (`signalLostAction`) and its branch
+  `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallSurvivability.kt:105` (`signalLostAction`) and its branch
   `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallViewModel.kt:757-772`.
 * **Evidence.** `app/src/test/kotlin/com/example/webrtcdemo/signaling/SignalingErrorPolicyTest.kt`;
   `app/src/test/kotlin/com/example/webrtcdemo/ui/call/CallSurvivabilityTest.kt`;
@@ -142,7 +142,7 @@ requirement → implementation → evidence chain is machine-checkable by `scrip
 * **Statement.** The user can force all media through TURN; the setting persists and is applied to every new
   session.
 * **Implementation.** Policy constant `app/src/main/kotlin/com/example/webrtcdemo/config/AppConfig.kt:69`
-  (`ICE_POLICY_RELAY`) and getter `…AppConfig.kt:162` (`forceRelay`); mapped to
+  (`ICE_POLICY_RELAY`) and getter `app/src/main/kotlin/com/example/webrtcdemo/config/AppConfig.kt:162` (`forceRelay`); mapped to
   `PeerConnection.IceTransportsType.RELAY` in `app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcConfig.kt:156`;
   applied when starting a session `app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallViewModel.kt:561`;
   re-applied on ICE restart `app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:1294-1295`.
@@ -155,9 +155,9 @@ requirement → implementation → evidence chain is machine-checkable by `scrip
 * **Statement.** The user can export the app logs as a zip and share it; the export contains device info and a
   session summary and keeps at most 3 archives.
 * **Implementation.** `app/src/main/kotlin/com/example/webrtcdemo/diag/LogExporter.kt:139`
-  (`exportBlocking`); zip name prefix `…LogExporter.kt:60` (`ZIP_PREFIX`), device info entry
-  `…LogExporter.kt:66`, keep-at-most `…LogExporter.kt:72` (`MAX_EXPORTS = 3`), old-export trimming
-  `…LogExporter.kt:248`; `FileProvider` authority `app/src/main/AndroidManifest.xml:67`.
+  (`exportBlocking`); zip name prefix `app/src/main/kotlin/com/example/webrtcdemo/diag/LogExporter.kt:60` (`ZIP_PREFIX`), device info entry
+  `app/src/main/kotlin/com/example/webrtcdemo/diag/LogExporter.kt:66`, keep-at-most `app/src/main/kotlin/com/example/webrtcdemo/diag/LogExporter.kt:72` (`MAX_EXPORTS = 3`), old-export trimming
+  `app/src/main/kotlin/com/example/webrtcdemo/diag/LogExporter.kt:248`; `FileProvider` authority `app/src/main/AndroidManifest.xml:67`.
 * **Evidence.** `reports/07-native-dev.md` §15 (log pipeline and export); `reports/52-release-closure.md`
   §5 (log evidence was collected through this path). No unit test covers the zip content end to end.
 * **Status.** implemented; the archive *content* is `unverified`.
@@ -208,7 +208,7 @@ requirement → implementation → evidence chain is machine-checkable by `scrip
 * **Statement.** The grace period must be larger than the client reconnect budget, and the room/seat state
   machine must be deterministic and idempotent.
 * **Implementation.** `DefaultRoomGrace = 90 s` (`signaling/config/config.go:54`), warning threshold
-  `…config.go:57` (`MinRecommendedRoomGrace`); idempotent expiry `signaling/room/manager.go:258`
+  `signaling/config/config.go:57` (`MinRecommendedRoomGrace`); idempotent expiry `signaling/room/manager.go:258`
   (`expireGrace`) and `signaling/room/room.go:140` (`ExpirePending`); deployment pins the value
   `deploy/signaling.service:28` (`-room-grace 90s`).
 * **Evidence.** `signaling/room/grace_test.go`, `signaling/server/grace_test.go`;
@@ -222,10 +222,10 @@ requirement → implementation → evidence chain is machine-checkable by `scrip
 * **Statement.** Every failure mode must leave a log event with enough fields to localise it; logs rotate so
   they cannot fill the device.
 * **Implementation.** Rolling file logger `app/src/main/kotlin/com/example/webrtcdemo/log/FileLogger.kt:502`
-  (`MAX_FILE_BYTES = 2 MiB`), `…FileLogger.kt:505` (`MAX_FILES = 3`), log directory
-  `…FileLogger.kt:508` (`logs`); critical events bypass the async queue
+  (`MAX_FILE_BYTES = 2 MiB`), `app/src/main/kotlin/com/example/webrtcdemo/log/FileLogger.kt:505` (`MAX_FILES = 3`), log directory
+  `app/src/main/kotlin/com/example/webrtcdemo/log/FileLogger.kt:508` (`logs`); critical events bypass the async queue
   `app/src/main/kotlin/com/example/webrtcdemo/log/Log.kt:226` (`critical`); native log init contract
-  `…Log.kt:212`; generated key list `doc/design/_generated/` (log event table).
+  `app/src/main/kotlin/com/example/webrtcdemo/log/Log.kt:212`; generated key list `doc/design/_generated/` (log event table).
 * **Evidence.** `reports/07-native-dev.md` §15; `reports/83`-style diagnostic enhancements recorded in
   `reports/46-remote-candidate-counting.md`; the device log lines quoted in `reports/52-release-closure.md` §4.
 * **Status.** implemented.
@@ -326,4 +326,4 @@ places (`reports/99-final-report.md` §15.5):
 
 D-1, D-2 and D-5 are now closed in code or in the repository copy; D-3 and D-6 are accepted as host
 operational facts. The full statement, evidence and impact of each item is maintained in
-`doc/design/09-verification-and-limitations.md`.
+doc/design/09-verification-and-limitations.md.

@@ -10,11 +10,13 @@ This document describes the wire contract between the Android client and the sig
 connection and reconnect policy, the ICE, TURN and SDP behaviour of the client, the JNI contract
 between the Kotlin layer and the native library, and the diagnostic event vocabulary.
 
-It does not describe service internals (see [04-signaling-service.md](doc/design/04-signaling-service.md)), the application layers (see
-03-app-architecture.md), or the end-to-end flows (see 06-flows.md).
+It does not describe service internals (see [04-signaling-service.md](04-signaling-service.md)), the application layers (see
+[03-app-architecture.md](03-app-architecture.md)), or the end-to-end flows (see [06-flows.md](06-flows.md)).
 
 Field-level message tables are machine-generated and authoritative; this document cross-references
-them and never restates a type set of its own.
+them and never restates a type set of its own. The generated artifacts live in
+`doc/design/_generated/` (contract spelling `docs/_generated/`, the same files through the `docs`
+compatibility link) and are produced by `scripts/gen-doc-tables.sh`.
 
 ## 2. Transport and framing
 
@@ -24,19 +26,20 @@ a UTF-8 JSON text frame, and the discriminator field is `type`.
 The envelope is parsed into `Message` (`signaling/protocol/message.go:41`); only the discriminator is
 read for routing, and forwarding types are passed on as the original bytes
 (`signaling/server/ws_handler.go:379`). A frame larger than the configured limit is rejected by the
-read limit, which is `MaxMessageSize` (65 536 B, `signaling/config/config.go:29`).
+read limit, which is `MaxMessageSize` (65 536 B, `signaling/config/config.go:29`) applied by the read
+loop (`signaling/room/peer.go:221`).
 
 The client encodes and decodes with `SignalingCodec`
 (`app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingMessage.kt:143`), which ignores
 unknown keys but not missing required ones
 (`app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingMessage.kt:146`).
 
-References: `signaling/server/server.go:25`, `signaling/protocol/message.go:41`, `signaling/server/ws_handler.go:379`, `signaling/config/config.go:29`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingMessage.kt:143`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingMessage.kt:146`
+References: `signaling/server/server.go:25`, `signaling/protocol/message.go:41`, `signaling/server/ws_handler.go:379`, `signaling/config/config.go:29`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingMessage.kt:143`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingMessage.kt:146`, `signaling/room/peer.go:221`
 
 ## 3. Message catalogue
 
 Both sides implement the same 14 message types. The generated table
-[signaling messages](doc/design/_generated/signaling-messages.md) reports the Go constant, the JSON
+[signaling messages](_generated/signaling-messages.md) reports the Go constant, the JSON
 value, the direction and the field list of each one; §4 of that file states that the two type sets
 are identical and §6 states that every JSON key has a matching Kotlin property.
 
@@ -112,7 +115,7 @@ reports/39-reconnect-budget-ice-restart.md §3.
 On the server side the read timeout is three ping intervals (`signaling/config/config.go:38`) and the
 grace period that keeps a dropped seat is `DefaultRoomGrace` = 90 s
 (`signaling/config/config.go:54`). Because the seat survives a drop, a reconnect inside the grace
-window is accepted with the original peer id (see [04-signaling-service.md](doc/design/04-signaling-service.md)); outside it the seat is
+window is accepted with the original peer id (see [04-signaling-service.md](04-signaling-service.md)); outside it the seat is
 reclaimed and the surviving peer is told through `peerLeft`.
 
 Two obligations follow for any client:
@@ -125,9 +128,14 @@ Two obligations follow for any client:
 While no listener is registered the client buffers at most `MAX_PENDING_MESSAGES` = 32 messages
 (`app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:170`), and a socket close
 with the normal close code 1000 is handled explicitly
-(`app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:128`).
+(`app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:128`). Before a reconnect is
+scheduled the previous socket is closed or cancelled
+(`app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:424`,
+`app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:655`), and the reconnect
+itself is driven by `scheduleReconnect`
+(`app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:721`).
 
-References: `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:79`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:82`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:91`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:94`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:104`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:117`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:128`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:139`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:142`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:145`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:156`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:163`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:170`, `signaling/config/config.go:38`, `signaling/config/config.go:54`
+References: `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:79`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:82`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:91`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:94`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:104`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:117`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:128`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:139`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:142`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:145`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:156`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:163`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:170`, `signaling/config/config.go:38`, `signaling/config/config.go:54`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:424`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:655`, `app/src/main/kotlin/com/example/webrtcdemo/signaling/SignalingClient.kt:721`
 
 ## 5. ICE, TURN and SDP behaviour
 
@@ -135,7 +143,7 @@ ICE server configuration reaches the client only through signaling responses: th
 URL and the TURN credentials are attached to the room-created response
 (`signaling/server/ws_handler.go:226`) and to the join response
 (`signaling/server/ws_handler.go:287`). The TURN deployment behind those values is described in
-04-signaling-service.md; its relay address rule and its measured failure mode are in
+[04-signaling-service.md](04-signaling-service.md); its relay address rule and its measured failure mode are in
 reports/06-coturn.md §5.
 
 The server never rewrites a session description. An offer or answer is validated for a non-empty body
@@ -150,15 +158,31 @@ The NAT type exchange carries one of six strings, declared as constants
 outside the set (`signaling/server/ws_handler.go:369`).
 
 Media transport selection is a client-side outcome of ICE, expressed as either a direct path or a
-relayed path. Renegotiation is bounded by two registered behaviours: the reconnect budget above, and
-the offer duty that only the room creator holds, which removes simultaneous-renegotiation conflicts
-(reports/40-glare-ice-restart-fix.md §2). A silent drop with no renegotiation is a registered
-limitation, documented in 09-verification-and-limitations.md.
+relayed path. Three client behaviours shape it:
+
+| Behaviour | Implementation |
+|---|---|
+| TURN over UDP first, with a TCP entry appended as fallback | `WebRtcConfig` rewrites the TURN URL to `transport=tcp` and adds it unless the server already provided one (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcConfig.kt:105`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcConfig.kt:174`); the fallback is on by default (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcConfig.kt:165`) |
+| loopback candidates are filtered in both directions | locally gathered `127.0.0.0/8` and `::1` candidates are not sent (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:886`) and remote ones are dropped on receipt (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:605`) through `LoopbackCandidates.isLoopback` (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:1581`) |
+| forced relay for reproducing a relayed call | the diagnostics switch selects `iceTransportsType` RELAY instead of ALL (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcConfig.kt:156`, `app/src/main/kotlin/com/example/webrtcdemo/config/AppConfig.kt:162`) |
+
+A symmetric NAT leaves no direct path, so such a call can complete only through a relay; the forced
+relay switch above is how that path is reproduced (see reports/30-ice-relay-robustness.md).
+
+Renegotiation is bounded by two registered behaviours. First, the offer duty belongs to the room
+creator only, which removes simultaneous-renegotiation conflicts
+(reports/40-glare-ice-restart-fix.md §2). Second, an ICE restart marks the next offer for
+renegotiation rather than sending one immediately (`restartIce`,
+`app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:1272`): the call marks the
+connection (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:1286`) and the offerer
+re-offers afterwards, with at most `MAX_ICE_RESTARTS` = 2 attempts
+(`app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:100`). A silent drop with no
+renegotiation is a registered limitation, documented in [09-verification-and-limitations.md](09-verification-and-limitations.md).
 
 `app/src/main/jniLibs/arm64-v8a/libjingle_peerconnection_so.so` supplies the ICE and DTLS/SRTP
 implementation used by the client; it is a pinned build input and is not in version control.
 
-References: `signaling/server/ws_handler.go:226`, `signaling/server/ws_handler.go:287`, `signaling/server/ws_handler.go:326`, `signaling/server/ws_handler.go:340`, `signaling/server/ws_handler.go:359`, `signaling/server/ws_handler.go:369`, `signaling/protocol/message.go:30`
+References: `signaling/server/ws_handler.go:226`, `signaling/server/ws_handler.go:287`, `signaling/server/ws_handler.go:326`, `signaling/server/ws_handler.go:340`, `signaling/server/ws_handler.go:359`, `signaling/server/ws_handler.go:369`, `signaling/protocol/message.go:30`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcConfig.kt:105`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcConfig.kt:156`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcConfig.kt:165`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcConfig.kt:174`, `app/src/main/kotlin/com/example/webrtcdemo/config/AppConfig.kt:162`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:100`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:605`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:886`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:1272`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:1286`, `app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:1581`
 
 ## 6. JNI contract
 
@@ -179,7 +203,7 @@ Four Kotlin classes are registered, with 15 native methods in total:
 | `NativeCallbacks` | 2 (native to Kotlin) | `app/src/main/cpp/jni/jni_bridge.cpp:56` |
 
 The authoritative cross-check of Kotlin declarations, registration tables and C prototypes is the
-generated table [jni contract](doc/design/_generated/jni-contract.md); its §7 reports the divergence
+generated table [jni contract](_generated/jni-contract.md); its §7 reports the divergence
 result per entry, and its §6 records the optional exported-symbol check, which is
 `unverified (build product absent)` when the library has not been built.
 
@@ -204,7 +228,7 @@ References: `app/src/main/cpp/jni/jni_bridge.h:9`, `app/src/main/cpp/jni/jni_bri
 ## 7. Diagnostic events
 
 Event keys are the contract for log-driven diagnosis. The machine-generated inventory
-[log events](doc/design/_generated/log-events.md) lists the Kotlin and native event keys with their
+[log events](_generated/log-events.md) lists the Kotlin and native event keys with their
 emitter file and line, plus a sorted index (§3); it is authoritative for those two layers.
 
 The signaling service emits its own keys, which are not part of that generated file and are therefore

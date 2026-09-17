@@ -10,8 +10,8 @@ This document describes the Go signaling service in `signaling/`: its package la
 seat state machine, message routing and error codes, the health endpoint, its configuration and
 systemd unit, and its relationship to the coturn server.
 
-It does not describe the Android client (see 03-app-architecture.md), the wire format itself
-(see [05-protocols.md](doc/design/05-protocols.md)), or the call flows (see 06-flows.md).
+It does not describe the Android client (see [03-app-architecture.md](03-app-architecture.md)), the wire format itself
+(see [05-protocols.md](05-protocols.md)), or the call flows (see [06-flows.md](06-flows.md)).
 
 The service exposes one WebSocket endpoint and one health endpoint. The endpoint path is
 `PathWS` (`signaling/server/server.go:25`) and the health path is `PathHealthz`
@@ -90,13 +90,14 @@ Partners are resolved by `OtherPeer` (`signaling/room/room.go:181`); a pending s
 present, so a reconnecting peer can be paired with the peer that stayed online.
 
 Expiry is evaluated by `IsExpired` (`signaling/room/room.go:295`): a room that is not full and has
-seen no activity for the configured window is destroyed. `cleanupLoop`
-(`signaling/room/manager.go:375`) drives this with a period of 60 s or a quarter of the expiry
-window, whichever is smaller (`signaling/room/manager.go:375`), and `sweep`
+seen no activity for the configured window is destroyed. `cleanupInterval`
+(`signaling/room/manager.go:375`) computes the sweep period: 60 s by default, a quarter of the expiry
+window when that is shorter, and 200 ms as a floor; `cleanupLoop`
+(`signaling/room/manager.go:388`) drives it, and `sweep`
 (`signaling/room/manager.go:407`) collects the expired rooms before calling the callback outside the
 lock. `RemoveRoom` (`signaling/room/manager.go:348`) deletes the room and counts the destruction.
 
-References: `signaling/room/room.go:13`, `signaling/room/room.go:17`, `signaling/room/room.go:18`, `signaling/room/room.go:26`, `signaling/room/room.go:66`, `signaling/room/room.go:102`, `signaling/room/room.go:113`, `signaling/room/room.go:140`, `signaling/room/room.go:159`, `signaling/room/room.go:181`, `signaling/room/room.go:212`, `signaling/room/room.go:243`, `signaling/room/room.go:258`, `signaling/room/room.go:295`, `signaling/room/manager.go:54`, `signaling/room/manager.go:55`, `signaling/room/manager.go:225`, `signaling/room/manager.go:258`, `signaling/room/manager.go:303`, `signaling/room/manager.go:311`, `signaling/room/manager.go:333`, `signaling/room/manager.go:348`, `signaling/room/manager.go:375`, `signaling/room/manager.go:407`
+References: `signaling/room/room.go:13`, `signaling/room/room.go:17`, `signaling/room/room.go:18`, `signaling/room/room.go:26`, `signaling/room/room.go:66`, `signaling/room/room.go:102`, `signaling/room/room.go:113`, `signaling/room/room.go:140`, `signaling/room/room.go:159`, `signaling/room/room.go:181`, `signaling/room/room.go:212`, `signaling/room/room.go:243`, `signaling/room/room.go:258`, `signaling/room/room.go:295`, `signaling/room/manager.go:54`, `signaling/room/manager.go:55`, `signaling/room/manager.go:225`, `signaling/room/manager.go:258`, `signaling/room/manager.go:303`, `signaling/room/manager.go:311`, `signaling/room/manager.go:333`, `signaling/room/manager.go:348`, `signaling/room/manager.go:375`, `signaling/room/manager.go:388`, `signaling/room/manager.go:407`
 
 ## 4. Connection handling and routing
 
@@ -211,10 +212,12 @@ ExecStart=/opt/signaling/signaling -addr :8443 -stun stun:<host>:3478 -turn 'tur
 HOST: `/opt/signaling/signaling` is the installed binary path used by the unit; the repository copy
 matches the deployed unit parameter for parameter (see `deploy/signaling.service:1` and
 reports/12-deploy-signaling.md §4). HOST: `/var/log/signaling/signaling.log` is the log target set on
-`deploy/signaling.service:28`; the logger creates the directory and rotates at 2 MiB with 3 files
-(`signaling/logging/logging.go:38`).
+`deploy/signaling.service:28`; the rotating writer creates its directory and defaults to 2 MiB per
+file with 3 files kept (`signaling/logging/rotating.go:14`, `signaling/logging/rotating.go:16`,
+`signaling/logging/rotating.go:43`), and it is installed by `Setup`
+(`signaling/logging/logging.go:20`).
 
-References: `signaling/main.go:38`, `signaling/main.go:59`, `signaling/main.go:95`, `signaling/main.go:101`, `signaling/main.go:113`, `signaling/config/config.go:19`, `signaling/config/config.go:26`, `signaling/config/config.go:29`, `signaling/config/config.go:32`, `signaling/config/config.go:38`, `signaling/config/config.go:42`, `signaling/config/config.go:54`, `signaling/config/config.go:57`, `signaling/config/config.go:60`, `signaling/config/config.go:99`, `signaling/config/config.go:110`, `signaling/config/config.go:146`, `deploy/signaling.service:1`, `deploy/signaling.service:27`, `deploy/signaling.service:28`, `deploy/signaling.service:29`, `deploy/signaling.service:30`, `signaling/server/server.go:166`, `signaling/logging/logging.go:38`
+References: `signaling/main.go:38`, `signaling/main.go:59`, `signaling/main.go:95`, `signaling/main.go:101`, `signaling/main.go:113`, `signaling/config/config.go:19`, `signaling/config/config.go:26`, `signaling/config/config.go:29`, `signaling/config/config.go:32`, `signaling/config/config.go:38`, `signaling/config/config.go:42`, `signaling/config/config.go:54`, `signaling/config/config.go:57`, `signaling/config/config.go:60`, `signaling/config/config.go:99`, `signaling/config/config.go:110`, `signaling/config/config.go:146`, `deploy/signaling.service:1`, `deploy/signaling.service:27`, `deploy/signaling.service:28`, `deploy/signaling.service:29`, `deploy/signaling.service:30`, `signaling/server/server.go:166`, `signaling/logging/logging.go:20`, `signaling/logging/rotating.go:14`, `signaling/logging/rotating.go:16`, `signaling/logging/rotating.go:43`
 
 ## 7. Coturn relationship
 
@@ -263,10 +266,10 @@ References: `signaling/server/ws_handler.go:226`, `signaling/server/ws_handler.g
 
 1. `ReconnectDelay` (`signaling/protocol/heartbeat.go:15`) and `MaxReconnectAttempts`
    (`signaling/protocol/heartbeat.go:17`) are declared-only: they have no call site in the repository.
-   The client-side reconnect policy is the one measured in 05-protocols.md, and these two constants
+   The client-side reconnect policy is the one measured in [05-protocols.md](05-protocols.md), and these two constants
    are `unverified` as behaviour.
 2. The Go log event names in this document are cited directly from the emitting source, because the
-   generated `log-events.md` covers the Kotlin and native layers only. That is a coverage gap in the
+   generated [log-events.md](_generated/log-events.md) covers the Kotlin and native layers only. That is a coverage gap in the
    generated artifact, not a divergence.
 3. The `room_grace_ms` startup field and the health counters are verified from source only; no
    deployed instance was queried while writing this document.

@@ -1,7 +1,7 @@
 # JNI contract
 
 > **GENERATED — do not edit.** Regenerate with `bash scripts/gen-doc-tables.sh`.
-> Generator: `scripts/gen-doc-tables.sh` (sha256 `e7951ef4e950858588103cb1e5714d390612fd8db625f570759c20e5c8c156c5`)
+> Generator: `scripts/gen-doc-tables.sh` (sha256 `075b6da2442121b352a7342105bf13540327f907bf82b74f21cd22a485e52f9f`)
 > Deterministic: no timestamp is embedded, so repeated runs are byte-identical.
 > Sources (sha256 of the exact revision this table was built from):
 > - `app/src/main/cpp/jni/jni_bridge.h` — sha256 `8aa0b3388ca89cf8c2bd4f29370e8a578af5ddeb591361d7bce34741cb0fc2e5`
