@@ -11,7 +11,7 @@ re-measured **at production time** (`2026-09-17T11:32:27Z`); no value is copied 
 because `doc/design/SPEC.md` was edited concurrently during the preceding task window.
 
 Included: every `doc/design/*.md`, the four generated tables under `doc/design/_generated/`, and
-`doc/README.md`. Excluded: the repository-root `README.md`, which does not exist yet (see §6).
+`doc/README.md`. `doc/design/README.md` and the repository-root `README.md`. Nothing in the documented set is missing.
 
 ## 2. Frozen checker revision and how it was measured
 
@@ -36,7 +36,7 @@ Raw command, raw exit code, raw counters:
 
 ```
 bash scripts/doc-verify.sh
-doc-verify.sh: PASS (2421 checks, 2 warnings)
+doc-verify.sh: PASS (2466 checks, 2 warnings)
 EXIT=0
 ```
 
@@ -45,7 +45,7 @@ EXIT=0
 | Raw exit code | 0 |
 | Failures | 0 |
 | Warnings | 2 |
-| Checks | 2421 |
+| Checks | 2466 |
 | Advisory `NOTE` lines | 18 |
 
 The checks counter is corpus-wide: editing any chapter changes it. The binding facts are **failures = 0** and
@@ -72,16 +72,19 @@ All values measured in the container at production time. Paths are repository-re
 | 7 | `doc/design/06-flows.md` | `bd00eb2c2f77530c589a43644382d56dfe9a1f93f7455491e479ebe8da3012c4` | 28998 | 504 | 2026-09-17 13:57:36 |
 | 8 | `doc/design/07-build-and-deploy.md` | `75557ef5be2b33c5381313a7163bfced7ae825d25a28691b7d00abb522162649` | 11611 | 204 | 2026-09-17 13:55:57 |
 | 9 | `doc/design/08-issues-and-solutions.md` | `902330ff972e80f7400015faf2672c5fbcefeda69dc1bad0b0f6c0020e24e14d` | 55809 | 497 | 2026-09-17 19:31:46 |
-| 10 | `doc/design/09-verification-and-limitations.md` | `7b7f63d830f906e0dea1688ad64914812631b9b16bd86c27bf2aa7509c72ade6` | 23979 | 215 | 2026-09-17 19:31:56 |
+| 10 | `doc/design/09-verification-and-limitations.md` | `f87b1299b8cc092369ae575d0b8dd5f3e3022889c9986374e35ab632a83e4b70` | 23937 | 215 | 2026-09-17 19:38:34 |
 | 11 | `doc/design/10-code-map.md` | `347a4520cd210fae9ee7cdd46ee8032c1d788bd6e7e58bacaac3d90d4452d603` | 20285 | 268 | 2026-09-17 14:35:26 |
-| 12 | `doc/design/11-coding-standards.md` | `3078e3be14139252e2283e922e57037824d8bb03c674ecb52bf7496b970d8181` | 18805 | 236 | 2026-09-17 14:28:38 |
+| 12 | `doc/design/11-coding-standards.md` | `b79928d353482e0389bd4caf7924840eb61cf93c4f20623c09837add8a881dcc` | 18869 | 237 | 2026-09-17 19:36:29 |
 | 13 | `doc/design/_generated/host-commands.md` | `3cd3efd108e51fef3db78ab145df550a45558854a9d3a3c933bc9eca7d6be80b` | 48021 | 611 | 2026-09-17 14:11:19 |
 | 14 | `doc/design/_generated/jni-contract.md` | `33d83e8cf768ed3f46d392c30dbd47d54d8682280b4cc31336e19a2693388112` | 11756 | 132 | 2026-09-17 14:11:19 |
 | 15 | `doc/design/_generated/log-events.md` | `15a5763e6345df0228058541f02dc1bbc17bd76ef0729c03f98a6eb77cc766ac` | 78673 | 737 | 2026-09-17 14:11:18 |
 | 16 | `doc/design/_generated/signaling-messages.md` | `9ce1b503c2456d6fda15d5980503cd943c7f64f19d17f7b3951ddd65721550a7` | 7879 | 173 | 2026-09-17 14:11:18 |
 | 17 | `doc/README.md` | `fb739b51625c93f4c41677749befc71740ac9207cd51a7c16273211ea89b294b` | 9110 | 105 | 2026-09-17 13:33:47 |
+| 18 | `README.md` | `3f424ccc7f5e37e86f8dba4719f05a2e532ea28af6359e634a9ed2d6d2050604` | 3189 | 59 | 2026-09-17 19:41:13 |
+| 19 | `doc/design/README.md` | `b385223eaa13dd41a6bb14317b00d4a84c33b03ca971c8a89b07ef03ab95181e` | 2383 | 41 | 2026-09-17 19:41:13 |
 
-Total: 17 artefacts (12 chapters under `doc/design/` including the standard, 4 generated tables, 1 legacy map).
+Total: 19 artefacts (12 chapters under `doc/design/` including the standard, 1 document-set index, 4 generated
+tables, 1 legacy map, 1 repository entry point).
 
 ## 5. Cited workspace evidence — existence check
 
@@ -108,15 +111,12 @@ tmp/verifier-recon/tag-probe.md         tmp/ws-draft/probe-p5.md
 
 Result: 10 of 10 session logs present, 6 of 6 probe/evidence files present, 0 missing.
 
-## 6. Known gap: the repository-root README
+## 6. Repository entry point
 
-The repository-root `README.md` does **not** exist yet (verified: `[ -e README.md ]` is false). It is the
-planned entry point and is produced by the readme task (t23); until then it is deliberately plain text in
-`doc/design/02-architecture.md` with the phrase `not yet written at authoring time`, as `doc/design/SPEC.md`
-§C7 requires.
-
-This manifest must be extended with that file's digest and the final doc/design/README.md index once t23
-lands; until then the manifest covers the 17 artefacts listed in §4 and nothing else.
+The repository-root `README.md` and the document-set index `doc/design/README.md` landed with task t23 and are
+listed in §4 (rows 18 and 19). The repository entry point links to every chapter and to the four generated
+tables, and the index cross-links with the legacy map `doc/README.md`. No artefact of the documented set is
+missing at this revision.
 
 ## 7. Open items
 
@@ -131,3 +131,4 @@ lands; until then the manifest covers the 17 artefacts listed in §4 and nothing
   checker edit invalidates them; re-run the gate and re-register the triple before quoting them.
 * **The manifest's own digest** is registered in the task output of t16 at the moment of delivery and is not
   self-referential inside this file.
+* **Amendment at t23** (measured at HEAD `cbd63d4`): two rows were re-measured (`09` and `11`, which were updated by t24/t25) and two rows were added (the repository entry point and the document-set index). All other rows keep the values measured at the original freeze. If the checker revision in §2 changes, or any listed artefact is edited again, the binding is invalidated and this manifest must be re-issued rather than reinterpreted.
