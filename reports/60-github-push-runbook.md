@@ -109,3 +109,24 @@ cd /tmp/verify-clone && bash scripts/doc-verify.sh | tail -1             # expec
 
 The last check is the meaningful one: it proves the published tree still passes its own documentation gate, with
 all citations resolving against the code that was pushed.
+
+## 6. Execution log (actual push, 2026-09-17)
+
+| Step | Outcome |
+|---|---|
+| `git remote add origin https://github.com/custompal/webrtc-demo.git` | done |
+| first `git push -u origin main` | refused: `could not read Username for 'https://github.com'` (no credentials in the container) |
+| credential delivery | a fine-grained PAT was supplied by the repository owner; used through a one-shot credential helper (`credential.helper` shell function), **never written to `.git/config` or to disk** |
+| `git push -u origin main` | success — `* [new branch] main -> main`, tracking configured; no force-push was needed (the remote was empty) |
+| remote verification | `refs/heads/main` = `d277d9c668fe98b4cc09f3a83317445950b46157` = local `HEAD`; 274 commits; 429 tracked files |
+| GitHub API | `custompal/webrtc-demo`, `private=false`, `default_branch=main` |
+| clean-room clone | `git clone --depth 1` (no credentials) succeeded; the two submodule entries appear as gitlinks and `git submodule status` shows the `-` prefix (not initialised), as documented in §4 |
+| credential hygiene | `git remote -v` and `.git/config` contain no token; `git grep` over `HEAD` and `git log -S` over all history find no token material |
+| submodule upstreams (verified reachable) | libvpx `HEAD 5e680f30…`, libwebrtc `HEAD 7a24158d…`; the pinned commits `d2413e2c…` / `be0e9008…` are upstream history commits and remain fetchable |
+| follow-up required | the owner should revoke or rotate the PAT that was used for this push |
+
+**Reproducing the push from scratch:** `git remote add origin https://github.com/custompal/webrtc-demo.git`,
+then authenticate with a token that has `Contents: Read and write` on that repository — `git push -u origin main`.
+A token can be supplied without persisting it through a one-shot credential helper, as was done here, or by
+writing it to `/opt/dsh-workspaces/tmp/gh-token` (the host path that maps to the container workspace
+`/data/dsh/home/workspace/tmp/gh-token`) for scripted use, deleting it afterwards.
