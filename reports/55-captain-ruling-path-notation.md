@@ -337,3 +337,14 @@ would have made both records describe a state that no longer held.
 retaining it costs nothing while deletion would require amending two governance records in the same change.
 Deletion is only permitted together with a same-change update of §7 and `reports/54` §5, and only after the
 verification round that relies on the inventory has finished.
+
+### 12.6 Evidence-inventory entries carry a content digest (adopted from t21's review)
+
+The `probe-p5` episode exposed a structural weakness: §7 and `reports/54` §5 recorded **presence**, so any later
+removal turned a governance record into a silent contradiction and blocked a harmless cleanup.
+
+Adopted rule: every entry in the §7 inventory (and in the manifest's evidence section) records the file's
+**content digest**, not merely that it existed. Presence is then re-verified against the digest, and a removal or
+relocation is an explicit, documented change with a stated reason — never a silent mismatch. Reference value for
+the file that prompted the rule: `tmp/ws-draft/probe-p5.md` = 99 B, sha256
+`1d64dce25ee495b83499e65c4254075975054786f78efd768ba3d58d1c8d83c9` (retained per §12.5).
