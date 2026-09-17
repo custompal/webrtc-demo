@@ -394,3 +394,17 @@ relay must carry is the **authority itself** (the ruling section, or the quoted 
 see which text was in force and check whether it has since been superseded. An executor performing a destructive
 step must be able to point at the authority; a bare "the hold is lifted" is insufficient. This is the same
 discipline as §12.2: destructive actions state their authority *and* their expected prior state.
+
+### 12.8 Round-2 verdict accepted; R2-01 routed as a repair
+
+`t22` returned **`pass`** (`reports/56-docs-verification-r2.md`, digest `d789cc8c…`, committed `be3d5a5`):
+full gate exit 0 / failures 0, triple binding verified, manifest 17/17 re-checked, F-01..F-08 closed, all six
+interruption-impact audit items clean, and round-2 sampling not weaker than round 1 (146 citations, protocol
+six-way, seven flows / 29 raw log lines).
+
+One residual was recorded by the verifier rather than silently waved through: **R2-01 (low)** —
+`doc/design/11-coding-standards.md` pins the frozen checker with the correct digest but **without the bearing
+commit** and **still quoting line/byte counts**, which is not the form F-02 specified. The captain accepts the
+`pass` (the digest is correct and the gate is unaffected) and routes the form fix as **`t24`** (repair,
+writer-ops, inScope limited to that file). Because `11-coding-standards.md` will change digest, the freeze
+manifest (`reports/54`) must be amended for that row when `t23` appends the root README and the index.
