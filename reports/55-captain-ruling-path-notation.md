@@ -256,3 +256,22 @@ Resumed on explicit user instruction. Actions taken at resume:
   example polarity, and every `doc/design/*.md` passing `--only` on the frozen revision.
 - Binding surface for round 2 remains checker `676d075a…` + commit `8fdb222` + `reports/54-docs-freeze-manifest.md`.
   `6cc5a382…` (the last withdrawn draft) is never part of it.
+
+### 12.1 Resume corrections (task ids and two probe/ledger traps)
+
+- The runtime **cancelled `t18` and `t20`** while the team was paused (their outputs record "Stopped from the
+  captain chat"); terminal tasks cannot be revived, so they were recreated with the same scope:
+  **`t21`** (08/09 closure, writer-history, deps `t15`) and **`t22`** (round-2 verification incl. the
+  interruption-impact audit, verifier, deps `t14,t15,t16,t21`). References to t18/t20 are void.
+- The original **`t8` was unusable**: its dependency `t7` is terminal `failed`, and its `inScope` still claims
+  the root `README.md`. It was recreated as **`t23`** (writer-app, deps `t22`), whose `inScope` declares only
+  `doc/README.md` while its deliverables include the root `README.md`.
+- **Probe-authoring trap (found by writer-app):** inside backticks, a path must not end with the Unicode
+  ellipsis `…`. `../tmp/…` and `tmp/…` still match the workspace-path shape (the classifier recognises only
+  three ASCII dots), so the P2 existence check then fails with `missing workspace path` — two spurious
+  failures in a probe that "looks" identical to a passing one. Regression probes must therefore end concrete
+  paths with real components, or write the ellipsis outside the code span.
+- **Commit vs digest:** the frozen checker *content* is `676d075a…`, first committed at `8fdb222`; later
+  pause-hygiene commits (`…`, `be8d117`, `fd695fc`) left `scripts/**` byte-identical while advancing `HEAD`.
+  The manifest (t16) must therefore report both the content digest and the commit that carried it, plus the
+  `HEAD` at the time of writing, and label each.
