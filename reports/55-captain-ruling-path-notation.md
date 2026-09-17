@@ -145,3 +145,19 @@ Two consequences to honour, both measured rather than assumed:
 **Freeze rule:** `scripts/doc-verify.sh` and `scripts/gen-doc-tables.sh` must not be edited again until the
 round-2 verification (`t20`) has produced its verdict. Any change invalidates the verdict and must be announced
 with a new digest.
+
+## 9. Post-terminal amendments to completed deliverables (ledger, so t20 does not read them as defects)
+
+A task's `output` is immutable once completed, so amendments made after a task closed are recorded here instead.
+Each entry states the file, the change, the cause, and the task that will carry it forward.
+
+| File | Amendment after its task closed | Cause | Follow-up |
+|---|---|---|---|
+| `doc/design/07-build-and-deploy.md` | §5.1: `--allow-root` and its evidence `reports/41-apk-http-ownership.md:193` merged from two adjacent lines onto **one line** | the gate's SPEC §7.3 **same-line evidence** rule rejects the split form (`--allow-root is host/workspace-only and is cited without in-repository evidence`) | applied by the author; fingerprint recorded in `tmp/probe-forms-matrix-writer-ops.md` |
+| `doc/design/11-coding-standards.md` | §8.1 "Document path notation (frozen)" + migration note added | carried the captain's ruling into the coding standards | finalised under **t19** (pin must be restated as the frozen digest + commit, no line counts) |
+| `doc/design/08-issues-and-solutions.md` | §7.1 reframed to the rule-inversion story | the observer's own "not version-controlled" sentence was factually wrong | rewritten under **t18** against the frozen revision |
+| `doc/design/SPEC.md` | v1.5.0/1.5.1/1.5.2 tag-mandatory drafts | superseded ruling; the drafts also introduced the two `# correct` marker examples that the restored FAIL severity then flagged | reverted under **t15** by whole-file restore from `git show e093e8f:doc/design/SPEC.md` (v1.4.0) |
+| `doc/design/10-code-map.md` | document map switched to real relative links; `not yet written` text dropped | all chapters had landed | closed under **t12**; the root `README.md` is deliberately not linked yet because it does not exist until **t8** |
+
+None of these count as documentation errors in round 2; they are scheduled or completed work, and each is
+verifiable against the frozen revision.
