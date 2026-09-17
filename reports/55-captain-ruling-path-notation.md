@@ -18,7 +18,7 @@ The only scope tokens are **`HOST`, `CONTAINER`, `DEVICE`, `REPO`** (default `RE
 | container absolute path (`/data/dsh/home/workspace/**`) | **bare path, no prefix** | P4, hard-checked against the real container root |
 | build product (`app/build/**`, `*.apk`, `*.so`, `_generated` jar paths under `git check-ignore`) | **bare path, no prefix** | P5, existence **optional**; absent ⇒ informational `UNVERIFIED (build output, gitignored)`, **never a failure** |
 | host-only absolute path (`/opt|/etc|/var|/home|/root|/usr|/srv|/tmp`) | **`HOST: /opt/...`** (or `DEVICE:` for device-side paths) with same-line in-repo evidence | **the only mandatory marker**; unmarked ⇒ FAIL `unmarked host path` (prose wording like "on the host" does **not** exempt) |
-| host/workspace-only **command or flag name** | cite `reports/<file>:<line>` or the `_generated/host-commands.md` entry **on the same line** | missing same-line evidence ⇒ FAIL |
+| host/workspace-only **command or flag name** | cite `reports/<file>:<line>` or the `_generated/host-commands.md` entry **on the same line, or earlier in the same section** | missing evidence ⇒ FAIL; **evidence placed after the command does not count** (implementation: same-line check plus a backwards scan within the section); entries in `_generated/host-commands.md` are exempt as the evidence source |
 
 **`WORKSPACE:` and `ARTIFACT:` are retired.** They are not tokens, and writing one as a path prefix is a
 **failure** (`retired marker`, SPEC T5 first sentence / V8 / §7.4 / §7.2 note). This holds for auto-classified
