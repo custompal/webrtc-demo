@@ -180,6 +180,19 @@ real container root and needs no marker. This is the opposite of a host absolute
 existence-checked but does require the host scope marker. Conflating the two is the most common source of a
 false "unmarked host path" report.
 
+#### 8.1.4 Revision-pinned evidence
+
+A statement that a given form passes or fails is evidence about one revision of the checker, never a
+statement about the rule. Every such statement must carry the checker's full SHA-256 digest and its
+modification time, the exact re-run command, and the raw exit code together with the failure and warning
+counts.
+
+A conclusion quoted without that fingerprint is void: it may not be reused, and it may not be restated as a
+rule. When the checker changes, the probes are re-run before any conclusion is repeated, because the same
+form has been observed to flip verdict across revisions. Prefer naming a probe file and its expected result
+over restating the convention in prose, so that any reader can re-check the claim directly against
+`tmp/probe-forms-matrix-writer-ops.md` (at the workspace root, outside the repository).
+
 Migration note: legacy reports under `reports/**` and the archived documents under `doc/archive/**` contain
 retired path prefixes and `file:LINE` forms that are no longer valid. Do not copy them into new documents.
 Rewrite every path in the bare form described above, and cite a report by its name and section rather than
