@@ -460,3 +460,11 @@ fully delivered by other means: the root README and the index by the captain und
 amendment by the same commit, and the verification by `t27`. They should be ignored rather than revived.
 
 Capstone summary of the whole delivery: `reports/59-docs-delivery-report.md`.
+
+### 12.12 Archive decision (user)
+
+The user directed: **ignore the three dead ledger entries** (`t8`, `t23`, `t26` — blocked behind the
+terminal-failed `t22`, deliverable by other means) and **archive the team**. Recorded here so a later reader does
+not attempt to revive them or read their `pending` state as outstanding work. Final delivery state:
+`bash scripts/doc-verify.sh` = `PASS (2466 checks, 2 warnings)`, exit 0, failures 0; capstone report
+`reports/59-docs-delivery-report.md`; frozen binding `676d075a…` / carrying commit `8fdb222`.
