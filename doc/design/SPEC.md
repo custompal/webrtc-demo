@@ -1,6 +1,7 @@
 # SPEC — Documentation Standard (frozen)
 
-> Status: **frozen** v1.5.3 (owner: `architect`). Task id: t1 (attempt 1), 2026-09-17. Captain v4 (four tags) is FINAL: no further version changes.
+> Status: **frozen** v1.5.3 (owner: `architect`). Task id: t1 (attempt 1), 2026-09-17. Captain v4 (four tags) is FINAL.
+> **Freeze declaration:** this revision is the frozen baseline for independent verification (t7). **No further change is made without the captain's explicit approval**; when the captain approves an amendment, the version row and this declaration are updated together and the change is announced to the team so t7 can re-baseline.
 > Scope: every file under `doc/design/**` and the repository root `README.md`.
 > This document is normative. Writers must not silently deviate: if a rule is wrong, report it to the
 > captain and let the owner (architect) amend this file.
