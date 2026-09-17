@@ -348,3 +348,20 @@ Adopted rule: every entry in the §7 inventory (and in the manifest's evidence s
 relocation is an explicit, documented change with a stated reason — never a silent mismatch. Reference value for
 the file that prompted the rule: `tmp/ws-draft/probe-p5.md` = 99 B, sha256
 `1d64dce25ee495b83499e65c4254075975054786f78efd768ba3d58d1c8d83c9` (retained per §12.5).
+
+### 12.7 Deletion-and-restoration of `tmp/ws-draft/probe-p5.md` (process incident)
+
+Despite §12.5's ruling to retain the file, it was deleted: one member read the ruling as "hold lifted" after another
+member's hand-off message, and the deletion was executed in good faith. Under the freeze rule that made
+`reports/54` §5 and §7 momentarily inconsistent with the filesystem.
+
+**Repair:** the file was reconstructed from the byte-identical reproduction inlined in
+`doc/design/09-verification-and-limitations.md`, and the reconstruction verifies as **99 B, sha256
+`1d64dce25ee495b83499e65c4254075975054786f78efd768ba3d58d1c8d83c9`** — the same digest every record carries.
+The artefact is therefore restored as the original object, not as a look-alike, and both governance records are
+true again without being edited.
+
+**Rule reinforced:** only the captain's **latest written ruling** releases a hold. A member relaying "the hold is
+lifted" is not a release, and an executor receiving one must cite the ruling section it came from (or ask) before
+performing a destructive step. This is the same principle as §12.2: destructive actions require the expected
+pre-state — here, a deleted-but-verifiable artefact shows why.
