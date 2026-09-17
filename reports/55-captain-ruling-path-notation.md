@@ -365,3 +365,18 @@ true again without being edited.
 lifted" is not a release, and an executor receiving one must cite the ruling section it came from (or ask) before
 performing a destructive step. This is the same principle as §12.2: destructive actions require the expected
 pre-state — here, a deleted-but-verifiable artefact shows why.
+
+**Addendum to §12.7 — verification of the restored artefact (captain's own check):**
+
+```
+-rw-r--r-- 99 bytes  mtime 2026-09-17 19:30
+sha256 1d64dce25ee495b83499e65c4254075975054786f78efd768ba3d58d1c8d83c9   (= the value in every record)
+```
+
+Two near-misses were caught during recovery and are recorded so the pattern is visible: (i) a *different* file
+with a similar name exists (`tmp/verifier-recon/probe-p5.md`, 122 B, a different digest) and was briefly copied to
+the cited path before being replaced by the byte-verified reconstruction; (ii) both restorations were performed
+independently and produced the same digest, which is why the identity claim is trustworthy. The **mtime** now
+differs from the original (13:56) and is accepted as immaterial: §12.6 keys re-verification on the content digest,
+and manufacturing an old timestamp would be falsification. The gate was re-run after the operation:
+`PASS (2421 checks, 2 warnings)`.
