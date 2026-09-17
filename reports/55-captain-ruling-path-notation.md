@@ -426,3 +426,22 @@ Fix path: **t25** (done) → **t23** (root `README.md` + index + manifest amendm
 rows and adding the new rows) → **t26** (re-bind and issue the final verdict). The round-2 report's final version
 is `reports/56-docs-verification-r2.md` = `891e93ba…` (verdict `needs_revision`); the earlier `pass` version
 (`d789cc8c…`) is superseded only in that it predates R2-02.
+
+### 12.10 Ledger deadlock from a terminal-failed verification, and the sanctioned exit
+
+`t22` closed as **`failed`** (verdict `needs_revision`, finding R2-02). Because a failed task can never satisfy a
+dependency, everything downstream was permanently blocked: `t23` (`deps [t22]`) could not be claimed, and `t26`
+(`deps [t23]`) was blocked behind it. A captain takeover to cancel them was also rejected — the dependency check
+runs before takeover, so `reassign_task(assignee="captain")` returns `blocked by unfinished dependencies`. The
+paths those tasks declare (`README.md` for the cancelled `t8`, `doc/README.md` for `t23`) also made replacement
+tasks fail the in-scope overlap check.
+
+**Sanctioned exit:** the captain lands the outstanding deliverables directly (captain file authority is not bound
+by a task's `inScope`), and the verification is re-created as a **dependency-free** task
+(`t27` → `reports/58-docs-verification-final.md`) instead of trying to revive the blocked chain.
+
+**Rule recorded:** a verification task must not be closed as `failed` while downstream tasks still depend on it.
+Either close it as `completed` with the residual recorded as a finding (a low/medium finding does not stop
+delivery when the gate is green), or create the downstream tasks with no dependency on it. The captain's own
+`t22` closure caused this deadlock and the workaround cost a full round — the residual belonged in a finding, not
+in the task status.
