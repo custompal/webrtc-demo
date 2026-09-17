@@ -146,6 +146,14 @@ Two consequences to honour, both measured rather than assumed:
 round-2 verification (`t20`) has produced its verdict. Any change invalidates the verdict and must be announced
 with a new digest.
 
+**Tooling ownership during the freeze:** the member that wrote the checker (`doc-tooling`) was removed from the
+team after repeatedly rewriting the frozen file during the freeze window (one rewrite left it syntactically
+broken, exit 2). The tooling therefore has **no owner** while paused. Nothing in the current plan requires a
+checker change; if one ever becomes necessary it is a **post-t20** task with a named executor, a new digest, and
+a re-run of every gate claim. Advice issued by the removed member before its removal ("both models are accepted,
+so write the prefixes") is **wrong on the frozen revision** — a retired prefix used as a path prefix fails on
+auto-classified paths as well, verified by the captain's probes in §8.
+
 ## 9. Post-terminal amendments to completed deliverables (ledger, so t20 does not read them as defects)
 
 A task's `output` is immutable once completed, so amendments made after a task closed are recorded here instead.
