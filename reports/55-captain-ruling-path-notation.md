@@ -275,3 +275,23 @@ Resumed on explicit user instruction. Actions taken at resume:
   pause-hygiene commits (`…`, `be8d117`, `fd695fc`) left `scripts/**` byte-identical while advancing `HEAD`.
   The manifest (t16) must therefore report both the content digest and the commit that carried it, plus the
   `HEAD` at the time of writing, and label each.
+
+### 12.2 t15 outcome and a corrected instruction (recorded for process accuracy)
+
+`t15` is **delivered and committed**: `doc/design/SPEC.md` = `efffd2ce…` (696 lines, header `frozen v1.6.0`),
+`doc/design/02-architecture.md` = `942cb49a…` (221 lines), commit **`1f5dee7`**, full gate
+`PASS (2414 checks, 1 warning)`, exit 0, zero failures.
+
+Two process facts worth keeping:
+
+1. **The captain's "whole-file overwrite" instruction became stale.** It was issued while the working tree still
+   showed the withdrawn v1.5.x draft (733→736 lines, six withdrawn-vocabulary hits) that its previous owner kept
+   editing. By the time the new owner read it, the rebuild had already landed and been committed, so executing
+   the overwrite would have replaced the finished revision with the pre-fix v1.4.0 baseline (683 lines,
+   `b14a95d5…`, the state that produced 12 failures) and discarded C9, §7.5, F-03/F-04/F-05 and the changelog.
+   The owner **measured first and refused**, which is the correct behaviour and the reason the episode is
+   recorded rather than quietly dropped.
+2. **Rule that follows:** a destructive instruction must state its **expected pre-state** (file digest or line
+   count), and the executor must verify that pre-state before overwriting; if it differs, stop and report instead
+   of proceeding. This complements §4: the arbiter for "what is on disk" is `git show HEAD:<path> | sha256sum`
+   plus `git status --porcelain <path>`, not a recollection from earlier in the conversation.
