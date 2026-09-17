@@ -11,8 +11,8 @@
 
 This document is the system-level map: what the components are, how they are deployed, which plane each
 concern belongs to, and which specialist document owns the detail. It deliberately does not restate protocol
-fields (see doc/design/05-protocols.md), App internals (see doc/design/03-app-architecture.md), or the
-release procedure (see doc/design/07-build-and-deploy.md).
+fields (see [05-protocols.md](05-protocols.md)), App internals (see [03-app-architecture.md](03-app-architecture.md)), or the
+release procedure (see [07-build-and-deploy.md](07-build-and-deploy.md)).
 
 ## 2. System in one paragraph
 
@@ -75,10 +75,10 @@ Each plane has one owner document; this table exists so that a reader can jump s
 
 | Plane | Question it answers | Owner document |
 |---|---|---|
-| Signaling | How do the peers find each other and exchange SDP/ICE? | doc/design/04-signaling-service.md, doc/design/05-protocols.md |
-| Media | How do the frames and audio get across, and what shapes the bitrate? | doc/design/03-app-architecture.md, doc/design/05-protocols.md |
-| Diagnostics | How do I see what happened? | doc/design/03-app-architecture.md §Diagnostics, `doc/design/_generated/` log table |
-| Release | How does code become a downloadable APK? | doc/design/07-build-and-deploy.md |
+| Signaling | How do the peers find each other and exchange SDP/ICE? | [04-signaling-service.md](04-signaling-service.md), [05-protocols.md](05-protocols.md) |
+| Media | How do the frames and audio get across, and what shapes the bitrate? | [03-app-architecture.md](03-app-architecture.md), [05-protocols.md](05-protocols.md) |
+| Diagnostics | How do I see what happened? | [03-app-architecture.md](03-app-architecture.md) §Diagnostics, [_generated/log-events.md](_generated/log-events.md) |
+| Release | How does code become a downloadable APK? | [07-build-and-deploy.md](07-build-and-deploy.md) |
 
 ### 5.1 Signaling plane
 
@@ -140,24 +140,27 @@ Each plane has one owner document; this table exists so that a reader can jump s
 | `doc/design/SPEC.md` | Frozen writing and citation standard, directory conventions, checker rules |
 | `doc/design/01-requirements.md` | Functional and non-functional requirements with citations and status |
 | `doc/design/02-architecture.md` | This document |
-| doc/design/03-app-architecture.md | App layers, threads, lifecycle, recovery, switches |
-| doc/design/04-signaling-service.md | Go service structure and room/seat state machine |
-| doc/design/05-protocols.md | Field-level messages, reconnect policy, ICE/TURN/SDP, JNI contract |
-| doc/design/06-flows.md | Mermaid flows with step lists and real log evidence |
-| doc/design/07-build-and-deploy.md | Toolchain, build stages, invariants, release chain, host services |
-| doc/design/08-issues-and-solutions.md | Defect history with rejected/disproven alternatives |
-| doc/design/09-verification-and-limitations.md | Verification matrix, known limitations, errata |
-| doc/design/10-code-map.md | Code map, report index, symptom-to-code lookup |
-| doc/design/11-coding-standards.md | Language conventions and change-safety checklist |
+| [03-app-architecture.md](03-app-architecture.md) | App layers, threads, lifecycle, recovery, switches |
+| [04-signaling-service.md](04-signaling-service.md) | Go service structure and room/seat state machine |
+| [05-protocols.md](05-protocols.md) | Field-level messages, reconnect policy, ICE/TURN/SDP, JNI contract |
+| [06-flows.md](06-flows.md) | Mermaid flows with step lists and real log evidence |
+| [07-build-and-deploy.md](07-build-and-deploy.md) | Toolchain, build stages, invariants, release chain, host services |
+| [08-issues-and-solutions.md](08-issues-and-solutions.md) | Defect history with rejected/disproven alternatives |
+| [09-verification-and-limitations.md](09-verification-and-limitations.md) | Verification matrix, known limitations, errata |
+| [10-code-map.md](10-code-map.md) | Code map, report index, symptom-to-code lookup |
+| [11-coding-standards.md](11-coding-standards.md) | Language conventions and change-safety checklist |
 | `doc/design/_generated/signaling-messages.md` | Generated signalling message/field table with Go↔Kotlin divergence |
 | `doc/design/_generated/log-events.md` | Generated log event key table (emitter file and line) |
 | `doc/design/_generated/jni-contract.md` | Generated JNI contract, cross-checked Kotlin ↔ C++ `RegisterNatives` |
 | `doc/design/_generated/host-commands.md` | Generated command/flag inventory with its evidentiary status |
 | `doc/README.md` | Legacy vs current explanation, full archive inventory and stub mechanism |
 
-Rows without backticks above (03 through 11) are **planned, not yet written at authoring time**; they are plain
-text on purpose so a clean checkout does not present them as existing files (`doc/design/SPEC.md` C7). Each row
-returns to `path` form once the file lands.
+Every chapter in the map above is landed: each relative link resolves from this directory in a clean checkout,
+so no row is left as plain text and no "planned" marker is needed (`doc/design/SPEC.md` C7).
+
+The repository-root README.md is the planned entry point and is not yet written at authoring time; it is left
+as plain text here on purpose, because a link or a code span naming a file that does not exist fails the
+documentation gate.
 
 ## 7. Decisions carried from the ADRs
 
@@ -172,8 +175,8 @@ The seven ADRs were moved verbatim to `doc/archive/adr/`; each original path kee
 | ADR-003 | 1:1 P2P first | room capacity 2 (`signaling/room/room.go:13`) |
 | ADR-004 | Split runtime and build machines | build runs on the host (`scripts/build_app.sh` header usage note) |
 | ADR-005 | Go signaling plus an RFC 5780 NAT test | `signaling/`, `app/src/main/cpp/nat/nat_detector.cpp` |
-| ADR-006 | Code design decisions | doc/design/03-app-architecture.md |
-| ADR-007 | Code style and comment rules | doc/design/11-coding-standards.md |
+| ADR-006 | Code design decisions | [03-app-architecture.md](03-app-architecture.md) |
+| ADR-007 | Code style and comment rules | [11-coding-standards.md](11-coding-standards.md) |
 
 ## 8. Cross-plane invariants
 
