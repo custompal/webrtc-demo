@@ -1,6 +1,6 @@
 # SPEC — Documentation Standard (frozen)
 
-> Status: **frozen** v1.5.2 (owner: `architect`). Task id: t1 (attempt 1), 2026-09-17. Captain v4 (four tags) is FINAL: no further version changes.
+> Status: **frozen** v1.5.3 (owner: `architect`). Task id: t1 (attempt 1), 2026-09-17. Captain v4 (four tags) is FINAL: no further version changes.
 > Scope: every file under `doc/design/**` and the repository root `README.md`.
 > This document is normative. Writers must not silently deviate: if a rule is wrong, report it to the
 > captain and let the owner (architect) amend this file.
@@ -89,12 +89,14 @@ Binding rules:
   §2.4) — the tool records `UNVERIFIED (build product absent)` and **must not fail**.
 * **J3** — A missing `*_jni.h` is expected and must never be reported as a documentation defect. Documents must
   not cite a project `*_jni.h` path as if it existed.
-* **J4** — Upstream `J.N` / `GEN_JNI` details are descriptive: reference the report evidence
-  (`reports/99-t34-appendix.md` §J/N fingerprint, `reports/15-java-jar-rebuild.md` §synthesis) and never
-  generate a table for them from this repository. Those symbols are defined only inside the vendored binary
-  build input `third_party/libwebrtc/java/libwebrtc-java.jar`; the V2 symbol check records them as
-  `UNVERIFIED (vendored binary)` and **must not fail**, because a symbol whose only definition is a non-text
-  vendored artefact is not a documentation defect.
+* **J4** — Upstream `J.N` / `GEN_JNI` details are descriptive. **`J.N` must not be asserted as a source symbol**:
+  it exists only inside the gitignored build artefact `ARTIFACT: third_party/libwebrtc/java/libwebrtc-java.jar`
+  (`.gitignore:12`), so it is cited with the `ARTIFACT:` tag and the V2 symbol check records it
+  `UNVERIFIED (vendored binary)` — **never a failure**. `GEN_JNI` has in-repo evidence and should be cited from
+  it (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcEngine.kt:236-243`,
+  `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt:24-25`), plus the report evidence
+  (`reports/99-t34-appendix.md` §J/N fingerprint, `reports/15-java-jar-rebuild.md` §synthesis). Never generate a
+  table for either from this repository.
 * **J5** — Because the binding is `RegisterNatives`, a document must not describe this project's native entry
   points as `Java_*` functions.
 
@@ -123,7 +125,7 @@ against the repository root (the mechanism which catches misspelled paths) or co
 | Tag | Meaning | Examples | Judgement (level) |
 |---|---|---|---|
 | `HOST:` | host absolute path, not visible in the container | `HOST: /opt/dsh-workspaces`, `HOST: /opt/apk-http/publish_apk.sh`, `HOST: /etc/systemd/system/signaling.service` | never existence-checked → `UNVERIFIED (host path)` (**P3**) |
-| `WORKSPACE:` | workspace-root file, written in **workspace-relative** form (the container root is `/data/dsh/home/workspace`) | `WORKSPACE: tmp/t42-captain-build.sh`, `WORKSPACE: env.sh`, `WORKSPACE: env-container.sh`, `WORKSPACE: env-go.sh` | **must exist** relative to the workspace root → `workspace-only, outside git repo` (**P2**) |
+| `WORKSPACE:` | workspace-root file, written in **workspace-relative** form (the container root is `/data/dsh/home/workspace`) | `WORKSPACE: tmp/t42-captain-build.sh`, `WORKSPACE: tmp/n6/x/app.log`, `WORKSPACE: env.sh`, `WORKSPACE: env-container.sh`, `WORKSPACE: env-go.sh` | **must exist** relative to the workspace root → `workspace-only, outside git repo` (**P2**) |
 | `ARTIFACT:` | build product, not in VCS | `ARTIFACT: app/build/**`, `ARTIFACT: app-debug.apk`, `ARTIFACT: libwebrtcdemo_native.so` | existence optional; missing → `UNVERIFIED (build product, not in VCS)` (**P5**) |
 | `DEVICE:` | device-side path or command that exists only on the test phone | `DEVICE: /sdcard/Android/data/...`, `DEVICE: adb` | never existence-checked; recorded `UNVERIFIED (device path)` (**P3**) |
 | *(none)* | **P1** repository-relative path, **or P4** an absolute path under the container workspace root (which needs no tag) | `signaling/protocol/message.go:1`, `deploy/signaling.service:28`, `/data/dsh/home/workspace/tmp/n6/x/app.log` | **hard check**: exists (and covers the cited line when one is given) — `missing repo path` (P1) / `missing container path` (P4) |
@@ -251,11 +253,11 @@ Use the **English term** in English prose. The Chinese column is a lookup aid fo
 | relay | 中继 | Media through TURN |
 | forced relay | 强制中继 | ICE policy `RELAY` (diagnostics toggle) (`app/src/main/kotlin/com/example/webrtcdemo/config/AppConfig.kt:69`) |
 | loopback candidate | 回环候选 | Candidate for a `127/8` or `0/8` address; filtered on both sides |
-| NAT type | NAT 类型 | RFC 5780 result (`Open`/`FullCone`/`RestrictedCone`/`PortRestrictedCone`/`Symmetric`/`Unknown`; enum `signaling/protocol/message.go:31-36`) |
+| NAT type | NAT 类型 | RFC 5780 result (`Open`/`FullCone`/`RestrictedCone`/`PortRestrictedCone`/`Symmetric`/`Unknown`; enum `signaling/protocol/message.go:31-36`, validator `signaling/protocol/message.go:182`) |
 | bitrate floor | 码率地板 | Per-resolution minimum from the official VP9 table (30 kbps per step) |
 | quality scaling | 质量降级 | `ScalingSettings` that lowers resolution before dropping frames (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcEngine.kt:140`)  |
 | encoder fallback | 编码兜底 | Switching to the platform encoder when the custom VP9 encoder cannot keep up |
-| frame dropper | 帧丢弃器 | libwebrtc `FrameDropper`; disabled here via field trial `WebRTC-FrameDropper/Disabled` (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/FrameDropperFieldTrial.kt:12`)  |
+| frame dropper | 帧丢弃器 | libwebrtc `FrameDropper`; disabled here via field trial `WebRTC-FrameDropper/Disabled` (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/FrameDropperFieldTrial.kt:12`; field-trial plumbing `app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcEngine.kt:236-243`)  |
 | watchdog | 看门狗 | Timed ICE/connectivity checker (`app/src/main/kotlin/com/example/webrtcdemo/webrtc/CallSession.kt:1111`) |
 | diagnostics export | 诊断导出 | Log zip built by `LogExporter` (`app/src/main/kotlin/com/example/webrtcdemo/diag/LogExporter.kt:139`) |
 | pinned artifact | 固定件 | Toolchain artifact whose hash must not change across a build (jar/aar/so/libc++) |
@@ -727,3 +729,4 @@ sampling; its verdict is the release criterion for the documentation set.
 | 1.5.0 | 2026-09-17 | **Captain v3 (FINAL) — tag-mandatory model.** Supersedes the v1.3.0 "auto-classified, marker-free" model: **five mandatory tags** — `HOST:` (host absolute `/opt|/etc|/var/log|/usr|…`; never existence-checked → `UNVERIFIED (host path)`), `WORKSPACE:` (workspace-root file written in **workspace-relative** form, e.g. `tmp/t42-captain-build.sh`; **must exist** against the container root `/data/dsh/home/workspace` → `workspace-only, outside git repo`), `ARTIFACT:` (build products `app/build/**`, `*.apk`, `*.so`; existence optional → `UNVERIFIED (build product, not in VCS)`), **new** `DEVICE:` (device-side paths/commands `/sdcard/...`, `adb`; never existence-checked), **new** `CONTAINER:` (absolute form of the workspace-root path, alias of `WORKSPACE:`); an **untagged path is repository-relative and hard-checked** (V9), which is the misspelling trap. §2.3 rewritten (T1–T6); §7.1 P2/P4/P5 rows and the precedence bullet rewritten as tag-driven; §7 rule table V8 (five tags) and V10–V13 updated; §7.2 mapping table extended to the five tags with tag names case-insensitive; **A10 redefined** — `ARTIFACT:`-tagged path that neither exists nor matches a build-product pattern ⇒ `WARN typo-suspect (artifact path absent and not a product pattern)`, warning only, exit code unchanged per A6; §2.4 B1/B2 aligned. Retained unchanged: four notations (line prefix, line-end comment, fence `scope=`, section comment) and their precedence, A11–A13 (command ownership/determinacy, current-HEAD line numbers), C7 forward-reference marker, R11 self-reference exemption |
 | 1.5.1 | 2026-09-17 | **C9 added** (writer-ops proposal, adopted): `SPEC.md` must be cited **by section, never by line** (`doc/design/SPEC.md` §2.3 / §7.1 / §9), because the document is amended frequently and line anchors go stale within minutes (the same day saw six revisions). Rule identifiers (`T*`,`P*`,`V*`,`A*`,`J*`,`B*`,`F*`,`R*`,`C*`,`E*`) are stable and preferred; this applies to messages, task outputs and every document under `doc/design/**`. No rule semantics changed. |
 | 1.5.2 | 2026-09-17 | **Captain v4 (LAST amendment) — four tags, no `CONTAINER:`.** `CONTAINER:` is **removed from the tag vocabulary** (a container-absolute path is the untagged P4 class and is hard-checked against `/data/dsh/home/workspace`, per the captain's (ii) confirmation); the tag set is exactly `HOST:`/`WORKSPACE:`/`ARTIFACT:`/`DEVICE:` and `DEVICE:` paths are recorded `UNVERIFIED (device path)`. §7.1 now states explicitly that the notations are **pure mechanical aliases** that create no separate judgement (`scope=host|workspace|artifact|device` ↔ the uppercase tags; precedence line > fenced > section > default), and keeps `WARN typo-suspect` for an `ARTIFACT:` path that is absent **and** matches no product pattern (`app/build/**`, `**/*.apk`, `**/*.so`), warning only per A6 (writer-ops' finding: `git check-ignore` returns IGNORED for non-existent paths, so the pattern match — not existence — decides). §2.3 table/T1/T2/T5, §7 V8/V10/V12, §7.1 P2/P3/P4 rows and the §7.5 checker notes updated to the four tags; changelog entries for 1.5.0 retain their historical "five tags" text. |
+| 1.5.3 | 2026-09-17 | **t13 supplements + new pending-document rule; SPEC frozen.** (1) New **A14 / V14 `WARN pending document`**: a reference to a planned-but-absent sibling design document is a warning that never changes the exit code, while any other missing repository path still fails (captain-adopted). (2) Citation corrections from verifier's defect report: NAT enum now cites `signaling/protocol/message.go:31-36` **and** the validator `signaling/protocol/message.go:182`; `FrameDropper` additionally cites `app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcEngine.kt:236-243`; `GEN_JNI` has in-repo evidence (`WebRtcEngine.kt:236-243`, `app/src/test/kotlin/com/example/webrtcdemo/webrtc/JniBindingClasspathTest.kt:24-25`) while **`J.N` is no longer asserted as a source symbol** — it is cited as `ARTIFACT: third_party/libwebrtc/java/libwebrtc-java.jar` (ignored by `.gitignore:12`) and recorded `UNVERIFIED (vendored binary)` per J4; the vendored jar row in §2.1 now carries the `ARTIFACT:` tag. (3) The `WORKSPACE:` tag example set now includes the real device-log path in workspace-relative form (`WORKSPACE: tmp/n6/x/app.log`). (4) `01-requirements.md` replaced the unverifiable literal `Drop Frame` with the verifiable keys `DroppedFrames` (webrtc logs) and `field_trials_set frame_dropper=WebRTC-FrameDropper/Disabled/` (app logs). |

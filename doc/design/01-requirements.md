@@ -191,7 +191,7 @@ requirement → implementation → evidence chain is machine-checkable by `scrip
   the local FrameDropper.
 * **Implementation.** Field trial `app/src/main/kotlin/com/example/webrtcdemo/webrtc/FrameDropperFieldTrial.kt`;
   quality scaling and per-frame direct-buffer sizing in `app/src/main/kotlin/com/example/webrtcdemo/encoder/Vp9VideoEncoder.kt`.
-* **Evidence.** `reports/52-release-closure.md` §4 (`Drop Frame` 258/449 → 0, `encoder_perf in_fps` p50 30);
+* **Evidence.** `reports/52-release-closure.md` §4 (`DroppedFrames` counted in the webrtc logs, frame-drop field trial `field_trials_set frame_dropper=WebRTC-FrameDropper/Disabled/` in the app logs; `encoder_perf in_fps` p50 30);
   `reports/51-frame-dropper-and-trusted-rc.md`; `app/src/test/kotlin/com/example/webrtcdemo/webrtc/FrameDropperFieldTrialTest.kt`.
 * **Status.** implemented.
 
