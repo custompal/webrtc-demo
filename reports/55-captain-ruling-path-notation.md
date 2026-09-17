@@ -56,7 +56,13 @@ column said "hint / informational". The captain rules for **FAIL**; the SPEC wor
 3. A conclusion copied from another revision is void: re-run, re-cite.
 4. Never run a pinned copy from `/tmp`: the script derives `REPO_ROOT` from its own location, so a copy
    outside the repository reports `--only target does not exist`. Runs happen inside the repository against
-   the committed revision.
+   the committed revision. **`/tmp/**` copies (e.g. `/tmp/frozen-dv`, `/tmp/pin-200ba92e`) are hash-comparison
+   artefacts only — they are never the baseline and must never be cited as "the current revision".** The
+   arbiter for "what is the current checker" is git, not `stat`:
+   `git show HEAD:scripts/doc-verify.sh | sha256sum` plus `git status --porcelain scripts/doc-verify.sh`
+   (empty = the working tree is the committed revision). Session-local `stat`/`sha256sum` alone cannot
+   distinguish "the file changed" from "this session is reading an older snapshot", which is what caused the
+   day's repeated reconciliation loops.
 5. Advisory notes (uncounted `NOTE` lines) may be reported but must be labelled as such; they are not failures.
 
 ## 5. Working agreement for the remaining tasks
