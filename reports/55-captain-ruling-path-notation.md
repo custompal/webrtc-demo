@@ -295,3 +295,17 @@ Two process facts worth keeping:
    count), and the executor must verify that pre-state before overwriting; if it differs, stop and report instead
    of proceeding. This complements §4: the arbiter for "what is on disk" is `git show HEAD:<path> | sha256sum`
    plus `git status --porcelain <path>`, not a recollection from earlier in the conversation.
+
+### 12.3 Official revision-binding rule (three parts, not one)
+
+Raised by the verifier while preparing round 2; adopted as the binding rule for `t16` and `t22`:
+
+1. **content digest** — `sha256sum scripts/doc-verify.sh` **and** `git show HEAD:scripts/doc-verify.sh | sha256sum`
+   must both equal `676d075a067e869e9730afd71239f078205b1fd8043453e8c559c0f6ee8b1b45`;
+2. **bearing commit** — `git show 8fdb222:scripts/doc-verify.sh | sha256sum` must equal the same digest;
+3. **runtime `HEAD`** — recorded and labelled *"HEAD at run time; may have advanced"*. A `HEAD` different from
+   `8fdb222` is **not** a mismatch and must never by itself produce `BLOCKED`.
+
+`BLOCKED: checker revision mismatch` applies **only** when the content digest changes between the before/after
+measurements or differs from the frozen value. Pause-hygiene commits advanced `HEAD` several times while
+`scripts/**` stayed byte-identical; binding on `HEAD` alone would have produced a false block.
