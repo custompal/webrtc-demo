@@ -130,3 +130,32 @@ then authenticate with a token that has `Contents: Read and write` on that repos
 A token can be supplied without persisting it through a one-shot credential helper, as was done here, or by
 writing it to `/opt/dsh-workspaces/tmp/gh-token` (the host path that maps to the container workspace
 `/data/dsh/home/workspace/tmp/gh-token`) for scripted use, deleting it afterwards.
+
+## 7. Important property of the published tree: the gate is a *workspace* gate
+
+Measured on a fresh clone of the pushed commit `8ac1a14d…` (anonymous `git clone --depth 1`, no submodules):
+
+```
+bash scripts/doc-verify.sh → FAIL (33 failures, 4 warnings, 2466 checks), exit 1
+```
+
+Breakdown of the failures:
+
+| Class | Count | Cause |
+|---|---|---|
+| `missing workspace path` (P2) | 23 | the documentation cites workspace-root evidence that is deliberately **not** version-controlled: the device-log files under the workspace `tmp/**` and the `env.sh` / `env-container.sh` / `env-go.sh` scripts. P2 is hard-checked against the workspace root by design (`doc/design/SPEC.md` §7.1) |
+| citations into the submodules | ~4 | the clone has no submodule content; those citations resolve only after `git submodule update --init` |
+| `env*.sh` citations after the workspace root falls back to `/` | ~6 | in a clone the workspace root is not the authoring workspace, so `WORKSPACE_ROOT` resolves elsewhere and the same citations fail in a second form |
+
+Consequences, stated plainly:
+
+* **In the authoring workspace the gate is green** — `PASS (2466 checks, 2 warnings)`, exit 0 — and that is the state
+  the frozen manifest (`reports/54`) and the verification rounds (`reports/56`, `reports/58`) bind to.
+* **In any other checkout it cannot be green**, not because the documentation is wrong but because P2 evidence lives
+  outside version control by design. The verification is reproducible only where that evidence exists.
+* Cloning with `--recurse-submodules` removes the submodule-citation class but not the P2 class.
+
+If a repository-wide green gate is wanted, the decision to make is whether to **commit the workspace evidence** into
+the repository (device logs and the environment scripts, a few megabytes) or to relax P2 for evidence paths. Both are
+design decisions that were not taken here; this runbook records the measurement so nobody mistakes the red clone run
+for a broken push.
