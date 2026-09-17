@@ -285,7 +285,12 @@ explicit `unverified` marker. A claim with no evidence is not allowed.
 
 **C7 — Internal links.** Relative links between documents must resolve on disk, e.g.
 `[05-protocols](05-protocols.md)`, `[SPEC](SPEC.md)`, or from the repo root
-`[doc/design/05-protocols.md](doc/design/05-protocols.md)`. No dangling links.
+`[doc/design/05-protocols.md](doc/design/05-protocols.md)`. No dangling links. A reference to a **planned but
+not yet written** document (one of the items listed in §5 or §6) may stay unresolved when the same line says so
+in prose, e.g. `doc/design/05-protocols.md` (planned, not yet written at authoring time); the checker then
+records it as informational rather than dangling. The three link examples in this paragraph are **SPEC
+examples** (§7 A13 definition lines) and are exempt from V4/V1 like the other definition rows; every real
+document must drop the "planned" marker for its inbound links once the target file exists.
 
 **C8 — Line number drift.** Line numbers in a citation are a *pointer*, not a contract: if code is edited and
 the pointer moves, the **document** must be updated (doc-verify fails on out-of-range lines and on missing
@@ -602,6 +607,35 @@ Ownership note: the executable implementation of these rules lives in `scripts/d
 for *intent*, and the divergence must be reported to `architect` before it is resolved — SPEC changes are
 owned by `architect` (see §8).
 
+### 7.5 Implementation notes for the checker (owner: `doc-tooling`, t2 extension point)
+
+Mechanism only: the rules are normative in §2.3 (T1–T6), §7.1 (P1–P5) and §7.2 (notation). Added under R7.
+
+* **Scope detection.** `scripts/doc-verify.sh` tests each line's uppercase form against
+  `(^|[^A-Z])(HOST|CONTAINER|DEVICE|REPO)[ \t]*[:(]`, so all four notations of §7.2 — line prefix, line-end
+  comment, fenced `scope=...` info string, section comment — are recognised with precedence
+  line > fence > section > default `REPO`.
+* **Retired markers.** `WORKSPACE:`/`ARTIFACT:` are reported only when used as a *path prefix* (marker
+  followed by a path-shaped token) or as a fence `scope=` value; a prose mention of the retired vocabulary,
+  and a line labelled `NEGATIVE EXAMPLE`, do not fail.
+* **Path classification.** `git check-ignore -q` decides the P1/P5 split; path shape decides P2 (`../` or
+  `tmp/` prefix, or one of `env.sh`/`env-container.sh`/`env-go.sh`) and P4 (`/data/dsh/home/workspace/**`);
+  any other absolute path is P3. A bare root mention (`/opt`, `/etc`) in rule prose is not a path reference;
+  globs and `...` placeholders are not paths.
+* **P2/P4 existence.** P2 resolves against the workspace root (`<repo>/../..`) and P4 against the real
+  container root; both are hard checks, so their failure messages are `missing workspace path` and
+  `missing container path`. P5 never fails (absent → `UNVERIFIED (build output, gitignored)`).
+* **Messages and exit codes.** Failures print `file:line → problem → suggested fix`. Failure texts:
+  `missing repo path`, `missing workspace path`, `unmarked host path`, `missing container path`,
+  `retired marker used as a path prefix`. P3 and P5 emit `NOTE … UNVERIFIED (…)` diagnostics. The exit code
+  is `0` only when no failure was recorded (A6); `NOTE`/`WARN` never change it.
+* **Reading the two axes.** A P3 reference is graded twice: the citation face (A1, a `WARN` because there is
+  nothing to open) and the writing face (V11, a failure only when unmarked) — §7.1 settles their coexistence.
+* **V2 scope.** A symbol is accepted when it is greppable in **any** file cited in its own subsection (the
+  SPEC V2 wording), not only on its own line; the file set is deduplicated. Documentation vocabulary (E4
+  status words, scope tokens, `LINE`/`NAME` placeholders, `_generated`) is not treated as a symbol.
+* **Performance.** Subsection citation sets and file line counts are cached; the run is O(lines) per document.
+
 ## 8. Change control
 
 * **R6** — Edit only the files in your task's `inScope`. Do not "helpfully" fix another writer's file; report
@@ -616,10 +650,13 @@ owned by `architect` (see §8).
   documentation task. No Gradle run. No `git commit`.
 * **R11** — The v1.4.0 registration of the scope/path-classification rules (§7 A7–A10, §7.1, §7.2) was made by
   `architect` on a captain ruling (task t11, captain message ids `4c02180c` / `6880a985`), because §7 changes
-  require the SPEC owner and `scripts/doc-verify.sh` (task t2) has no write access to `SPEC.md`. A
-  documentation line is exempt from the V8 marker-discipline check when it is a **definition row** of §2.3 or
-  §7.1–§7.2, or when it is explicitly marked `NEGATIVE EXAMPLE`; that exemption exists so the standard's own
-  vocabulary and counter-examples do not register as violations of the standard.
+  require the SPEC owner and `scripts/doc-verify.sh` (task t2) has no write access to `SPEC.md`. **Self-reference
+  exemption:** a documentation line is exempt from the marker-discipline checks (V8 and V11) when it is a
+  **definition row** of the §2.3 vocabulary table or of the §7.1–§7.2 rule tables, or when the line is
+  explicitly marked `NEGATIVE EXAMPLE`, or when it cites a **planned but not yet written** document with the
+  prose marker of C7. The exemption exists so the standard's own vocabulary, counter-examples and forward
+  references do not register as violations of the standard; it must be removed from a document's inbound
+  references once the target file exists.
 
 ## 9. Delivery gate
 
@@ -643,4 +680,4 @@ sampling; its verdict is the release criterion for the documentation set.
 | 1.1.0 | 2026-09-17 | Captain decision (a): §2.1 JNI contract authority chain (Kotlin `external fun` ↔ `JNINativeMethod` ↔ C prototypes; exported symbols optional, `UNVERIFIED` when absent); §2.2 generated artefact names (`signaling-messages.md`, `log-events.md`, `jni-contract.md`, `host-commands.md`); §2.3 three-level path tag vocabulary (the normative definition site, including the container workspace root clarification); §2.4 build products are not repository facts (B1–B3); §2.5 host-only build and publish flow (F1–F3: `scripts/build_app.sh` is `HOST:`, no `publish_apk.sh` in the repository); §5 citation-hygiene note; §7 A10 tag enforcement, A11 current-HEAD line numbers; **§7.1 writing rule for off-repository references**; V8 added to the §7 rule table |
 | 1.2.0 | 2026-09-17 | Captain-approved integration of doc-tooling's frozen scope system: §7.1 carries the five path-classification levels **P1 REPO / P2 WORKSPACE / P3 HOST / P4 CONTAINER / P5 ARTIFACT** with judgement and failure messages, and the A1 two-axis coexistence table; **§7.2** defines the three equivalent scope notations (line prefix, fence `scope=`, section comment; precedence line > fenced > section > default); **§7.3** records the command-name classification; **§7.4** records the layout facts (no `*.cc`; `cpp/jni/` = 7 files; host-only `build_app.sh`; no `publish_apk.sh` in the repository); §7 rule table extended with **V9–V13** (one row per level); §2.3 tag rules renamed **T1–T6** to avoid collision with the P1–P5 names; A10 rewritten to the P1–P5 enforcement model |
 | 1.3.0 | 2026-09-17 | Captain revision replacing the v1.2.0 marker vocabulary: the **only scope tokens are `HOST`, `CONTAINER`, `DEVICE`, `REPO`** (default `REPO`) in the four notations of §7.2 (line prefix, line-end comment, fence, section comment; precedence line > fenced > section > default); §2.3 rewritten to that vocabulary and now states that `WORKSPACE:`/`ARTIFACT:` are **retired markers** (T5 — writing them is a failure); §7.1 P2 extended to `tmp/`-prefixed paths and made shape-derived with **no marker**, P3 marker-driven only (`unmarked host path`), P4 shape-derived, and **P5 made auto-classified** via `git check-ignore` + `app/build/**` / `**/*.apk` / `jniLibs/**/*.so` / `app/.cxx/**` with **optional existence, `UNVERIFIED (build output, gitignored)`, never a failure**; §7 rule table V8–V13 updated accordingly (V8 now covers the retired markers, V13 informational); §7.2 mapping table rewritten to the four tokens; the **line-end comment form** `# <SCOPE> (<evidence>)` recognised as a notation (captain-recommended) alongside the line prefix, fence and section comment; A10 and A1 aligned so the A1 warning layer and the V11 `unmarked host path` failure layer cannot be read as contradictory; **no** "missing artifact"/typo-suspect warning exists for P5 (existence is optional and never fails). Content retained from 1.2.0: §7.3 command-name classification, §7.4 layout facts (no `*.cc`; `cpp/jni/` = 7 files; host-only `build_app.sh`; no `publish_apk.sh` in the repository) |
-| 1.4.0 | 2026-09-17 | **Captain ruling registered (task t11)**: §7 A-rules renumbered and extended so the final vocabulary has规范效力 — **A7** host-path referencing (existence never fails, but a line/fence/section lacking HOST or DEVICE scope **FAILS** `unmarked host path`), **A8** scope notation (tokens `HOST`/`CONTAINER`/`DEVICE`/`REPO`, four equivalent notations — line prefix, line-end comment, fence `scope=`, section comment — precedence line > fenced > section > default, case-insensitive), **A9** path classification P1–P5, **A10** `WARN typo-suspect (gitignored path absent)` for P5 paths that are gitignored but absent (warning only, no exit-code change, per A6); A1 rewritten to the same口径 as A7 (correctly marked off-repository citation is not a failure; only the missing marker fails); former A8/A9/A10/A11 became **A11/A12** (command ownership and determinacy) and **A13** (current-HEAD line numbers); V8 restated as scope-notation discipline; §8 gained **R11** (this registration was captain-ruled and architect-written, and definition rows / `NEGATIVE EXAMPLE` lines are exempt from V8 so the standard does not violate itself) |
+| 1.4.0 | 2026-09-17 | **Captain ruling registered (task t11)**: §7 A-rules renumbered and extended so the final vocabulary has规范效力 — **A7** host-path referencing (existence never fails, but a line/fence/section lacking HOST or DEVICE scope **FAILS** `unmarked host path`), **A8** scope notation (tokens `HOST`/`CONTAINER`/`DEVICE`/`REPO`, four equivalent notations — line prefix, line-end comment, fence `scope=`, section comment — precedence line > fenced > section > default, case-insensitive), **A9** path classification P1–P5, **A10** `WARN typo-suspect (gitignored path absent)` for P5 paths that are gitignored but absent (warning only, no exit-code change, per A6); A1 rewritten to the same口径 as A7 (a correctly marked off-repository citation is not a failure; only the missing marker fails); former A8/A9/A10/A11 became **A11/A12** (command ownership and determinacy) and **A13** (current-HEAD line numbers); V8 restated as scope-notation discipline; C7 gained the "planned, not yet written" prose marker for forward references; §8 gained **R11**, whose self-reference exemption covers definition rows, `NEGATIVE EXAMPLE` lines and C7 forward references so the standard does not violate itself |
