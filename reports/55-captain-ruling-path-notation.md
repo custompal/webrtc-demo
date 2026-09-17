@@ -408,3 +408,21 @@ commit** and **still quoting line/byte counts**, which is not the form F-02 spec
 `pass` (the digest is correct and the gate is unaffected) and routes the form fix as **`t24`** (repair,
 writer-ops, inScope limited to that file). Because `11-coding-standards.md` will change digest, the freeze
 manifest (`reports/54`) must be amended for that row when `t23` appends the root README and the index.
+
+### 12.9 Round-2 closure and the R2-02 binding gap
+
+`t22` was **closed by the captain** (verdict `needs_revision`, one finding) after the verifier's structured updates
+were rejected twice as stale: every captain re-wake of a task revokes the member's attempt, so re-waking a task
+whose work is already done burns a whole verification round. **Rule going forward: never re-wake a task to
+"let the owner close it" — close it as captain, or leave it untouched.**
+
+Substance of the round: gate `PASS (2421 checks, 2 warnings)`, exit 0, failures 0; triple binding verified three
+ways; F-01..F-08 closed; interruption-impact audit 6/6 clean; sampling not weaker than round 1. The single
+finding is **R2-02 (medium)** — a *binding* gap, not a documentation defect: the expected `R2-01` fix to
+`11-coding-standards.md` (committed `a776600`) made row 12 of `reports/54` stale (16 of 17 rows accurate). The
+same applies to the `t25` fix of `09-verification-and-limitations.md` (now `f87b1299…`).
+
+Fix path: **t25** (done) → **t23** (root `README.md` + index + manifest amendment, re-measuring the `11` and `09`
+rows and adding the new rows) → **t26** (re-bind and issue the final verdict). The round-2 report's final version
+is `reports/56-docs-verification-r2.md` = `891e93ba…` (verdict `needs_revision`); the earlier `pass` version
+(`d789cc8c…`) is superseded only in that it predates R2-02.

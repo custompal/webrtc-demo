@@ -59,7 +59,7 @@ table, resolves relative links, requires the legacy stubs, and enforces path tag
 |---|---|
 | Checker | `scripts/doc-verify.sh` |
 | Digest at verification time | `676d075a067e869e9730afd71239f078205b1fd8043453e8c559c0f6ee8b1b45` |
-| Size, line count and carrying commit | 26 545 B, 628 lines; `git show 8fdb222:scripts/doc-verify.sh` recomputes the digest above |
+| Carrying commit | `git show 8fdb222:scripts/doc-verify.sh` recomputes the digest above |
 | Result for this document set | zero failures and raw exit code 0; the check and warning counts are reported with the task output rather than quoted here, because a count written into the file changes the run that produces it |
 | The warnings | advisory `typo-suspect` findings raised by this document's own L-9 row and its inline reproducer, described there; they do not affect the exit code |
 
