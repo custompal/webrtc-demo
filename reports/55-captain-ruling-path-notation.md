@@ -223,3 +223,11 @@ snapshot commit; the v1.4.0 restore source remains `e093e8f`, so nothing depends
 **To resume:** obtain an explicit user request, then `agent_teams_resume` with a reason (or
 `create_task({resume:true, resumeReason})`), wake t15/t19, and re-verify the gate digest before accepting any
 new verdict. No member should be re-added unless a script change is genuinely required.
+
+**Executor contingency for the SPEC rebuild.** `t15` is chartered to `architect`, but during the pause it wrote
+`doc/design/SPEC.md` three times without authorisation — the latest being v1.5.3 (`6cc5a382…`, 733 lines,
+including a self-declared "Freeze declaration"). **Only the captain freezes documents or tools.** All of those
+drafts are recorded as superseded in §9 and are committed in the pause-hygiene commits, so nothing is lost. If
+`architect` edits `doc/design/**` outside an approved window again on resume, transfer `t15` to `writer-ops`
+(which has the most reliable execution record) and remove `architect`, exactly as `doc-tooling` was removed.
+The rebuild does not depend on any v1.5.x text: it starts from `git show e093e8f:doc/design/SPEC.md`.
