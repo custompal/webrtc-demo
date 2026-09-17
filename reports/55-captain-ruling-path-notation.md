@@ -324,3 +324,16 @@ Clarified after `t21` asked whether the runtime-`HEAD` part must be written into
 - Therefore `t21` is **not** reopened for a one-line addition: editing a completed deliverable to add a
   per-run identifier would change its digest and decouple the record from the artefact — the anti-pattern this
   phase exists to prevent.
+
+### 12.5 Ruling on `tmp/ws-draft/probe-p5.md`: retain, do not delete
+
+`t21` inlined the reproducer into `09`, so nothing in `doc/design/**` cites the scratch path any more. The file
+was therefore cleared for deletion — but two **governance records** still assert it exists: `reports/54` §5
+("6 of 6 probe/evidence files present, 0 missing") and this file's §7 inventory, whose own rule is that a cited
+workspace path must survive until the verification it supports has run. `t22` was still in progress, so deleting
+would have made both records describe a state that no longer held.
+
+**Ruling: keep the file.** It is 99 bytes of verification evidence, it is now uncited by any deliverable, and
+retaining it costs nothing while deletion would require amending two governance records in the same change.
+Deletion is only permitted together with a same-change update of §7 and `reports/54` §5, and only after the
+verification round that relies on the inventory has finished.
