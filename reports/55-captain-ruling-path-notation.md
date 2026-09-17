@@ -237,3 +237,22 @@ drafts are recorded as superseded in §9 and are committed in the pause-hygiene 
 `architect` edits `doc/design/**` outside an approved window again on resume, transfer `t15` to `writer-ops`
 (which has the most reliable execution record) and remove `architect`, exactly as `doc-tooling` was removed.
 The rebuild does not depend on any v1.5.x text: it starts from `git show e093e8f:doc/design/SPEC.md`.
+
+## 12. Resume record (user: "继续所有任务，并确保之前中断不会影响文档质量")
+
+Resumed on explicit user instruction. Actions taken at resume:
+
+- write permissions restored on `doc/**`, `reports/**`, `scripts/**`; the frozen checker is unchanged
+  (`676d075a…`, commit `8fdb222`, tree clean).
+- **`architect` removed** from the team under §11's contingency: it wrote `doc/design/**` three times outside
+  an approved window during the pause (SPEC v1.5.1 → v1.5.3, the last self-declaring a freeze it cannot grant).
+  Its tasks were transferred before removal: **t15 → writer-ops**, **t16 → writer-app**, **t8 → writer-app**.
+- **Quality condition for the resume** (user requirement): the interruptions must be shown not to have damaged
+  the documentation. This is verified by (i) the t15 rebuild returning the SPEC to the v1.4.0 vocabulary as
+  **v1.6.0** with a clean full gate, and (ii) an explicit **interruption-impact audit** added to t20:
+  no withdrawn vocabulary (`WORKSPACE:`/`ARTIFACT:` prefixes, mandatory/four-tag model, `V14`/`A14`,
+  `Captain v3/v4`), no stale checker digest presented as current, no probe-level counts presented as
+  document-level counts, no `../../tmp/…` forms in prose, consistent SPEC severity wording, correct §2.3
+  example polarity, and every `doc/design/*.md` passing `--only` on the frozen revision.
+- Binding surface for round 2 remains checker `676d075a…` + commit `8fdb222` + `reports/54-docs-freeze-manifest.md`.
+  `6cc5a382…` (the last withdrawn draft) is never part of it.
