@@ -18,9 +18,9 @@ retest method.
 In scope: the verification matrix, the known limitations of the delivered behaviour, the unverified-item list,
 and the contract errata summary.
 
-Out of scope: the defect history and the rejected approaches, which are in doc/design/08-issues-and-solutions.md
-(not yet written at authoring time); the protocol field tables, which are generated; and host operational files
-that cannot be read from the container.
+Out of scope: the defect history and the rejected approaches, which are in doc/design/08-issues-and-solutions.md;
+the protocol field tables, which are generated; and host operational files that cannot be read from the
+container.
 
 Every gate statement in this document names the digest of the checker that produced it, because the checker was
 revised repeatedly during the writing phase (see §2.2). A verdict without that digest is not reproducible.
@@ -58,9 +58,10 @@ table, resolves relative links, requires the legacy stubs, and enforces path tag
 | Item | Value |
 |---|---|
 | Checker | `scripts/doc-verify.sh` |
-| Digest at verification time | `200ba92e42068c4abea021869913ed96f3579e035960668295e3212a1732be1e` |
-| Result for `docs/08-issues-and-solutions.md` | `PASS (258 checks, 0 warnings)`, exit code 0 |
-| Result for `docs/09-verification-and-limitations.md` | see §6 |
+| Digest at verification time | `676d075a067e869e9730afd71239f078205b1fd8043453e8c559c0f6ee8b1b45` |
+| Size, line count and carrying commit | 26 545 B, 628 lines; `git show 8fdb222:scripts/doc-verify.sh` recomputes the digest above |
+| Result for this document set | zero failures and raw exit code 0; the check and warning counts are reported with the task output rather than quoted here, because a count written into the file changes the run that produces it |
+| The warnings | advisory `typo-suspect` findings raised by this document's own L-9 row and its inline reproducer, described there; they do not affect the exit code |
 
 If the checker is revised after this document, the result above must be re-produced before it is relied on.
 
@@ -134,7 +135,15 @@ the evidence is a real-phone capture; **unverified** means no evidence exists ye
 | L-6 | Recovery of a silent offline peer is limited to signaling recovery | the full ICE restart path on an existing connection is not available in this runtime, so only the signaling layer is verified | known limitation | `reports/99-final-report.md` §0.3 and §8.5 |
 | L-7 | A gate verdict is only valid with the checker digest | a verdict copied without the digest cannot be reproduced | known limitation | §2.2 and §2.3 above |
 | L-8 | The publishing step is a host-side manual procedure | the server binary and the download surface cannot be rebuilt from the repository alone | known limitation | `reports/99-final-report.md` §15.5 item D-6 |
-| L-9 | A missing untracked build product never fails the gate | the gate records an unverified build-output note for a gitignored path that is absent and does not fail the run, so the presence of a build product cannot be a gate criterion; this is deliberate, because a clean checkout contains no build products | known limitation (by design, not a defect) | the probe `../../tmp/ws-draft/probe-p5.md` line 3 (`app/build/nope.apk`) yields `NOTE … UNVERIFIED (build output, gitignored)` with `PASS (6 checks, 0 warnings)`, exit 0, reproduced on checker sha256 prefix `718b68c88d3413aa`; the SPEC V13 rule states the same |
+| L-9 | A missing untracked build product never fails the gate | the gate records an unverified build-output note for a gitignored path that is absent and does not fail the run, so the presence of a build product cannot be a gate criterion; this is deliberate, because a clean checkout contains no build products | known limitation (by design, not a defect) | a three-line document whose third line cites `app/build/nope.apk`, reproduced in the block below and measured on the frozen checker at exit code 0, `PASS (6 checks, 1 warnings)`, the warning being the advisory described here. This row is self-referential: the example path is deliberately absent, so the gate emits the very `NOTE` the row describes, and the frozen revision's failure exemption is not consulted by the advisory-warning path, so the warning appears as well; it is warning-level and does not affect the exit code. The specification's V13 rule states the same |
+
+The reproducer for L-9, byte-identical to the probe it was taken from (99 B, sha256 `1d64dce25ee495b83499e65c4254075975054786f78efd768ba3d58d1c8d83c9`):
+
+```
+# probe — missing gitignored artifact
+
+A build product that does not exist: `app/build/nope.apk`
+```
 
 ## 5. Contract errata (D-1 .. D-6)
 
@@ -145,7 +154,7 @@ what happens if the legacy text is followed, and its current disposition.
 | ID | Divergence | Consequence of following the legacy text | Disposition |
 |---|---|---|---|
 | D-1 | The legacy document states a reconnect wait of 3 s with at most 3 attempts; the implementation uses 1/2/4/8 s capped, ten rounds, 63 s | a client would give up before the 90 s server grace period and drop a recoverable call | closed in behaviour and documented in §6 of the requirements; the legacy text is superseded |
-| D-2 | The legacy text states that rotation is baked into the I420 pixels and that the encoder outputs rotation 0; the implementation passes rotation through and the flag `kBakeRotationInEncoder` is false (`app/src/main/cpp/encoder/vp9_encoder.cpp:63`) | a follower of the text would rotate the picture twice, which was observed as a 90-degree rotation on the follower | the pass-through decision is deliberate; the reverse approach is recorded as rejected in doc/design/08-issues-and-solutions.md (not yet written at authoring time) §8 |
+| D-2 | The legacy text states that rotation is baked into the I420 pixels and that the encoder outputs rotation 0; the implementation passes rotation through and the flag `kBakeRotationInEncoder` is false (`app/src/main/cpp/encoder/vp9_encoder.cpp:65`) | a follower of the text would rotate the picture twice, which was observed as a 90-degree rotation on the follower | the pass-through decision is deliberate; the reverse approach is recorded as rejected in doc/design/08-issues-and-solutions.md §8 |
 | D-3 | The legacy text names the coturn option `use-fingerprint`; coturn 4.6.1 accepts `fingerprint` (`deploy/turnserver.conf:12-13`) | coturn reports a bad configuration format or silently ignores the option | the repository configuration uses the accepted spelling; the legacy name must not be copied |
 | D-4 | The legacy text claims that rotation is already baked into the I420 capture output; the upstream capture path carries no rotation and the drawer applies it at draw time | a wrong mental model of the capture path, which misleads any change in that area | disproven and registered; the correct model is the pass-through described in D-2 |
 | D-5 | The repository deployment unit previously omitted the grace flag that the running service used | re-deploying from the repository would silently revert to the old drop behaviour | closed: the repository unit now carries the flag (`deploy/signaling.service`, `reports/43-deploy-unit-consistency.md` §3.2) |
@@ -203,4 +212,4 @@ Each item states why it is not verified and the concrete retest method. None of 
 |---|---|---|---|
 | O-1 | The task-output probe results are not yet in this document | the probes are run when the gate is executed, and the gate is run after the document is final | paste the probe exit codes and the checker digest into the task output; a later revision of this document can carry them inline |
 | O-2 | No independent verification of these two documents yet | the independent verification task follows the writers | the verifier re-runs the gate and samples citations, then records the verdict |
-| O-3 | Cross-references to documents not yet written | the other design documents did not exist when this document was written | the integration task adds the links |
+| O-3 | Cross-references between design documents | the sibling chapters landed after this document was written, so a few references were recorded as plain text rather than as links | the integration task adds the relative links; until then each reference names its target chapter explicitly |

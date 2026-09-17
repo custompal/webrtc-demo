@@ -17,7 +17,7 @@ implementation looks the way it does.
 
 In scope: defects that produced a wrong, misleading or unusable behaviour, plus the tooling and environment
 defects that blocked diagnosis. Out of scope: normal feature evolution, the legacy design documents under
-`doc/archive/`, and the contract errata, which are summarised in doc/design/09-verification-and-limitations.md (not yet written at authoring time)
+`doc/archive/`, and the contract errata, which are summarised in doc/design/09-verification-and-limitations.md
 §5.
 
 Citation rules applied here, per `doc/design/SPEC.md` §4 and §5:
@@ -109,7 +109,7 @@ Status vocabulary is fixed by `doc/design/SPEC.md` §6 (E4): `implemented`, `par
 | Root cause | the local state machine treated a transient signaling state as final, and grace-period semantics were implemented server-side only (`reports/36-call-survivability.md` §1.3 and §2.2) |
 | Fix | pong tolerance with an effective threshold of at least 20 s, `peerLeft` and `ROOM_NOT_FOUND` no longer end the call, and media-liveness suppresses false ICE failures while media still flows (`reports/36-call-survivability.md` §2.1 to §2.3) |
 | Evidence | `reports/36-call-survivability.md` §5.1 (named tests) and §5.3 (old-red / new-green control); the server-side alignment is `reports/36-call-survivability.md` §9 |
-| Residual risk | long-outage recovery beyond the grace period stays a limitation, see doc/design/09-verification-and-limitations.md (not yet written at authoring time) §3 |
+| Residual risk | long-outage recovery beyond the grace period stays a limitation, see doc/design/09-verification-and-limitations.md §3 |
 
 ### 2.8 The application log filter was inverted, hiding every INFO and WARN line
 
@@ -131,7 +131,7 @@ Status vocabulary is fixed by `doc/design/SPEC.md` §6 (E4): `implemented`, `par
 | Root cause | the offer was sent before `restartIce()` was requested, and both roles were allowed to renegotiate (`reports/40-glare-ice-restart-fix.md` §1) |
 | Fix | `restartIce("rejoin")` runs before the offer is created, only the peer-joined side initiates, and an 8 s fallback covers a missing answer (`reports/40-glare-ice-restart-fix.md` §2.1 and §2.2) |
 | Evidence | `reports/40-glare-ice-restart-fix.md` §4 (4 new tests) and §5.3 (removing the fallback makes the test red) |
-| Residual risk | the restart has never been exercised in any device capture, see doc/design/09-verification-and-limitations.md (not yet written at authoring time) §4 |
+| Residual risk | the restart has never been exercised in any device capture, see doc/design/09-verification-and-limitations.md §4 |
 
 ## 3. Module: ICE, network, NAT and TURN
 
@@ -221,7 +221,7 @@ Status vocabulary is fixed by `doc/design/SPEC.md` §6 (E4): `implemented`, `par
 | Root cause | the ICE server list contained a single UDP TURN URL (`reports/34-turn-tcp-fallback.md` §1) |
 | Fix | a TCP TURN URL is appended after the UDP entry, with the same credentials, on by default and switchable; the URL construction was extracted into pure functions so a JVM test can assert it (`reports/34-turn-tcp-fallback.md` §2.1) |
 | Evidence | `reports/34-turn-tcp-fallback.md` §5 (unit tests, 132 total at that revision) and the pre-check of TCP reachability in `reports/58`-series evidence summarised at `reports/34-turn-tcp-fallback.md` §1 |
-| Residual risk | the TCP fallback was not exercised on a device during this phase, see doc/design/09-verification-and-limitations.md (not yet written at authoring time) §4 |
+| Residual risk | the TCP fallback was not exercised on a device during this phase, see doc/design/09-verification-and-limitations.md §4 |
 
 ## 4. Module: the custom VP9 encoder
 
@@ -276,7 +276,7 @@ Status vocabulary is fixed by `doc/design/SPEC.md` §6 (E4): `implemented`, `par
 | Symptom | The follower saw the picture rotated 90 degrees counter-clockwise relative to the sender's screen |
 | Log signature | the device reported `rot=270` at the input while the picture arrived rotated |
 | Root cause | the rotation was applied inside the encoder **and** the frame still carried a rotation annotation, and the input frames were already delivered in display orientation, so the rotation was applied twice in effect (`reports/27-encoder-direction-perf.md` §2.2) |
-| Fix | the encoder passes rotation through by default (`app/src/main/cpp/encoder/vp9_encoder.cpp:63`, the flag is false) and the Kotlin side stops claiming that it baked the rotation into the pixels (`reports/27-encoder-direction-perf.md` §2.3) |
+| Fix | the encoder passes rotation through by default (`app/src/main/cpp/encoder/vp9_encoder.cpp:65`, the flag is false) and the Kotlin side stops claiming that it baked the rotation into the pixels (`reports/27-encoder-direction-perf.md` §2.3) |
 | Evidence | `reports/27-encoder-direction-perf.md` §2.1 (corner-case unit test proving the rotator itself is correct, 39 assertions, zero failures) |
 | Residual risk | the pass-through decision is documented in §5.2 as a rejected alternative, not a neutral choice |
 
@@ -322,7 +322,7 @@ Status vocabulary is fixed by `doc/design/SPEC.md` §6 (E4): `implemented`, `par
 | Root cause | no policy existed to hand the stream over to the platform encoder, and no decision log made the situation diagnosable (`reports/48-encoder-fallback.md` §1) |
 | Fix | a policy plus a controller switches the encoder inside a live call, with hysteresis and at most one switch per round; a switch is not confirmed within 5 s then takes effect on the next call; the diagnostics screen can force either state (`reports/48-encoder-fallback.md` §2.3) |
 | Evidence | `reports/48-encoder-fallback.md` §6 (2 test classes, 15 cases) and §7.3 (reverting the criteria makes them red) |
-| Residual risk | the trigger rate on a real low-end phone is not measured, see doc/design/09-verification-and-limitations.md (not yet written at authoring time) §4 |
+| Residual risk | the trigger rate on a real low-end phone is not measured, see doc/design/09-verification-and-limitations.md §4 |
 
 ## 5. Module: rendering and the call UI state machine
 
@@ -402,11 +402,23 @@ Status vocabulary is fixed by `doc/design/SPEC.md` §6 (E4): `implemented`, `par
 |---|---|
 | Symptom | A citation spelling that the gate accepted on one revision was rejected on the next, in both directions, so a green run proved only that the document matched the revision that produced it |
 | Log signature | no log; observed as exit code 0 with an empty finding list for probes on one revision and non-zero exit with a marker finding for the same probe text on another |
-| Root cause | the gate was rewritten repeatedly while the documentation set was being written, and the rewrite changed the **rule**, not only its execution: the required spelling of a workspace-path citation went from "prefix required" to "prefix rejected as a retired marker" and later to "prefix tolerated as a hint on an auto-classified path", while the host-path scope stayed mandatory throughout. An earlier revision additionally satisfied a required path tag from an incidental English word in the surrounding prose, so ordinary wording silenced a finding |
-| Fix | the path classification was reworked to shape-based classes with an explicit scope for host paths, and the word-based exemption was removed; the documents in this set were written in the spelling that is accepted in every observed state — bare repository-relative paths for tracked files, bare paths for workspace evidence and build products, and an explicit host scope for host paths |
-| Evidence | the independent A/B comparison and the reviewer's reconstruction are recorded by the reviewer outside the repository at /data/dsh/home/workspace/tmp/verifier-recon/linehashtag-ab.md and /data/dsh/home/workspace/tmp/verifier-recon/liveness-evidence.md; the marker-retirement flip is recorded in /data/dsh/home/workspace/tmp/verifier-recon/tag-probe.md; the digest binding required by this entry is stated in doc/design/09-verification-and-limitations.md (not yet written at authoring time) §2 |
-| Residual risk | the gate is not byte-stable over time and is not version-controlled, so an old revision cannot be recovered and re-run. A verdict is therefore only meaningful when it names the digest that produced it, and no document may assert "the gate requires X" without that digest; the durable statement is the observed behaviour under the digest that was used |
-| Status | `known limitation` (the discipline is enforced on the revisions that were measured, and the documents are written in the spelling that passes in every observed state; the instability of the gate itself is not fixed and is recorded in §10) |
+| Root cause | the rule itself changed, not merely its implementation. The spelling required for a workspace-path citation went through four states: a tag prefix was required in a pre-commit draft revision, then treated as a hard failure, then tolerated as a hint on auto-classified paths, and finally restored to a hard failure in the frozen revision (`reports/55-captain-ruling-path-notation.md` §3). The reason was that the specification stated two severities for the same rule — its tag rules and the V8 rule required a failure, while the P5 row of its scope section and the V13 error column read as a hint — so each re-implementation followed a different sentence of the same document (`reports/55-captain-ruling-path-notation.md` §3). The captain ruled for the failure reading, and the specification wording was aligned to it (`reports/55-captain-ruling-path-notation.md` §2) |
+| Fix | the path classification was consolidated to shape-based classes with an explicit scope for host paths, and the specification's two severity statements were aligned to one. This document set was written in the spelling that is accepted in every state observed — bare repository-relative paths for tracked files, bare paths for workspace evidence and build products, and an explicit host scope for host paths |
+| Evidence | the four-state history and its root cause are recorded in `reports/55-captain-ruling-path-notation.md` §3, and the voided rulings in §2; the path-tag probes are recorded outside the repository under `/data/dsh/home/workspace/tmp/verifier-recon/`; the amendment to this document is registered in `reports/55-captain-ruling-path-notation.md` §9; the digest binding required by this entry is stated in doc/design/09-verification-and-limitations.md §2 |
+| Residual risk | the gate is not byte-stable across revisions, so a verdict is meaningful only when it names the digest that produced it. The frozen revision is recomputable while it is committed: `git show 8fdb222:scripts/doc-verify.sh` yields the pinned digest, and the same content was carried by `HEAD` at the time of writing. The revisions that predate the first commit of the checker scripts cannot be recovered or re-run, which is why every verdict must name the digest of a committed revision rather than a working-tree state |
+| Status | `known limitation` (the writing rule is settled and this document set satisfies it under every measured revision; the gate remains revision-sensitive, so each verdict is bound to the digest recorded in doc/design/09-verification-and-limitations.md §2) |
+
+### 7.2 The specification's own example fence taught the retired spelling
+
+| Field | Content |
+|---|---|
+| Symptom | A reader who followed the example block in the specification's path-vocabulary section would write exactly the spelling that the same specification's rules make a failure |
+| Log signature | no log; measured as a gate failure on a document that copies the fence verbatim (`retired marker used as a path prefix`) |
+| Root cause | the example fence was rewritten during a revision that made the marker prefixes mandatory, which inverted its polarity: its "correct" lines became the tagged forms and its "wrong" lines became the unmarked forms, the opposite of the rule set the same file states. The defect was introduced in that rewrite rather than inherited: the earlier specification text at `git show e093e8f:doc/design/SPEC.md` labels the bare forms as correct and the unmarked host path as wrong |
+| Fix | the specification was restored from its earlier text and its wording aligned, so the example polarity matches the rules again (`reports/55-captain-ruling-path-notation.md` §9) |
+| Evidence | the comparison between the current file and the earlier text at `e093e8f` is registered in `reports/55-captain-ruling-path-notation.md` §9; the fence's two "correct" lines were the two failures reported against the specification itself |
+| Residual risk | an example block is not checked for consistency with the rules stated beside it, so a future rewrite can invert it again without any gate noticing |
+| Status | `implemented` (the specification text was restored and realigned; the class of defect — an example that contradicts its own rule set — is recorded here so a later revision does not repeat it) |
 
 ## 8. Rejected and disproven approaches
 
@@ -416,7 +428,7 @@ recorded here tends to be re-proposed.
 
 | # | Approach or assumption | Status | Evidence | Replaced by |
 |---|---|---|---|---|
-| R-1 | Bake the rotation into the I420 pixels inside the encoder | `rejected` | the follower saw a rotated picture: the input frames already arrive in display orientation, so baking rotates them twice (`reports/27-encoder-direction-perf.md` §2.2 and §2.3) | pass the rotation through (`app/src/main/cpp/encoder/vp9_encoder.cpp:63`) |
+| R-1 | Bake the rotation into the I420 pixels inside the encoder | `rejected` | the follower saw a rotated picture: the input frames already arrive in display orientation, so baking rotates them twice (`reports/27-encoder-direction-perf.md` §2.2 and §2.3) | pass the rotation through (`app/src/main/cpp/encoder/vp9_encoder.cpp:65`) |
 | R-2 | "The first frame is deferred by libwebrtc, so later frames are dropped" as the explanation of the encoder stall | `disproven` | the upstream logic was read and the stall was reproduced with frame-level markers; the real cause was the buffer-capacity frame length (`reports/18-encoder-stall.md` §3, `reports/27-encoder-direction-perf.md` §3.2) | the exact-capacity buffer fix |
 | R-3 | Change the encoding size through the encoder configuration-update call | `rejected` | the call reported success and the next frame killed the process (`reports/20-encode-resize-crash.md` §2) | destroy and re-create the codec context, then force a key frame |
 | R-4 | Reduce internal frame copies by wrapping the caller's planes instead of copying | `rejected` | the wrapped image has external ownership and a non-standard chroma stride; the first frame still crashed (`reports/22-encode-selfowned-image.md` §2) | a library-owned image with a row-by-row copy |
@@ -429,7 +441,7 @@ recorded here tends to be re-proposed.
 | R-11 | Use the sender-side rate as the connectivity-liveness signal | `rejected` | it cannot prove that anything arrived, and it produced both false "connected" and false "failed" states (`reports/31-ui-liveness-a7.md` §1.1, `reports/36-call-survivability.md` §2.3) | candidate-pair state plus remote frame or downlink-rate evidence |
 | R-12 | Explain the low frame rate by the capture rate or by the renderer | `disproven` | capture reported zero dropped frames and the renderer dropped zero frames while the stream arrived slowly; the sender was dropping input frames (`reports/50-quality-scaling-and-render-fps.md` §3 and §4, `reports/51-frame-dropper-and-trusted-rc.md` §2) | disable the frame dropper and let resolution and bitrate absorb congestion |
 | R-13 | Mark a Java encoder as a trusted rate controller | `rejected` | this libwebrtc revision exposes no entry point for it from the Java encoder path (`reports/51-frame-dropper-and-trusted-rc.md` §4) | disable the frame dropper through the field trial |
-| R-14 | Give the turn server its credentials through a short-lived REST scheme as the immediate fix | `rejected` (deferred) | the exposure was measured and the user accepted the risk; the short-lived scheme is the recommended hardening if a trigger condition appears (`reports/45-turn-exposure-accepted-risk.md` §4 and §5) | accept the risk and record the triggers, see doc/design/09-verification-and-limitations.md (not yet written at authoring time) §3 |
+| R-14 | Give the turn server its credentials through a short-lived REST scheme as the immediate fix | `rejected` (deferred) | the exposure was measured and the user accepted the risk; the short-lived scheme is the recommended hardening if a trigger condition appears (`reports/45-turn-exposure-accepted-risk.md` §4 and §5) | accept the risk and record the triggers, see doc/design/09-verification-and-limitations.md §3 |
 | R-15 | Satisfy a path tag with a word that happens to appear in the sentence | `rejected` | an A/B pair whose probes differ by one word produced different verdicts from the same checker, which made the gate's verdict ambiguous | shape-based path classification with an explicit host scope, bound to the checker digest |
 
 ## 9. Evidence index
@@ -457,7 +469,7 @@ recorded here tends to be re-proposed.
 | 4.2 size-change crash | `app/src/main/cpp/encoder/vp9_encoder.cpp:616` | `reports/20-encode-resize-crash.md` §1 |
 | 4.3 owned image | `app/src/main/cpp/encoder/vp9_encoder.cpp:186` | `reports/22-encode-selfowned-image.md` §3 |
 | 4.4 frame length | `reports/27-encoder-direction-perf.md` §3.2 | `reports/27-encoder-direction-perf.md` §3.1 |
-| 4.5 rotation pass-through | `app/src/main/cpp/encoder/vp9_encoder.cpp:63` | `reports/27-encoder-direction-perf.md` §2.1 |
+| 4.5 rotation pass-through | `app/src/main/cpp/encoder/vp9_encoder.cpp:65` | `reports/27-encoder-direction-perf.md` §2.1 |
 | 4.6 bitrate floor | `app/src/main/kotlin/com/example/webrtcdemo/encoder/Vp9VideoEncoder.kt:367` | `reports/49-bitrate-allocation-collapse.md` §1 and §3 |
 | 4.7 encode performance | `app/src/main/cpp/encoder/vp9_encoder.cpp:906` | `reports/47-vp9-encode-perf.md` §4.1 |
 | 4.8 frame dropper | `app/src/main/kotlin/com/example/webrtcdemo/webrtc/WebRtcEngine.kt:164` | `reports/51-frame-dropper-and-trusted-rc.md` §3, `reports/52-release-closure.md` §4 |
@@ -468,7 +480,8 @@ recorded here tends to be re-proposed.
 | 6.2 16 KB pages | `reports/99-final-report.md` §11.4 item D-2 | `reports/42-delivery-verification.md` §1.3 |
 | 6.3 deployment unit | `deploy/signaling.service` | `reports/43-deploy-unit-consistency.md` §3.2 |
 | 6.4 APK reproducibility | `reports/52-release-closure.md` §1 | `reports/99-final-report.md` §0.2 |
-| 7.1 gate discipline | `scripts/doc-verify.sh` | `reports/99-t34-appendix.md`, doc/design/09-verification-and-limitations.md (not yet written at authoring time) §2 |
+| 7.1 gate discipline | `scripts/doc-verify.sh` | `reports/55-captain-ruling-path-notation.md` §2 and §3, doc/design/09-verification-and-limitations.md §2 |
+| 7.2 specification example fence | `reports/55-captain-ruling-path-notation.md` §9 | the same section, and the `e093e8f` text it cites |
 | R-1 .. R-15 rejected or disproven approaches | the reports named in each row | the same reports |
 
 ## 10. Open items
@@ -481,4 +494,4 @@ recorded here tends to be re-proposed.
 | I-4 | The 8 s fallback trigger rate | the fallback has no observed firing | count the fallback event over several reconnects |
 | I-5 | The encoder fallback on a genuinely low-end device | the test devices are not low-end | repeat the capture on a low-end phone and read the fallback decision keys |
 | I-6 | Default encoder versus custom encoder under the same packet loss | the two paths were never compared under identical loss | run both paths back to back on one link and compare the frame rate |
-| I-7 | The gate is not byte-stable, so a verdict is only valid with its digest | the checker was revised repeatedly during the writing phase | cite `sha256` of the checker with every gate statement, as done in doc/design/09-verification-and-limitations.md (not yet written at authoring time) §2 |
+| I-7 | Every gate verdict is valid only against the digest that produced it | the checker was revised repeatedly while the document set was written, so a verdict copied from another revision is void | cite `sha256` of the checker with every gate statement, as done in doc/design/09-verification-and-limitations.md §2; the frozen revision is recomputable via `git show 8fdb222:scripts/doc-verify.sh` |
