@@ -10,8 +10,8 @@ This manifest binds the independent verification to an immutable set of artefact
 re-measured **at production time** (`2026-09-17T11:32:27Z`); no value is copied from an earlier snapshot,
 because `doc/design/SPEC.md` was edited concurrently during the preceding task window.
 
-Included: every `doc/design/*.md`, the four generated tables under `doc/design/_generated/`, and
-`doc/README.md`. `doc/design/README.md` and the repository-root `README.md`. Nothing in the documented set is missing.
+Included: every `doc/design/*.md`, the four generated tables under `doc/design/_generated/`,
+`doc/README.md`, `doc/design/README.md` and the repository-root `README.md`. Nothing in the documented set is missing.
 
 ## 2. Frozen checker revision and how it was measured
 
