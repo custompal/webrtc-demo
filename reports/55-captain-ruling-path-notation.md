@@ -34,8 +34,8 @@ bare. Unwritten documents are plain text plus the sentence `not yet written at a
 | "`ARTIFACT:`/`WORKSPACE:` are mandatory tags" (captain "v3", registered as SPEC v1.5.0/v1.5.1) | withdrawn by the captain; it contradicts T5/V8 and would have forced rework of ten already-compliant documents |
 | "`ARTIFACT:`/`WORKSPACE:` are optional aliases; either spelling passes" | revision-scoped interim behaviour only (see §3); the final revision fails them |
 | "host-command evidence may live in an adjacent line / enclosing section" | final rule requires the **same line** |
-| "`WARN typo-suspect` is raised for absent gitignored paths" | not implemented and not adopted; the tool emits an uncounted NOTE only (a clean checkout must not fail, and `git check-ignore` cannot distinguish "mistyped" from "not built yet") |
-| "the checker scripts are not version-controlled, so old revisions cannot be re-run" | false: both scripts are tracked since commit `6cba372`; `git show HEAD:scripts/doc-verify.sh \| sha256sum` recomputes a pinned revision |
+| ~~"`WARN typo-suspect` is raised for absent gitignored paths"~~ **REVERSED — see §6** | the captain first ruled this class out on a report that it did not exist; a first-hand re-run proved otherwise (`doc-verify.sh:470` emits `warn "typo-suspect (gitignored path absent)"`). The class is **kept**: it matches SPEC A10, is warning-level only, and never changes the exit code. A clean checkout therefore shows warnings but still passes |
+| "the checker scripts are not version-controlled, so old revisions cannot be re-run" | false: both scripts are tracked since `6cba372`. The **FAIL-severity implementation is at `6cba372:scripts/doc-verify.sh`** (= `200ba92e…`); note that a later checkpoint commit moved `HEAD` on to a tolerant revision (`718b68c8…`). A pin is recomputable only while that revision is **committed**, so the revision actually executed must be committed for the pin claim to hold |
 
 ## 3. Checker revision history (context, not a contract)
 
@@ -75,3 +75,18 @@ column said "hint / informational". The captain rules for **FAIL**; the SPEC wor
   root README, and independent verification — in that dependency order.
 - Members stop sending revision-scoped conclusions and stop correcting each other's state reports; conflicts
   come to the captain, and the captain updates this file.
+
+## 6. Live status snapshot (read this before quoting §1 or §3)
+
+Section 1 is the **target** rule set and section 3's last row is the **final** revision. Neither is a claim
+about whatever is on disk while tasks are still open. As of the last captain run:
+
+| Item | State |
+|---|---|
+| working-tree checker | `92d9ea0d…` (626 lines, 26 306 B, 14:03) — still tolerates a retired marker as a NOTE on auto-classified paths; `reports/**:LINE` NOTE still emitted | 
+| t14 (restore FAIL + `NEGATIVE EXAMPLE` exemption for the warning class + URL false-positive fix + drop the reports NOTE) | **in flight**, reassigned to `writer-app` after its original owner did not claim it across five wake-ups |
+| SPEC | on disk as v1.5.1 with the withdrawn "Captain v3 FINAL" tag-mandatory model; t15 (deferred to `architect`) reverts it to the v1.4.0 bare-path vocabulary as **v1.6.0** |
+| withdrawn markers | do **not** cite §3's final row as current behaviour until t14 publishes and the captain commits; today a written prefix yields a NOTE, after t14 it yields a failure |
+| mechanism note | mentioning the strings `WORKSPACE:`/`ARTIFACT:` in prose is safe; the judgement triggers only when the prefix is followed by a path-like token (`doc-verify.sh:106-124`) |
+| stable writing form | bare paths are the only spelling that passes on **every** revision observed (`200ba92e`, `9a9b4bd2`, `718b68c8`, `92d9ea0d`, …), which is why the delivered documents use none of the retired prefixes |
+| where the FAIL severity lives | `git show 6cba372:scripts/doc-verify.sh` (= `200ba92e…`) is the reference implementation to port from. `HEAD` no longer holds it (the checkpoint commit `9e02870` recorded a tolerant revision, `718b68c8…`), and the revision currently executing (`92d9ea0d…`) is **not committed at all** — which is precisely why t14 must publish and the captain must **commit** before t7 measures |
