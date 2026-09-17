@@ -380,3 +380,17 @@ independently and produced the same digest, which is why the identity claim is t
 differs from the original (13:56) and is accepted as immaterial: §12.6 keys re-verification on the content digest,
 and manufacturing an old timestamp would be falsification. The gate was re-run after the operation:
 `PASS (2421 checks, 2 warnings)`.
+
+**Correction to §12.7 (raised by the relaying member, accepted):** the incident was **not** a misreading by the
+relayer. The captain had cleared the file for deletion **in writing** in an earlier message ("probe-p5 can now be
+deleted … please tell writer-signaling it can be deleted directly"); that clearance was relayed faithfully, and
+the captain then **reversed** it in §12.5. The deletion landed before the reversal reached the executor. The
+original §12.7 wording ("read the ruling as 'hold lifted'") is therefore withdrawn; the relayer acted on the
+captain's then-current written word.
+
+**Rule, restated more precisely (adopted as the member proposed):** the authority is **the captain's current
+written word** — a captain may lift their own hold, and that is exactly what the earlier message did. What a
+relay must carry is the **authority itself** (the ruling section, or the quoted sentence), so any later reader can
+see which text was in force and check whether it has since been superseded. An executor performing a destructive
+step must be able to point at the authority; a bare "the hold is lifted" is insufficient. This is the same
+discipline as §12.2: destructive actions state their authority *and* their expected prior state.
