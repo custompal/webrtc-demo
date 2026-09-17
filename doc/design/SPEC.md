@@ -114,65 +114,65 @@ generation command, the source paths and their sha256:
 | `doc/design/_generated/jni-contract.md` | JNI contract per §2.1 | authorities 1, 2 and 3 (see §2.1), optional 4 |
 | `doc/design/_generated/host-commands.md` | command/flag inventory and its evidentiary status per §7 A12 | repository scripts, report line numbers, workspace-only scripts |
 
-### 2.3 Path vocabulary (frozen, captain v4 — final)
+### 2.3 Path vocabulary (frozen, captain final — aliases optional)
 
 Every path written in the documentation set belongs to exactly one of the five path classes of §7.1 (levels
-**P1–P5**). The final rule set (captain v3/v4) makes **tagging mandatory**: a path that is neither
-repository-relative **nor** an absolute path under the container workspace root carries one of the **four tags**
-below, written in any of the four notations of §7.2. An **untagged path is hard-checked** — repository-relative
-against the repository root (the mechanism which catches misspelled paths) or container-absolute
-(`/data/dsh/home/workspace/**`) against the container root.
+**P1–P5**), and the class is **derived from the path itself** — no marker is required. Scope names may be
+written as an **optional alias** in any of the notations of §7.2; writing one never changes the judgement and
+never causes a failure. The **only mandatory** annotation is on a host absolute path (P3): it must be in `HOST`
+or `DEVICE` scope, else the run fails with `unmarked host path` (V11).
 
-| Tag | Meaning | Examples | Judgement (level) |
+| Class | How it is derived | Examples | Judgement |
 |---|---|---|---|
-| `HOST:` | host absolute path, not visible in the container | `HOST: /opt/dsh-workspaces`, `HOST: /opt/apk-http/publish_apk.sh`, `HOST: /etc/systemd/system/signaling.service` | never existence-checked → `UNVERIFIED (host path)` (**P3**) |
-| `WORKSPACE:` | workspace-root file, written in **workspace-relative** form (the container root is `/data/dsh/home/workspace`) | `WORKSPACE: tmp/t42-captain-build.sh`, `WORKSPACE: tmp/n6/x/app.log`, `WORKSPACE: env.sh`, `WORKSPACE: env-container.sh`, `WORKSPACE: env-go.sh` | **must exist** relative to the workspace root → `workspace-only, outside git repo` (**P2**) |
-| `ARTIFACT:` | build product, not in VCS | `ARTIFACT: app/build/**`, `ARTIFACT: app-debug.apk`, `ARTIFACT: libwebrtcdemo_native.so` | existence optional; missing → `UNVERIFIED (build product, not in VCS)` (**P5**) |
-| `DEVICE:` | device-side path or command that exists only on the test phone | `DEVICE: /sdcard/Android/data/...`, `DEVICE: adb` | never existence-checked; recorded `UNVERIFIED (device path)` (**P3**) |
-| *(none)* | **P1** repository-relative path, **or P4** an absolute path under the container workspace root (which needs no tag) | `signaling/protocol/message.go:1`, `deploy/signaling.service:28`, `/data/dsh/home/workspace/tmp/n6/x/app.log` | **hard check**: exists (and covers the cited line when one is given) — `missing repo path` (P1) / `missing container path` (P4) |
+| **P1** repository-relative | shape: any path inside `code/webrtc-demo` that is not ignored | `signaling/protocol/message.go:1`, `deploy/signaling.service:28` | **hard check** — exists (and covers the cited line) → `missing repo path` |
+| **P2** workspace-root | shape: starts with `../` or `tmp/`, or is named `env.sh` / `env-container.sh` / `env-go.sh` | `tmp/t42-captain-build.sh`, `tmp/n6/x/app.log`, `env.sh` | **hard check** against the container root `/data/dsh/home/workspace` → `missing workspace path`; recorded `workspace-only, outside git repo`. Optional alias: `WORKSPACE:` / `scope=workspace` |
+| **P3** host absolute | shape: absolute path outside the container root (`/opt`, `/etc`, `/var`, `/home`, `/root`, `/usr`, `/srv`, `/tmp`) | `/opt/dsh-workspaces`, `/opt/apk-http/publish_apk.sh`, `/etc/systemd/system/signaling.service` | never existence-checked → `UNVERIFIED (host path)`; **requires** `HOST:` (or `DEVICE:`) scope, otherwise `unmarked host path` fails |
+| **P4** container absolute | shape: absolute path under `/data/dsh/home/workspace/**` (prefix precedence over P3) | `/data/dsh/home/workspace/tmp/n6/x/app.log` | **hard check** against the real container root → `missing container path`; no marker needed (`CONTAINER:` optional) |
+| **P5** build product | derivation: repository-relative **and** `git check-ignore` reports it ignored/untracked **and** it matches `app/build/**`, `**/*.apk`, `**/*.so`, `app/.cxx/**` | `app/build/intermediates/**`, `libwebrtcdemo_native.so`, `app-debug.apk` | existence **optional** → `UNVERIFIED (build product, not in VCS)`; missing and not matching a product pattern → `WARN typo-suspect` (A10, non-fatal). Optional alias: `ARTIFACT:` / `scope=artifact` |
 
-Binding rules (**T1–T6**; the captain's path-classification levels keep the separate names **P1–P5** of §7.1):
+Binding rules (**T1–T6**; the path-classification levels keep the separate names **P1–P5** of §7.1):
 
-* **T1** — A path that is neither repository-relative nor an absolute path under the container workspace root
-  **must** carry one of the four tags (any of the four notations of §7.2). A missing tag on a host path is a
-  **failure** (`unmarked host path`, V11); an untagged repository-relative path is hard-checked (V9) and fails
-  when it does not exist; an untagged `/data/dsh/home/workspace/**` path is hard-checked (V12, P4).
-* **T2** — In the line-prefix notation the tag is written immediately before the path, inside the same backticks
-  or code span, with one space: `` HOST: /opt/signaling ``. The uppercase tag form is the shorthand of
-  `scope=`; the scope names are `host`, `workspace`, `artifact`, `device` (§7.2), and tag
-  names are case-insensitive.
-* **T3** — A tag is a claim about provenance, not a substitute for evidence: `HOST:` and `DEVICE:` statements
-  must still be paired with a repository-readable citation (a report line or a source line) when they support a
-  design statement.
+* **T1** — **Automatic derivation is authoritative.** No tag is required for P1/P2/P4/P5; the only mandatory
+  annotation is the `HOST`/`DEVICE` scope on a host absolute path (P3), whose absence fails V11
+  (`unmarked host path`). An unmarked P1/P2/P4/P5 path is still judged by its shape (V9/V10/V12/V13).
+* **T2** — When an alias is written it takes the form of §7.2: in the line-prefix notation the scope name sits
+  immediately before the path inside the same code span (`HOST: /opt/signaling`), case-insensitively; the
+  lowercase `scope=` fence/section forms are equivalent.
+* **T3** — A scope alias is a claim about provenance, not a substitute for evidence: `HOST:` and `DEVICE:`
+  statements must still be paired with a repository-readable citation (a report line or a source line) when they
+  support a design statement.
 * **T4** — A `HOST:` path must never be written as if the repository contained it; for example the publish
-  script is `HOST: /opt/apk-http/publish_apk.sh` and **no `publish_apk.sh` exists in this repository** (see
-  §2.5).
-* **T5** — A tag must never be applied to a version-controlled file: `ARTIFACT:` is for untracked build outputs
-  only (`.gitignore:29 *.apk`, `.gitignore:56 *.so`, `app/.gitignore:2 /build/`), and a `WORKSPACE:` path must
-  not resolve inside the repository.
-* **T6** — §2.3 (this subsection) is the normative definition site for the tag vocabulary and T1–T6; §7.1
-  states how a path is classified and judged (P1–P5), and §7.2 defines the notation syntax.
+  script is `HOST: /opt/apk-http/publish_apk.sh` and **no `publish_apk.sh` exists in this repository** (see §2.5).
+* **T5** — `WORKSPACE:`, `ARTIFACT:` and `CONTAINER:` are **optional aliases** for the auto-derived P2, P5 and
+  P4 classes: **writing them is allowed and must never fail**, exactly as omitting them must never fail. (The
+  earlier v1.3.0 statement that these two markers were *retired and fatal when written* is superseded — see the
+  changelog.) An alias must not be applied to a path that the derivation classifies differently; the derivation
+  wins (`.gitignore:29 *.apk`, `.gitignore:56 *.so`, `app/.gitignore:2 /build/` define the P5 inputs).
+* **T6** — §2.3 (this subsection) is the normative definition site for the vocabulary and T1–T6; §7.1 states how
+  a path is classified and judged (P1–P5), and §7.2 defines the notation syntax.
 
 Correct and incorrect examples:
 
 ```
-# correct: repository path, no tag, hard-checked
+# correct: repository path, no marker, hard-checked
 bash scripts/build_app.sh        # host-only script; see reports/37-t76-build-publish.md §3
 
-# correct: host path tagged + repository-readable evidence in the same statement
+# correct: host path in HOST scope + repository-readable evidence (§2.5 F1–F3)
 HOST: /opt/apk-http/publish_apk.sh   # see reports/37-t76-build-publish.md §7
 
-# correct: workspace-root file, workspace-relative form
-WORKSPACE: tmp/t47b-captain-build.sh    # workspace-only, outside git repo
+# both correct: workspace-root file, with or without the optional alias
+tmp/t47b-captain-build.sh                # derived P2, hard-checked
+WORKSPACE: tmp/t47b-captain-build.sh     # same judgement — the alias is optional
 
-# correct: build output, existence optional
+# both correct: build output, alias optional, existence never fatal
+app/build/intermediates/cxx/**/libwebrtcdemo_native.so
 ARTIFACT: app/build/intermediates/cxx/**/libwebrtcdemo_native.so
 
-# WRONG: unmarked host path (fails V11, `unmarked host path`)
+# WRONG: host path with no HOST/DEVICE scope (fails V11, `unmarked host path`)
 /opt/apk-http/publish_apk.sh        <!-- NEGATIVE EXAMPLE — must stay unmarked on purpose -->
 
-# WRONG: ARTIFACT: pointing at a path that neither exists nor matches a product pattern
-ARTIFACT: app/build/does-not-exist.so   <!-- NEGATIVE EXAMPLE — triggers WARN typo-suspect, A10 -->
+# Informational: an ARTIFACT: alias on a missing, non-product path just raises WARN typo-suspect
+ARTIFACT: app/build/does-not-exist.so   <!-- triggers WARN typo-suspect (A10), still not a failure -->
 ```
 
 The host workspace (`/opt/dsh-workspaces/**`) maps to the container workspace (`/data/dsh/home/workspace/**`);
