@@ -90,3 +90,20 @@ about whatever is on disk while tasks are still open. As of the last captain run
 | mechanism note | mentioning the strings `WORKSPACE:`/`ARTIFACT:` in prose is safe; the judgement triggers only when the prefix is followed by a path-like token (`doc-verify.sh:106-124`) |
 | stable writing form | bare paths are the only spelling that passes on **every** revision observed (`200ba92e`, `9a9b4bd2`, `718b68c8`, `92d9ea0d`, …), which is why the delivered documents use none of the retired prefixes |
 | where the FAIL severity lives | `git show 6cba372:scripts/doc-verify.sh` (= `200ba92e…`) is the reference implementation to port from. `HEAD` no longer holds it (the checkpoint commit `9e02870` recorded a tolerant revision, `718b68c8…`), and the revision currently executing (`92d9ea0d…`) is **not committed at all** — which is precisely why t14 must publish and the captain must **commit** before t7 measures |
+
+## 7. Freeze-checklist input: cited workspace evidence must survive until verification
+
+P2 (workspace-root paths) is **hard-checked**: a document that cites `tmp/…` fails with
+`missing workspace path` if the file is gone. The device-log evidence required by the flows documents lives
+under the workspace root and is not version-controlled, so the manifest must record it and the team must not
+delete it before t7 runs. Captain inventory (all present as of this writing, workspace root = the container
+workspace `/data/dsh/home/workspace`):
+
+- session logs: `tmp/n1/x/app.log`, `tmp/n1/x/native.log`, `tmp/n2/x/app.log`, `tmp/n2/x/webrtc.log`,
+  `tmp/n3/x/app.1.log`, `tmp/n4/x/native.1.log`, `tmp/n6/x/app.log`, `tmp/n6/x/app.1.log`,
+  `tmp/n6/x/app.2.log`, `tmp/n7/x/app.1.log`
+- probe/evidence files: `tmp/t42-captain-build.sh`, `tmp/t47b-captain-build.sh`,
+  `tmp/verifier-recon/{linehashtag-ab.md,liveness-evidence.md,tag-probe.md}`, `tmp/ws-draft/probe-p5.md`
+
+Rule: if any of these must be relocated, the citing document is updated in the same change; a citation is
+never removed merely to avoid the check.
