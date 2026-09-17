@@ -107,3 +107,41 @@ workspace `/data/dsh/home/workspace`):
 
 Rule: if any of these must be relocated, the citing document is updated in the same change; a citation is
 never removed merely to avoid the check.
+
+## 8. FINAL FREEZE — checker revision (t14, committed)
+
+Frozen revision of the gate, verified first-hand by the captain with probes before freezing:
+
+| Fact | Value |
+|---|---|
+| file | `scripts/doc-verify.sh` |
+| sha256 | `676d075a067e869e9730afd71239f078205b1fd8043453e8c559c0f6ee8b1b45` |
+| size / lines / mtime | 26 545 B / 628 / 2026-09-17 14:08 |
+| commit | `8fdb222` — and it **is** `HEAD`, so `git show HEAD:scripts/doc-verify.sh \| sha256sum` recomputes the pin |
+| supersedes | `200ba92e…` (the t2-era pin) and every 13:54–14:03 interim revision |
+
+Captain's own probe results on this revision (workspace probes under `tmp/t14-cap-probe/`):
+
+| Form | Result |
+|---|---|
+| `WORKSPACE: tmp/n6/x/app.log`, `ARTIFACT: third_party/libwebrtc/java/libwebrtc-java.jar` | **FAIL** `retired marker used as a path prefix` |
+| same paths written **bare** | **PASS**, 0 warnings |
+| bare `/opt/apk-http/publish_apk.sh` | **FAIL** `unmarked host path` |
+| `- HOST: /opt/apk-http/publish_apk.sh` + same-line report evidence | **PASS** |
+| a URL (`http://…/app-debug.apk`) and a `reports/<file>.md:<line>` citation | **PASS**, no warning and no note (URL false positive and the reports note are gone) |
+| `` `app/build/nope.apk` `` with a `NEGATIVE EXAMPLE` label | **PASS** (no failure) but **still emits the advisory `WARN typo-suspect`** |
+
+Two consequences to honour, both measured rather than assumed:
+
+1. The `NEGATIVE EXAMPLE` exemption is a **failure** exemption only. It does not suppress the informational
+   `typo-suspect` warning. A document that deliberately cites an absent build product may therefore carry that
+   warning; it must be reported as an advisory, never counted as a documentation defect. The owner should
+   describe the self-referential warning in the row itself rather than trying to silence it.
+2. The `scope=WORKSPACE`/`scope=ARTIFACT` fence branch in the retired-marker check is **unreachable** (fence
+   delimiter lines are ignored earlier in extraction), so a retired marker inside such a fence is not flagged.
+   This is a known limitation of the frozen revision and it becomes moot once SPEC v1.6.0 restores the v1.4.0
+   vocabulary, whose §7.2 notation table covers only `HOST`/`CONTAINER`/`DEVICE`/`REPO`.
+
+**Freeze rule:** `scripts/doc-verify.sh` and `scripts/gen-doc-tables.sh` must not be edited again until the
+round-2 verification (`t20`) has produced its verdict. Any change invalidates the verdict and must be announced
+with a new digest.
