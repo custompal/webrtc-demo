@@ -309,3 +309,18 @@ Raised by the verifier while preparing round 2; adopted as the binding rule for 
 `BLOCKED: checker revision mismatch` applies **only** when the content digest changes between the before/after
 measurements or differs from the frozen value. Pause-hygiene commits advanced `HEAD` several times while
 `scripts/**` stayed byte-identical; binding on `HEAD` alone would have produced a false block.
+
+### 12.4 Where the three binding parts must live
+
+Clarified after `t21` asked whether the runtime-`HEAD` part must be written into its document:
+
+- The **manifest** (`reports/54`) and the **verdict record** (`reports/56`) must carry all three parts
+  (content digest two ways, bearing commit, runtime `HEAD` labelled *"may have advanced"*), because those are
+  the artefacts a later reader binds against.
+- A **document** such as `09-verification-and-limitations.md` must record only what is durable at authoring
+  time: the **content digest** and the **bearing commit** (`8fdb222`), with the note that `HEAD` carried the
+  same content when written. The runtime `HEAD` id is a per-run fact and belongs in the run's report, not in a
+  specification chapter — writing it into the document would make the document stale on the next commit.
+- Therefore `t21` is **not** reopened for a one-line addition: editing a completed deliverable to add a
+  per-run identifier would change its digest and decouple the record from the artefact — the anti-pattern this
+  phase exists to prevent.
