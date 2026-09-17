@@ -128,6 +128,68 @@ document and the checker disagree, the divergence is reported to the owner of th
 else changes. The delivery gate for a documentation change is the checker restricted to the changed files
 (`doc/design/SPEC.md` §9).
 
+### 8.1 Document path notation (frozen)
+
+Path notation is frozen and mechanically enforced. Every path written in the documentation set falls into one
+of five classes, and the class decides whether a marker is required, optional or forbidden.
+
+| Path class | Correct form | Judgement |
+|---|---|---|
+| repository-tracked file | a bare repository-relative path with its line; no marker | existence and line are checked; a broken pointer fails |
+| workspace-root file | a bare path, written either repository-relative with the parent prefix or workspace-relative | checked against the workspace root; a missing file fails |
+| build product | a bare path | existence is optional; a missing product is recorded as unverified and never fails, so a clean checkout is never a failure |
+| host absolute path | an explicit host scope marker on the same line, together with in-repository evidence on that line | an unmarked host path fails; this is the only mandatory marker |
+| container absolute path | a bare absolute path, with any line number written in the surrounding prose rather than inside the code span | checked against the container root (see 8.1.3) |
+
+#### 8.1.1 Marker discipline
+
+Write no path-prefix marker other than the host and device scope markers. The two prefixes used by earlier
+drafts of this document set are retired, and the rule is to write the bare path instead: the checker reports
+any use of either prefix as a path prefix.
+
+Bare is also the only form that survived the revision churn of the authoring session. The checker's verdict
+on those two prefixes changed twice — failure, then tolerated hint, then failure again at the frozen
+revision — while bare paths passed at every revision observed:
+
+| Checker revision | Verdict on the two retired prefixes |
+|---|---|
+| 200ba92e42068c4a | failure |
+| 6b21c41f7630dd6e, d2a95711dbedabf | accepted as a hint, recorded as a note |
+| final frozen revision (digest below) | failure again |
+
+A marker remains legitimate for exactly two purposes: scoping a host absolute path, and scoping a device
+path. Every other path is written bare.
+
+#### 8.1.2 Host command evidence must be on the same line
+
+A name that is not provable from the repository itself — anything not listed as in-repo in the generated
+command inventory — must carry its in-repository evidence on the **same line** as the name: either a report
+location of the form used in the evidence index below, or an entry of the generated
+`doc/design/_generated/host-commands.md` table. Evidence on an adjacent line does not satisfy the rule.
+Names provable from repository scripts need no evidence, and the generated tables are themselves exempt.
+
+This rule was added while the delivery was already in review, which is why one citation in the build and
+deploy document is long. The flag `--allow-root` and its report evidence `reports/41-apk-http-ownership.md` §5
+were on adjacent lines, and the gate failed with a message saying the flag was cited without in-repository
+evidence; joining them onto one line resolved it, with no content added or removed.
+
+#### 8.1.3 Container root
+
+The container workspace root is class **P4**: an absolute path under it is checked for existence against the
+real container root and needs no marker. This is the opposite of a host absolute path, which is never
+existence-checked but does require the host scope marker. Conflating the two is the most common source of a
+false "unmarked host path" report.
+
+Migration note: legacy reports under `reports/**` and the archived documents under `doc/archive/**` contain
+retired path prefixes and `file:LINE` forms that are no longer valid. Do not copy them into new documents.
+Rewrite every path in the bare form described above, and cite a report by its name and section rather than
+reusing its line numbers as source citations.
+
+```
+final frozen checker revision for this notation:
+sha256 676d075a067e869e9730afd71239f078205b1fd8043453e8c559c0f6ee8b1b45  (628 lines, 26545 bytes)
+```
+
 ## 9. Evidence index
 
 | Rule area | Citation | Verification artifact |
@@ -144,6 +206,7 @@ else changes. The delivery gate for a documentation change is the checker restri
 | Library pins | `scripts/build_app.sh:467` | source |
 | Ownership normalisation | `scripts/build_app.sh:566` | source |
 | Publish guard | HOST: `/opt/apk-http/publish_apk.sh` | `reports/41-apk-http-ownership.md:192` |
+| Document path notation (frozen) | `doc/design/SPEC.md` §2.3, `doc/design/SPEC.md` §7.1 | the pinned checker revision stated in §8.1 |
 
 ## 10. Open items
 

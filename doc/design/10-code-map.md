@@ -182,27 +182,41 @@ title.
 
 ### 4.1 Current documents (`doc/design/`)
 
+All members of the canonical set are present at this revision and are linked below.
+
 | Document | Content |
 |---|---|
-| `doc/design/SPEC.md` | frozen documentation standard and the checker's judgement rules |
-| `doc/design/01-requirements.md` | requirements with implementation and evidence |
-| `doc/design/02-architecture.md` | overall architecture, planes, ports, topology |
+| [SPEC](SPEC.md) | frozen documentation standard and the checker's judgement rules |
+| [01 — Requirements](01-requirements.md) | requirements with implementation and evidence |
+| [02 — Architecture](02-architecture.md) | overall architecture, planes, ports and topology |
+| [03 — App architecture](03-app-architecture.md) | app layers, thread model, lifecycle, recovery, config switches |
+| [04 — Signaling service](04-signaling-service.md) | package layout, room and seat state, routing, configuration |
+| [05 — Protocols](05-protocols.md) | field-level message tables, ICE/TURN/SDP behaviour, JNI contract |
+| [06 — Flows](06-flows.md) | sequence diagrams for the key flows, with real log lines |
+| [07 — Build and deploy](07-build-and-deploy.md) | toolchain, build stages, release chain, host services |
+| [08 — Issues and solutions](08-issues-and-solutions.md) | symptom to root cause history, including rejected approaches |
+| [09 — Verification and limitations](09-verification-and-limitations.md) | verification matrix, known limitations, errata |
+| [10 — Code map](10-code-map.md) | this document |
+| [11 — Coding standards](11-coding-standards.md) | conventions and change safety |
 | `doc/design/_generated/` | generated tables; never hand-edited |
 
-The remaining members of the canonical set are not written at authoring time: 03 (app architecture),
-04 (signaling service), 05 (protocols), 06 (flows), 08 (issues and solutions),
-09 (verification and limitations) and 11 (coding standards) — `not yet written at authoring time`.
+### 4.2 Legacy documents and decisions (`doc/`)
 
-### 4.2 Legacy documents (`doc/`)
+[doc/README.md](../README.md) explains the legacy-versus-current split and is the entry point for the
+archived material.
 
 Every file that previously lived directly under `doc/` was moved verbatim to `doc/archive/` and replaced at
 its original path by a one-line stub naming the archive file and the document that supersedes it. The
 archived set covers the overview, cloud infrastructure, architecture, implementation plan, glossary, code
 design, encoder internals, build guides, protocol specification, UI design, native and backend
-implementation, the agent task specification and the interface contract. `doc/adr/` holds the architecture
-decision records. The stubs exist so that historical references from `reports/**` do not dangle.
+implementation, the agent task specification and the interface contract. The stubs exist so that historical
+references from `reports/**` do not dangle.
 
-References: `doc/README.md`
+Architecture decision records live under `doc/adr/`:
+[ADR-001](../adr/ADR-001-use-libwebrtc-and-source-build.md),
+[ADR-002](../adr/ADR-002-custom-video-encoder-for-dynamic-bitrate.md),
+[ADR-003](../adr/ADR-003-1to1-p2p-first.md),
+[ADR-004](../adr/ADR-004-split-runtime-and-build-vms.md).
 
 ## 5. Symptom to code
 
@@ -232,19 +246,19 @@ disables the frame dropper is recorded in `reports/51-frame-dropper-and-trusted-
 | Native registration | `app/src/main/cpp/jni/jni_bridge.cpp:57` | source |
 | Signaling process entry | `signaling/main.go:28` | source |
 | Room state entry | `signaling/room/room.go:49` | source |
-| Build recipe with gate output | — | `reports/37-t76-build-publish.md:43` |
-| Publish identity guard | — | `reports/41-apk-http-ownership.md:192` |
+| Build recipe with gate output | — | `reports/37-t76-build-publish.md` §3 |
+| Publish identity guard | — | `reports/41-apk-http-ownership.md` §5 |
 | Legacy stubs are one line | `doc/00-overview.md:1` | stub files |
 
 ## 7. Open items
 
-- The canonical set is incomplete: 03, 04, 05, 06, 08, 09 and 11 have no file at authoring time. This
-  document map lists them as plain text and carries no links to them (a link or a backticked path to a
-  missing file fails the documentation gate). A follow-up task restores the links once the documents exist.
+- The document map in §4 is complete at this revision: every member of the canonical set exists and is
+  linked. A document added to the set must be added to that table, and any file named there must exist,
+  because a link or a backticked path to a missing file fails the documentation gate.
 - The report index gives the task a report belongs to, taken from the report's own title. The column
   "Referenced by" therefore records provenance, not an exhaustive inbound-reference scan, which was not
   performed: `unverified`.
-- Report line numbers are deliberately not cited anywhere in this document, because report numbering drifts
-  from the source tree.
+- Reports are cited by name and section only; report line numbers are never used, because report numbering
+  drifts from the source tree and report line numbers are not source pointers.
 - The package-level grouping in §2 is a summary; a file added to a package without updating this document
   will not be noticed by the documentation gate.

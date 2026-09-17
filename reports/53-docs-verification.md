@@ -178,3 +178,62 @@ revision, a `pass` verdict is realistic.
 
 *Verification is bound to checker sha256 `92d9ea0d…` (626 lines) for the tool runs and to the raw device logs and
 source files listed above; the repository content read was the working tree at the time of verification.*
+
+---
+
+## Appendix A — post-verdict addendum (additive; does NOT change the §8 verdict)
+
+Added after the verdict was recorded, because the checker kept moving. Nothing above has been rewritten; the
+verdict remains `needs_revision` and every finding above stands. This appendix exists so that a later reader does
+not mistake a revision-specific observation for current behaviour.
+
+### A.1 The checker moved again — defer to the governance record
+
+**Single source of truth for revision history: `reports/55-captain-ruling-path-notation.md` §3 (checker revision
+history) and §10 (digest vs commit id).** Per the captain's instruction to stop forwarding revision-scoped
+conclusions, this report does not maintain its own revision table. Two facts are kept here only because the
+findings below depend on them:
+
+* the revision this report's tool runs are bound to is `92d9ea0d…` (626 lines), a **pre-commit draft**;
+* the **final frozen** revision is `676d075a…` (628 lines, 26545 bytes), committed as `8fdb222` and equal to HEAD's
+  blob for `scripts/doc-verify.sh`; under it the retired-marker prefix FAILs again on both auto-classified and
+  version-controlled paths.
+
+Note for readers: a 16-hex value in this project is a **content digest**, not a git object name (§10). Use
+`git show <commit>:scripts/doc-verify.sh | sha256sum`, never `git cat-file -t <digest>`.
+
+### A.2 Current status of this report's findings (measured at `676d075a…`, sha256 stable before and after the run)
+
+* **F-01** still open — `bash scripts/doc-verify.sh` → **exit 1**, `FAIL (7 failures, 1 warnings, 2334 checks)`.
+* **F-03** still open — `SPEC.md:79` and `:92` still report `J.N`, `:92` still reports `GEN_JNI`.
+* **F-04** still open — `SPEC.md:448` still fails as an unmarked host path (the P3 prefix list). Note the new
+  `NEGATIVE EXAMPLE` exemption at `doc-verify.sh:427` is a partial implementation of exactly this recommendation,
+  but it does not yet cover this line.
+* **F-05** still open — `SPEC.md:469` still fails as an unmarked host path.
+* Newly failing at this revision, same class as F-04 (the SPEC's own examples judged by its own rule):
+  `SPEC.md:163` (`WORKSPACE: tmp/t47b-captain-build.sh`) and `SPEC.md:166`
+  (`ARTIFACT: app/build/intermediates/cxx/`) now FAIL as retired-marker prefixes.
+* **F-02** unchanged and further supported: five distinct checker revisions and three different failure counts
+  (5, 6, 7) were observed against a substantially unchanged document set.
+
+### A.3 Exact pointers for the current revision
+
+Do not cite `doc-verify.sh:400-404` or the bare string `retired marker used as a path prefix` without a digest.
+At `676d075a…` the relevant code is `:417` (`RETIRED` case), `:427` (negative-example NOTE exemption),
+`:429` (retired marker on a version-controlled path → `fail`) and `:432` (retired marker in a scope notation).
+The body of this report never cites `:400-404`; that pointer appeared only in the verifier's working notes.
+
+### A.4 Postscript — `676d075a` is now the committed, governing revision
+
+Verified afterwards: the working-tree blob and `git show HEAD:scripts/doc-verify.sh | sha256sum` both equal
+`676d075a067e869e9730afd71239f078205b1fd8043453e8c559c0f6ee8b1b45` (628 lines, 26545 bytes), committed as
+**`8fdb222`** ("checker: 冻结最终 revision 676d075a (t14)"), and the script is clean in `git status`. So the
+revision is no longer a drifting draft: the pin is git-recomputable and the earlier F-02 instability is closed
+for the *tool identity* — what remains open is that the **documents must reach zero failures under it**, which is
+task t15, and that a freeze manifest (task t16) must record the document digests.
+
+Measured at that committed revision (sha256 stable before and after the run): **exit 1**,
+`FAIL (7 failures, 1 warnings, 2334 checks)`, failing lines `SPEC.md:79`, `:92` (twice), `:163`, `:166`, `:448`,
+`:469`. Those are architect author debt under t15 as long as t15 is open.
+
+

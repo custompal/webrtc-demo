@@ -161,3 +161,57 @@ Each entry states the file, the change, the cause, and the task that will carry 
 
 None of these count as documentation errors in round 2; they are scheduled or completed work, and each is
 verifiable against the frozen revision.
+
+## 10. Digest vs commit id — two different namespaces (read before quoting a revision)
+
+A 16-hex value in this project's messages is almost always a **content digest** (`sha256sum <file>`), **not** a
+git object name. `git cat-file -t 718b68c8…` therefore fails, and that is not evidence the revision is
+unrecoverable. Use `git show <commit>:<path> | sha256sum` to move from a commit to a digest, and
+`git log --format=%h -- <path>` to move from a digest back to the commit that recorded it.
+
+| Commit | `scripts/doc-verify.sh` content digest | SPEC version in that commit |
+|---|---|---|
+| `6cba372` (docs checkpoint) | `200ba92e…` | v1.4.0 |
+| `e093e8f` (t2 toolchain) | `200ba92e…` | v1.4.0 |
+| `9e02870` (checkpoint 2) | `718b68c8…` | v1.5.1 (draft, later withdrawn) |
+| `8fdb222` (t14 freeze) | **`676d075a…` (final, = HEAD)** | v1.5.1 (still the draft; t15 replaces it with v1.6.0) |
+| `39de0b3`, `0cb3dd3` | `676d075a…` (unchanged) | v1.5.1 |
+
+Interim digests observed today but **never committed** (`090c4968`, `41a31957`, `30179d56`, `6b21c41f`,
+`d2a95711`, `9a9b4bd2`, `92d9ea0d`) are pre-commit drafts: they are unrecoverable by design, which is precisely
+why the captain commits a revision before it is used as a pin.
+
+## 11. PAUSED by user request — resume checklist
+
+The user halted the task on 2026-09-17 (after the checker incident). No member may start new work until the
+captain resumes the team on a later explicit user request. State at the pause:
+
+**Frozen and safe**
+
+- gate: `scripts/doc-verify.sh` = `676d075a067e869e9730afd71239f078205b1fd8043453e8c559c0f6ee8b1b45`,
+  26 545 B, 628 lines, mode 755, **committed at `8fdb222` and equal to the working tree** (`git status scripts/`
+  clean, `bash -n` passes). `gen-doc-tables.sh` = `075b6da2…`, also clean.
+- the working tree was restored twice after an unledgered concurrent rewrite broke it (syntax error, exit 2);
+  the member responsible (`doc-tooling`) has been **removed from the team** — it owned nothing unfinished.
+- all eleven `doc/design` chapters plus `doc/README.md` are committed; the frozen gate accepts every writer
+  document (`01`–`11` all PASS under `--only`).
+
+**Open work at the pause (nothing is lost, everything is re-derivable)**
+
+| Task | Owner | State |
+|---|---|---|
+| t15 | architect | not started; mechanical instruction issued: whole-file restore from `git show e093e8f:doc/design/SPEC.md` (v1.4.0) + four deltas (C9, §7.5 text, F-03/F-04/F-05, version **v1.6.0**); target = full gate 0 failures |
+| t16 | architect | not started (depends on t15); publish `reports/54-docs-freeze-manifest.md` |
+| t18 | writer-history | not started (depends on t15); five `:63`→`:65` citation fixes, the arc rewrite, the pin wording, the L-9 note (see §8's failure-only exemption) |
+| t19 | writer-ops | in progress; three subsections in `11-coding-standards.md`, pin restated as the frozen digest + commit with **no line counts** |
+| t20 | verifier | not started (depends on t12, t14, t15, t16, t18, t19); round-2 closure check of F-01..F-09 |
+| t8 | architect | not started (depends on t7/t20); root `README.md` + `doc/design/README.md` index |
+| t7 r1 | verifier | terminal, verdict `needs_revision` (report `reports/53-docs-verification.md`); superseded by t20 |
+
+**Uncommitted at the pause:** `doc/design/SPEC.md` (architect's withdrawn v1.5.2 draft),
+`10-code-map.md` (t12), `11-coding-standards.md` (t19 work in progress). They are recorded in the pause
+snapshot commit; the v1.4.0 restore source remains `e093e8f`, so nothing depends on those drafts.
+
+**To resume:** obtain an explicit user request, then `agent_teams_resume` with a reason (or
+`create_task({resume:true, resumeReason})`), wake t15/t19, and re-verify the gate digest before accepting any
+new verdict. No member should be re-added unless a script change is genuinely required.
