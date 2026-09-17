@@ -200,7 +200,8 @@ reusing its line numbers as source citations.
 
 ```
 final frozen checker revision for this notation:
-sha256 676d075a067e869e9730afd71239f078205b1fd8043453e8c559c0f6ee8b1b45  (628 lines, 26545 bytes)
+sha256 676d075a067e869e9730afd71239f078205b1fd8043453e8c559c0f6ee8b1b45
+carried by commit 8fdb222 (recompute: git show 8fdb222:scripts/doc-verify.sh | sha256sum)
 ```
 
 ## 9. Evidence index
