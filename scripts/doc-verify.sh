@@ -4,8 +4,8 @@
 #
 # Verifies that what the documents claim actually exists: source citations,
 # symbols, protocol message types, internal links, legacy stubs, the canonical
-# directory conventions, path classification (P1..P5) and Gradle/script command
-# names.
+# directory conventions, path classification (P1..P5), Gradle/script command
+# names, and — since the i18n round — the bilingual document layout (V14/V15).
 #
 # Normative sources (frozen, owned by architect):
 #   * doc/design/SPEC.md §2.3 (path vocabulary, T1..T6)
@@ -16,6 +16,47 @@
 #   * doc/design/SPEC.md §7.5 (this script's mechanism notes)
 # If this implementation and the SPEC tables disagree, the tables are
 # authoritative for intent; the divergence is reported to architect.
+#
+# Revision provenance. This revision supersedes
+#   `676d075a067e869e9730afd71239f078205b1fd8043453e8c559c0f6ee8b1b45`
+#   (the pre-i18n gate: 628 lines, 26545 bytes, frozen 2026-09-17 14:22:14 +0800).
+#   The additions are the zh-CN scan set, V14 and V15; the task output carries
+#   this revision's own sha256/bytes/lines/mtime plus the full diff list.
+#
+# i18n additions (V14/V15) — normative source: doc/design/zh-CN/GLOSSARY.md
+# v1.1.1 §3 and §4 (Y-1..Y-4): its rule content is the frozen v1.1.0 text
+# byte-for-byte, and v1.1.1 only synchronised §8.2 to SPEC v1.7.0. Registered
+# as V14/V15 in SPEC v1.7.0 §7 (reading fixed by §7.6, mechanism by §7.5). The
+# earlier v1.0.0 wording (disclaimer without the colon and 「原文」, a retained
+# `README.zh-CN.md`) is superseded and must not be re-implemented.
+#   * V14 `missing language switcher` — every frozen pair carries the switcher
+#     in both directions, inside the first $SWITCHER_WINDOW lines, in the exact
+#     frozen shape (SPEC §7.6, GLOSSARY §3.2/§3.3): the Chinese default page
+#     writes `> **中文（默认）** · [English](<relative path>)`, the English page
+#     writes `> [中文（默认）](<relative path>) · English`, and each link target
+#     resolves to the counterpart on disk. A link that renders nothing (the
+#     full-width bracket form) therefore fails V14. Extra content on the
+#     switcher line is reported as a warning (GLOSSARY §3.1). Pairs:
+#     README.md ↔ README.en.md, doc/design/README.md ↔ doc/design/README.en.md,
+#     and doc/design/zh-CN/NN-*.md ↔ doc/design/NN-*.md (NN = 01..05).
+#   * V15 `missing translation disclaimer` — every translated page on the §4
+#     Y-1 list (doc/design/zh-CN/01-05 and zh-CN/SPEC-guide.md) states
+#     `> 译文：若与英文原文冲突，以英文原文为准。` in its first 8 lines;
+#     zh-CN/GLOSSARY.md, root README.md and doc/design/README.md are exempt
+#     (Y-4).
+#   * Duplicate-page diagnostic — advisory only, never a failure. SPEC v1.7.0 §7
+#     registers V1-V15; this diagnostic carries no rule id. It derives from the
+#     original t4 acceptance criterion of this i18n round (a byte-identical
+#     `README.zh-CN.md`), which ruling A withdrew together with the copy itself.
+#     The frozen layout keeps no language-suffixed copy of an entry/index page
+#     (SPEC R12/§7.6; GLOSSARY v1.1.1 §2.1/§8.2), so the NOTE fires only when
+#     README.zh-CN.md or doc/design/zh-CN/README.md exists; the copy's absence is
+#     confirmed by independent verification (A6). Nothing here can fail the gate.
+#   * A pair is armed as soon as one side carries an i18n marker (a zh-CN page
+#     exists, or a page already links to its counterpart), so a full run on the
+#     pre-i18n tree stays green while the pair is hard-checked once it lands.
+#   * An `--only` run checks only the obligations of the files it was given, so
+#     one writer's gate is not blocked by another writer's unfinished page.
 #
 # Usage
 #   bash scripts/doc-verify.sh [--only <path>]...
@@ -40,6 +81,9 @@ WORKSPACE_ROOT=$(cd "$REPO_ROOT/../.." && pwd)
 GENERATED_DIR="doc/design/_generated"
 SIGNALING_TABLE="$GENERATED_DIR/signaling-messages.md"
 HOST_CMD_TABLE="$GENERATED_DIR/host-commands.md"
+ZH_TREE="doc/design/zh-CN"
+SWITCHER_WINDOW=8
+DISCLAIMER='译文：若与英文原文冲突，以英文原文为准。'
 
 FAILURES=0
 WARNINGS=0
@@ -57,7 +101,7 @@ while [ $# -gt 0 ]; do
       while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do ONLY+=("$1"); shift; done
       ;;
     --only=*) ONLY+=("${1#--only=}"); shift ;;
-    -h|--help) sed -n '2,32p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,73p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) printf 'doc-verify.sh: unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
@@ -79,8 +123,24 @@ if [ "${#ONLY[@]}" -gt 0 ]; then
   done
 else
   while IFS= read -r f; do DOCS+=("$f"); done < <(find doc/design -maxdepth 1 -name '*.md' -type f | sort)
-  [ -f README.md ] && DOCS+=("README.md")
+  if [ -d "$ZH_TREE" ]; then
+    while IFS= read -r f; do DOCS+=("$f"); done < <(find "$ZH_TREE" -maxdepth 1 -name '*.md' -type f | sort)
+  fi
+  for f in README.md README.en.md README.zh-CN.md; do
+    [ -f "$f" ] && DOCS+=("$f")
+  done
+  # Advisory diagnostic, never a failure and never a warning (see the header).
+  for dup_page in README.zh-CN.md "$ZH_TREE/README.md"; do
+    [ -f "$dup_page" ] || continue
+    CHECKS=$((CHECKS + 1))
+    note "$dup_page" "1" "advisory (never fails): SPEC R12/§7.6 禁止语言后缀副本 — a language-suffixed copy of an entry/index page is not part of the frozen layout; derives from the original t4 acceptance criterion, withdrawn by ruling A; absence is confirmed by independent verification (A6)"
+  done
 fi
+
+# The files this run is responsible for (SPEC A5: an --only run answers only for
+# the files it was given).
+declare -A TARGET_SET=()
+for d in "${DOCS[@]}"; do TARGET_SET["$d"]=1; done
 
 # =============================================================================
 # Extraction. One pass per document, emitted as tab-separated records
@@ -362,6 +422,203 @@ declare -A VOCAB=(
 )
 
 # =============================================================================
+# Bilingual layout (SPEC V14/V15)
+#
+# Frozen layout — captain ruling 2026-09-17 option A, restated in
+# doc/design/zh-CN/GLOSSARY.md: the Chinese page is the default entry
+# (`README.md`, `doc/design/README.md`), the English original keeps its name
+# (`README.en.md`, `doc/design/README.en.md`, `doc/design/NN-*.md`) and the
+# translated bodies live in `doc/design/zh-CN/<same name>.md`.
+#
+# Arming. A pair is judged as soon as one side carries an i18n marker:
+#   * the Chinese side exists under doc/design/zh-CN/ (always a new artefact),
+#   * or either side already links to its counterpart (the switcher line).
+# The root and index Chinese files pre-date this round and stay ordinary
+# English documents until they carry the switcher, so their mere existence
+# never arms those two pairs; the new README.en.md files do. A full run on the
+# pre-i18n tree therefore stays green, and the pair becomes a hard check the
+# moment the i18n work lands.
+# =============================================================================
+PAIRS=()
+pair_add() { PAIRS+=("$1|$2|$3"); }   # chinese|english|mode (entry|tree)
+
+# link_records <page> <window> -> "line<TAB>text<TAB>target" for the markdown
+# links written on the first <window> lines.
+link_records() {
+  awk -v n="$2" '
+    { if (FNR > n) exit
+      s = $0
+      while (match(s, /\[[^]]*\]\(/)) {
+        text = substr(s, RSTART + 1, RLENGTH - 3)
+        rest = substr(s, RSTART + RLENGTH)
+        q = index(rest, ")")
+        if (q == 0) break
+        printf "%d\t%s\t%s\n", FNR, text, substr(rest, 1, q - 1)
+        s = substr(rest, q + 1)
+      }
+    }
+  ' "$1" 2>/dev/null
+}
+
+# normalize_path <path> -> absolute path, resolved lexically (need not exist)
+normalize_path() { realpath -m -- "$1" 2>/dev/null || printf '%s' "$1"; }
+
+# rel_hint <from-page> <target> -> the relative path a link in <from-page> must
+# use to reach <target> (repository-relative). Fix hints stay renderable, not
+# merely gate-valid: the gate also accepts a repository-root form, but a reader
+# (and GitHub) resolves links against the page's own directory.
+rel_hint() {
+  realpath -m --relative-to="$(dirname "$1")" "$REPO_ROOT/$2" 2>/dev/null || printf '%s' "$2"
+}
+
+# switcher_has_extra <line> <zh|en> -> the line carries something besides the
+# frozen switcher shape (GLOSSARY §3.1: the switcher stands on its own line).
+switcher_has_extra() {
+  if [ "$2" = "zh" ]; then
+    printf '%s\n' "$1" | sed -e 's/^[[:space:]]*>[[:space:]]*//' -e 's/\*\*//g' \
+      -e 's/\[English\]([^)]*)//' -e 's/中文（默认）//g' -e 's/·//g' -e 's/[[:space:]]//g' | grep -q .
+  else
+    printf '%s\n' "$1" | sed -e 's/^[[:space:]]*>[[:space:]]*//' -e 's/\*\*//g' \
+      -e 's/\[中文（默认）\]([^)]*)//' -e 's/English//g' -e 's/·//g' -e 's/[[:space:]]//g' | grep -q .
+  fi
+}
+
+# fullwidth_hint <page> -> SPEC §7.6 note when the page writes the full-width
+# bracket form, which renders no link and therefore fails V14.
+fullwidth_hint() {
+  if head -n "$SWITCHER_WINDOW" -- "$1" 2>/dev/null | grep -qE '\[(English|中文（默认）)\]（'; then
+    printf ' (a full-width bracket form is present but renders no link; a real page writes half-width parentheses, SPEC §7.6)'
+  fi
+}
+
+# switcher_ln <page> <text-pattern> -> line number of the first matching link
+switcher_ln() {
+  local page="$1" pattern="$2" ln text target
+  if [ -f "$page" ]; then
+    while IFS=$'\t' read -r ln text target; do
+      case "$text" in $pattern) printf '%d\n' "$ln"; return 0 ;; esac
+    done < <(link_records "$page" "$SWITCHER_WINDOW")
+  fi
+  printf '1\n'
+}
+
+# has_switcher <page> <text-pattern> <counterpart> -> the page carries a link
+# whose text matches <text-pattern> and whose target resolves to <counterpart>
+# (repository-relative), within the first $SWITCHER_WINDOW lines.
+has_switcher() {
+  local page="$1" pattern="$2" counterpart="$3" dir want ln text target
+  [ -f "$page" ] || return 1
+  dir=$(dirname "$page")
+  want=$(normalize_path "$REPO_ROOT/$counterpart")
+  while IFS=$'\t' read -r ln text target; do
+    [ -n "${target:-}" ] || continue
+    case "$text" in $pattern) : ;; *) continue ;; esac
+    target="${target%%#*}"
+    target="${target#"${target%%[![:space:]]*}"}"
+    target="${target%"${target##*[![:space:]]}"}"
+    target="${target#<}"; target="${target%>}"
+    [ -n "$target" ] || continue
+    case "$target" in http://*|https://*|mailto:*|/*) continue ;; esac
+    if [ "$(normalize_path "$dir/$target")" = "$want" ] \
+    || [ "$(normalize_path "$REPO_ROOT/$target")" = "$want" ]; then
+      return 0
+    fi
+  done < <(link_records "$page" "$SWITCHER_WINDOW")
+  return 1
+}
+
+# in_target <file> -> the file belongs to this run's target set
+in_target() { [ -n "${TARGET_SET[$1]:-}" ]; }
+
+# pair_check <chinese page> <english page> <mode>
+pair_check() {
+  local zh="$1" en="$2" mode="$3" armed=0 scope_all=1 ln zh_line en_line
+  [ -f "$zh" ] || [ -f "$en" ] || return 0
+  case "$zh" in "$ZH_TREE"/*) [ -f "$zh" ] && armed=1 ;; esac
+  [ "$mode" = "entry" ] && [ -f "$en" ] && armed=1
+  if [ "$armed" = 0 ] && [ -f "$zh" ] && has_switcher "$zh" 'English' "$en"; then armed=1; fi
+  if [ "$armed" = 0 ] && [ -f "$en" ] && has_switcher "$en" '中文（默认）' "$zh"; then armed=1; fi
+  [ "$armed" = 1 ] || return 0
+  [ "${#ONLY[@]}" -eq 0 ] || scope_all=0
+
+  # --- Chinese-default side ------------------------------------------------
+  if [ "$scope_all" = 1 ] || in_target "$zh"; then
+    if [ ! -f "$zh" ]; then
+      fail "$en" "$(switcher_ln "$en" '中文*')" \
+        "missing language switcher: \`$en\` advertises the Chinese counterpart \`$zh\`, which does not exist" \
+        "create \`$zh\` with \`> **中文（默认）** · [English]($(rel_hint "$zh" "$en"))\` (SPEC V14; 补上切换器行或修正链接目标)"
+    else
+      CHECKS=$((CHECKS + 1))
+      if has_switcher "$zh" 'English' "$en"; then
+        ln=$(switcher_ln "$zh" 'English')
+        zh_line=$(sed -n "${ln}p" "$zh")
+        case "$zh_line" in
+          *中文（默认）*) : ;;
+          *)
+            fail "$zh" "$ln" "missing language switcher: the switcher line for \`$en\` does not carry the frozen \`中文（默认）\` label" \
+              "write \`> **中文（默认）** · [English]($(rel_hint "$zh" "$en"))\` (SPEC V14; GLOSSARY §3.2)"
+            ;;
+        esac
+        if switcher_has_extra "$zh_line" zh; then
+          warn "$zh" "$ln" "switcher line carries extra content; GLOSSARY §3.1 requires the switcher to stand on a line of its own (SPEC V14)"
+        fi
+      else
+        fail "$zh" "1" "missing language switcher: no \`[English](…)\` link to \`$en\` in the first $SWITCHER_WINDOW lines$(fullwidth_hint "$zh")" \
+          "add \`> **中文（默认）** · [English]($(rel_hint "$zh" "$en"))\` (SPEC V14; 补上切换器行或修正链接目标)"
+      fi
+    fi
+  fi
+
+  # --- English side --------------------------------------------------------
+  if [ "$scope_all" = 1 ] || in_target "$en"; then
+    if [ ! -f "$en" ]; then
+      fail "$zh" "1" "missing language switcher: \`$zh\` is the Chinese default but its English counterpart \`$en\` does not exist" \
+        "create \`$en\` from the English original and add \`> [中文（默认）]($(rel_hint "$en" "$zh")) · English\` (SPEC V14; 补上切换器行或修正链接目标)"
+    else
+      CHECKS=$((CHECKS + 1))
+      if has_switcher "$en" '中文（默认）' "$zh"; then
+        ln=$(switcher_ln "$en" '中文（默认）')
+        en_line=$(sed -n "${ln}p" "$en")
+        case "$en_line" in
+          *English*) : ;;
+          *)
+            fail "$en" "$ln" "missing language switcher: the switcher line for \`$zh\` does not end with the frozen \`English\` marker" \
+              "write \`> [中文（默认）]($(rel_hint "$en" "$zh")) · English\` (SPEC V14; GLOSSARY §3.3)"
+            ;;
+        esac
+        if switcher_has_extra "$en_line" en; then
+          warn "$en" "$ln" "switcher line carries extra content; GLOSSARY §3.1 requires the switcher to stand on a line of its own (SPEC V14)"
+        fi
+      else
+        fail "$en" "1" "missing language switcher: no \`[中文（默认）](…)\` link to \`$zh\` in the first $SWITCHER_WINDOW lines$(fullwidth_hint "$en")" \
+          "add \`> [中文（默认）]($(rel_hint "$en" "$zh")) · English\` (SPEC V14; 补上切换器行或修正链接目标)"
+      fi
+    fi
+  fi
+}
+
+# Frozen pair list (ruling A §3): the two default entry points plus the
+# translated bodies. A Chinese page without an English counterpart
+# (zh-CN/GLOSSARY.md, zh-CN/SPEC-guide.md) is exempt; any other zh-CN page is
+# reported so the frozen layout cannot drift silently.
+pair_add "README.md" "README.en.md" "entry"
+pair_add "doc/design/README.md" "doc/design/README.en.md" "entry"
+if [ -d "$ZH_TREE" ]; then
+  while IFS= read -r zf; do
+    base=$(basename "$zf")
+    case "$base" in
+      # GLOSSARY §3.4 / SPEC §7.6: the pairing list is exhaustive — NN = 01-05.
+      0[1-5]-*.md) pair_add "$zf" "doc/design/$base" "tree" ;;
+      GLOSSARY.md|SPEC-guide.md) : ;;
+      # The entry/index duplicate is covered by the advisory NOTE below, not by
+      # this warning (one diagnostic per condition, and it never fails).
+      README.md) : ;;
+      *) warn "$zf" "1" "Chinese page is not in the frozen V14 pair list (doc/design/zh-CN/GLOSSARY.md §2.1/L4); pairing skipped — remove it, or record it in the freeze manifest and the SPEC (SPEC V14/R8)" ;;
+    esac
+  done < <(find "$ZH_TREE" -maxdepth 1 -name '*.md' -type f | sort)
+fi
+
+# =============================================================================
 # Per-document checks
 # =============================================================================
 for doc in "${DOCS[@]}"; do
@@ -549,21 +806,55 @@ for doc in "${DOCS[@]}"; do
   done < <(extract_doc "$doc" | awk -F'\t' '$2=="LINK"{print}')
 done
 
-# V3 completeness: every generated message type must appear in the protocol doc.
-PROTO_DOC=""
-for d in "${DOCS[@]}"; do
-  case "$(basename "$d")" in *protocol*) PROTO_DOC="$d" ;; esac
+# V14: the bilingual switcher, in both directions, for the frozen pair list.
+for p in "${PAIRS[@]}"; do
+  p_zh="${p%%|*}"; p_rest="${p#*|}"; p_en="${p_rest%%|*}"; p_mode="${p_rest##*|}"
+  pair_check "$p_zh" "$p_en" "$p_mode"
 done
-if [ -n "$PROTO_DOC" ] && [ -f "$SIGNALING_TABLE" ]; then
-  for t in "${!GEN_TYPES[@]}"; do
-    CHECKS=$((CHECKS + 1))
-    if ! grep -qF "\`$t\`" "$PROTO_DOC"; then
-      fail "$PROTO_DOC" "1" "generated message type \`$t\` is not mentioned in this protocol document" \
-        "document it or regenerate $SIGNALING_TABLE (SPEC V3)"
-    fi
+
+# V15: the translation disclaimer on every translated page.
+for f in "${DOCS[@]}"; do
+  case "$f" in
+    "$ZH_TREE"/SPEC-guide.md|"$ZH_TREE"/0[1-5]-*.md) : ;;
+    *) continue ;;
+  esac
+  [ -f "$f" ] || continue
+  CHECKS=$((CHECKS + 1))
+  ln=$(head -n "$SWITCHER_WINDOW" -- "$f" | grep -nF -- "$DISCLAIMER" | head -1 | cut -d: -f1)
+  if [ -z "$ln" ]; then
+    fail "$f" "1" "missing translation disclaimer: the first $SWITCHER_WINDOW lines do not state \`$DISCLAIMER\`" \
+      "add \`> $DISCLAIMER\` (SPEC V15)"
+  elif ! sed -n "${ln}p" "$f" | grep -q '^[[:space:]]*>'; then
+    warn "$f" "$ln" "translation disclaimer is not a blockquote line; the frozen template writes it as \`> $DISCLAIMER\` (SPEC V15)"
+  fi
+done
+
+# V3 completeness: every generated message type must appear in every protocol
+# document of this run — the English original and, once it exists, its Chinese
+# translation (protocol type names are never translated). Keeping only the last
+# match would silently drop the English check as soon as zh-CN/05-*.md joins
+# the target set.
+PROTO_DOCS=()
+for d in "${DOCS[@]}"; do
+  [ -f "$d" ] || continue
+  case "$(basename "$d")" in *protocol*) PROTO_DOCS+=("$d") ;; esac
+done
+if [ "${#PROTO_DOCS[@]}" -gt 0 ] && [ -f "$SIGNALING_TABLE" ]; then
+  for pd in "${PROTO_DOCS[@]}"; do
+    pd_fix="document it or regenerate $SIGNALING_TABLE (SPEC V3)"
+    case "$pd" in "$ZH_TREE"/*) pd_fix="add the type name verbatim — protocol type names are not translated (SPEC V3)" ;; esac
+    for t in "${!GEN_TYPES[@]}"; do
+      CHECKS=$((CHECKS + 1))
+      if ! grep -qF "\`$t\`" "$pd"; then
+        fail "$pd" "1" "generated message type \`$t\` is not mentioned in this protocol document" \
+          "$pd_fix"
+      fi
+    done
   done
-elif [ -n "$PROTO_DOC" ]; then
-  warn "$PROTO_DOC" "1" "$SIGNALING_TABLE is missing; V3 skipped (run scripts/gen-doc-tables.sh)"
+elif [ "${#PROTO_DOCS[@]}" -gt 0 ]; then
+  for pd in "${PROTO_DOCS[@]}"; do
+    warn "$pd" "1" "$SIGNALING_TABLE is missing; V3 skipped (run scripts/gen-doc-tables.sh)"
+  done
 fi
 
 # V5: legacy stubs (doc/*.md and doc/adr/*.md), archive mirrors the structure
