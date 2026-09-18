@@ -1,3 +1,5 @@
+> [中文（默认）](zh-CN/05-protocols.md) · English
+
 # 05 — Protocols and interactions
 
 > Status: draft · Owner: writer-signaling · Task: t4

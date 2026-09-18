@@ -1,3 +1,5 @@
+> [中文（默认）](zh-CN/02-architecture.md) · English
+
 # 02 — Architecture
 
 > Status: draft · Owner: architect · Task: t1
@@ -158,9 +160,8 @@ Each plane has one owner document; this table exists so that a reader can jump s
 Every chapter in the map above is landed: each relative link resolves from this directory in a clean checkout,
 so no row is left as plain text and no "planned" marker is needed (`doc/design/SPEC.md` C7).
 
-The repository-root README.md is the planned entry point and is not yet written at authoring time; it is left
-as plain text here on purpose, because a link or a code span naming a file that does not exist fails the
-documentation gate.
+The repository-root README.md is the Chinese-default entry point and README.en.md holds the English original;
+both files are landed, so neither name is left as plain text and no "planned" marker applies to them.
 
 ## 7. Decisions carried from the ADRs
 

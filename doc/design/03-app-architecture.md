@@ -1,3 +1,5 @@
+> [中文（默认）](zh-CN/03-app-architecture.md) · English
+
 # 03 — App architecture
 
 > Status: draft · Owner: writer-app · Task: t3
@@ -371,9 +373,10 @@ References: `app/src/main/kotlin/com/example/webrtcdemo/log/Log.kt:28`,
   used by this document: cite repository sources as bare `path:LINE` against the current HEAD; write host
   absolute paths under an explicit `HOST:` scope with in-repo evidence in the same sentence; write workspace and
   container paths bare (markers such as `WORKSPACE:`/`ARTIFACT:` are retired and now fail); keep commands in
-  backtick-free fenced blocks; and cite an unwritten document as plain text plus `not yet written at authoring
-  time`. Re-run `bash scripts/doc-verify.sh --only docs/03-app-architecture.md docs/06-flows.md` after any
-  change to the script or to this document.
+  backtick-free fenced blocks; and cite an unwritten document as plain text plus
+  `not yet written at authoring time`. Re-run
+  `bash scripts/doc-verify.sh --only docs/03-app-architecture.md docs/06-flows.md`
+  after any change to the script or to this document.
 * **ICE restart was never exercised in the captured sessions.** The restart counters are zero everywhere in the
   seven device captures; the restart path is therefore documented from code and from watchdog/anti-glare log
   evidence, not from a captured restart. This is a coverage limitation, not a code claim.

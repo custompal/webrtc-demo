@@ -1,7 +1,10 @@
 # SPEC — Documentation Standard (frozen)
 
-> Status: **frozen** v1.6.0 (owner: `architect`). Task id: t15 (attempt 1), 2026-09-17.
-> Scope: every file under `doc/design/**` and the repository root `README.md`.
+> Status: **frozen** v1.7.0 (owner: `architect`). Task id: t8 (attempt 1), 2026-09-17.
+> Scope: every file under `doc/design/**` (including the Chinese tree `doc/design/zh-CN/**`) and the two
+> repository-root entry points `README.md` (Chinese default) and `README.en.md` (English original).
+> Language default: the root `README.md`, the index `doc/design/README.md` and `doc/design/zh-CN/**` are
+> Chinese; every other document under `doc/design/**` is English (§2 R12, §6 E1).
 > This document is normative. Writers must not silently deviate: if a rule is wrong, report it to the
 > captain and let the owner (architect) amend this file.
 > Change history: see the changelog at the end of this file; the current revision is listed there with its
@@ -30,6 +33,11 @@ must be written and checked**.
 | Path | Role | May be written by |
 |---|---|---|
 | `doc/design/**` | **Canonical** current documentation (this set) | the assigned writer of each file |
+| `doc/design/zh-CN/**` | **Chinese body pages** — the reader-facing language default; a Chinese page mirrors the English file name (`zh-CN/NN-<name>.md` ↔ `doc/design/NN-<name>.md`) | the assigned translator |
+| `doc/design/README.md` | Document-set index — **Chinese default**; its English original is the `README.en.md` beside it | T5 |
+| root `README.md` | Repository entry point — **Chinese default**; its English original is the `README.en.md` beside it | T5 |
+| `doc/design/zh-CN/GLOSSARY.md` | **Normative Chinese writing standard** for the Chinese tree (layout, switcher, disclaimer, translation rules, terminology) | architect |
+| `SPEC-guide.md` (in the same directory as `doc/design/zh-CN/GLOSSARY.md`) | Chinese guide to this SPEC — **not** a translation of it | T5 |
 | `docs` | **Compatibility symlink** → `doc/design` (relative). Exists only because several task contracts spell paths as `docs/<file>.md` | nobody (link only) |
 | `doc/*.md` | **Legacy stub**, one line each, kept at the original path | nobody |
 | `doc/adr/*.md` | **Legacy ADR stubs**, one line each (ADR-001 … ADR-007) | nobody |
@@ -55,6 +63,18 @@ Rules:
   (`> **Archived 2026-09-17** — superseded by …`); the 7 `doc/adr/*.md` copies are byte-identical to
   `git HEAD:doc/adr/<file>`. Archives are cited as evidence of *history*, never as current guidance.
 * **R5** — Generated files are never hand-edited; the regeneration command is in their header.
+* **R12** — **Language default and naming (frozen, task t8).** The root `README.md`, the document-set index
+  `doc/design/README.md` and every page under `doc/design/zh-CN/**` are Chinese; every other document under
+  `doc/design/**` stays English. A Chinese default page whose English original is a page of this set keeps that
+  original beside it as `README.en.md` (same directory): the repository root has one and the index has one. No
+  other language-suffixed copy exists — `README.zh-CN.md` is not part of this layout. A Chinese body page mirrors
+  the English file name: `doc/design/zh-CN/NN-<name>.md` documents `doc/design/NN-<name>.md`.
+* **R13** — **Language switcher (V14).** Every pair of the frozen pairing list carries a language switcher on a
+  line of its own inside the file's first 8 lines. The exact line format, the pairing list and the exemption list
+  are normative in `doc/design/zh-CN/GLOSSARY.md` §3; §7.6 here fixes how the check is read.
+* **R14** — **Translation disclaimer (V15).** Every Chinese page on the list in `doc/design/zh-CN/GLOSSARY.md` §4
+  carries the verbatim disclaimer line printed there, inside the file's first 8 lines; `doc/design/zh-CN/GLOSSARY.md`
+  is a Chinese original and is exempt.
 
 ### 2.1 JNI contract authority chain (frozen)
 
@@ -225,7 +245,9 @@ Two facts change how build and release documentation must be written:
 ## 3. Terminology (frozen, bilingual)
 
 Use the **English term** in English prose. The Chinese column is a lookup aid for the legacy documents in
-`doc/archive/`; it must not appear in `doc/design/**` prose. This table supersedes
+`doc/archive/`; it must not appear in the prose of an **English page** (a `doc/design/*.md` chapter other than the
+index). The Chinese pages of `doc/design/zh-CN/**` take their fixed translations from
+`doc/design/zh-CN/GLOSSARY.md` §6 instead. This table supersedes
 `doc/archive/04-glossary.md`.
 
 | English term | Chinese (legacy) | Meaning / where it is defined in code |
@@ -340,6 +362,10 @@ Every document in `doc/design/` starts with this block:
 > Doc standard: `doc/design/SPEC.md`
 ```
 
+**Language-switcher offset.** A language switcher line may precede the block above: it must sit inside the file's
+first 8 lines, on a line of its own, and a Chinese page adds the translation disclaimer on the following line
+(`doc/design/zh-CN/GLOSSARY.md` §3.1, §4). The order of the block itself is unchanged.
+
 Then it must contain, in order:
 
 | # | Section | Required content |
@@ -378,8 +404,11 @@ report by section, not as `file:LINE`.
 
 ## 6. English writing standard
 
-* **E1** — All prose under `doc/design/**` and the root `README.md` is English. Quoted legacy text, log lines
-  and code identifiers keep their original form.
+* **E1** — All prose on the **English documents** under `doc/design/**` (this SPEC, the generated tables, the
+  `doc/design/NN-*.md` chapters) and in the English entry point `README.en.md` is English. Quoted legacy text, log
+  lines and code identifiers keep their original form. **Chinese carve-out (task t8):** the Chinese default
+  entry/index (root `README.md`, `doc/design/README.md`) and the whole `doc/design/zh-CN/**` tree are Chinese and
+  exempt from E1; their writing rules are `doc/design/zh-CN/GLOSSARY.md`. This SPEC itself stays English.
 * **E2** — Present tense, active voice, one statement per sentence. State facts, not intentions.
 * **E3** — Numbers carry units (`90 s`, `63 s`, `30 kbps`, `33 472 645 B`). Durations inside code-quoted
   identifiers keep the source spelling (`90s`, `8_000`).
@@ -408,6 +437,8 @@ The checker is the delivery gate. Its rules, in the order it applies them:
 | V11 | **P3 HOST** — absolute path under `opt`, `etc`, `var`, `home`, `root`, `usr`, `srv`, `tmp` is never existence-checked (recorded `UNVERIFIED (host-only path)`), but must be in HOST or DEVICE scope | `unmarked host path` |
 | V12 | **P4 CONTAINER** — absolute path under `/data/dsh/home/workspace/**` exists relative to the real container root | `missing container path` |
 | V13 | **P5 ARTIFACT** — repository-relative path that `git check-ignore` reports as ignored/untracked and that matches `app/build/**`, `**/*.apk`, `jniLibs/**/*.so`, `app/.cxx/**`: existence optional; when absent recorded `UNVERIFIED (build output, gitignored)` and **never a failure** (a warning-level `typo-suspect` diagnostic may accompany it, A10). Writing an `ARTIFACT:` or `scope=artifact` prefix is a **separate failure**: `retired marker` (T5/V8) — the marker is never required and never permitted here | `retired marker` for a written prefix (T5/V8); existence itself never fails |
+| V14 | **Language switcher (i18n; normative text: `doc/design/zh-CN/GLOSSARY.md` §3).** Every pair of the frozen pairing list carries a switcher on a line of its own inside the file's first 8 lines; the Chinese default page marks `中文（默认）` in bold and links to its English counterpart, the English page links to its Chinese counterpart and ends with the word English, and the link target must resolve on disk. Pairing list and exemptions: GLOSSARY §3.4 (S1–S5); reading fixed by §7.6 below | `missing language switcher` |
+| V15 | **Translation disclaimer (i18n; normative text: `doc/design/zh-CN/GLOSSARY.md` §4).** Every Chinese page on the Y-1 list carries, inside the first 8 lines, the verbatim disclaimer line printed in GLOSSARY §4; `doc/design/zh-CN/GLOSSARY.md` and files without an English original are exempt (GLOSSARY §4 Y-4) | `missing translation disclaimer` |
 
 Ambiguity handling (binding for both the checker and the writers):
 
@@ -648,6 +679,33 @@ Mechanism only: the rules are normative in §2.3 (T1–T6), §7.1 (P1–P5) and 
   with the raw exit code. A conclusion quoted without that fingerprint may not be reused and may not be
   restated as a rule; the probes are re-run after any revision change.
 * **Performance.** Subsection citation sets and file line counts are cached; the run is O(lines) per document.
+* **Bilingual checks (V14/V15, task t8).** The i18n extension reads the first 8 lines of each paired file,
+  requires the switcher line to stand alone and its relative link target to resolve, and requires the verbatim
+  disclaimer line on the §4 Y-1 list; failure texts are `missing language switcher` and `missing translation
+  disclaimer`. The normative text is `doc/design/zh-CN/GLOSSARY.md` §3 and §4; no `I1` or `I2` identifier exists —
+  the two checks are numbered V14 and V15.
+
+### 7.6 Bilingual checks V14/V15 (normative text: `doc/design/zh-CN/GLOSSARY.md`)
+
+V14 and V15 implement §2 R13/R14. This subsection fixes how they are read; the byte-exact definitions live in
+`doc/design/zh-CN/GLOSSARY.md`: §3.1 (position — inside the first 8 lines, on a line of its own), §3.2/§3.3 (the
+two switcher lines), §3.4 S1–S5 (the exhaustive pairing list and the exemptions) and §4 Y-1..Y-5 (the disclaimer
+list and its verbatim text).
+
+* **Pairing list (exhaustive).** Root `README.md` ↔ root `README.en.md`; `doc/design/README.md` ↔ the
+  `README.en.md` beside it; `doc/design/zh-CN/NN-<name>.md` ↔ `doc/design/NN-<name>.md` for NN = 01–05.
+* **V14 — language switcher.** A Chinese default page carries a line of the form `> **中文（默认）** · [English]`
+  followed by the parenthesis holding the relative path to the English counterpart; an English page carries
+  `> [中文（默认）]` with the parenthesis holding the relative path to the Chinese counterpart, then ` · English`.
+  GLOSSARY §3.2/§3.3 hold the template and a copy-ready example. **The template there uses full-width parentheses
+  only so that the standard itself passes V4; a real page writes half-width parentheses** — the full-width form
+  renders no link and fails V14.
+* **V15 — translation disclaimer.** The disclaimer list is the Chinese body pages `doc/design/zh-CN/NN-<name>.md`
+  for NN = 01–05 plus the `SPEC-guide.md` beside `doc/design/zh-CN/GLOSSARY.md`; each carries the verbatim line
+  `> 译文：若与英文原文冲突，以英文原文为准。` inside the first 8 lines. `doc/design/zh-CN/GLOSSARY.md` and any
+  file without an English original are exempt.
+* **No extra copies.** `README.zh-CN.md` and a `README.md` inside `doc/design/zh-CN/` are not part of this layout
+  (§2 R12); a checker must not require them.
 
 ## 8. Change control
 
@@ -675,7 +733,9 @@ A documentation task is complete only when all of the following hold:
 
 1. `bash scripts/doc-verify.sh --only <files in scope>` exits `0`.
 2. Every implementation claim in the changed files carries a C1..C6 citation.
-3. The changed files are English (E1) and use the §3 terminology.
+3. Language split: the English documents (`doc/design/NN-*.md`, `doc/design/SPEC.md`, `README.en.md`) are English
+   (E1) and use the §3 terminology; the Chinese default pages (root `README.md`, `doc/design/README.md`) and the
+   `doc/design/zh-CN/**` tree follow `doc/design/zh-CN/GLOSSARY.md` and satisfy V14/V15.
 4. The task output lists the changed paths and the checker's exit code.
 
 The independent verification task (t7, owner `verifier`) re-runs the full `doc-verify.sh` plus manual
@@ -694,3 +754,4 @@ sampling; its verdict is the release criterion for the documentation set.
 | 1.4.0 | 2026-09-17 | **Captain ruling registered (task t11)**: §7 A-rules renumbered and extended so the final vocabulary has规范效力 — **A7** host-path referencing (existence never fails, but a line/fence/section lacking HOST or DEVICE scope **FAILS** `unmarked host path`), **A8** scope notation (tokens `HOST`/`CONTAINER`/`DEVICE`/`REPO`, four equivalent notations — line prefix, line-end comment, fence `scope=`, section comment — precedence line > fenced > section > default, case-insensitive), **A9** path classification P1–P5, **A10** `WARN typo-suspect (gitignored path absent)` for P5 paths that are gitignored but absent (warning only, no exit-code change, per A6); A1 rewritten to the same口径 as A7 (a correctly marked off-repository citation is not a failure; only the missing marker fails); former A8/A9/A10/A11 became **A11/A12** (command ownership and determinacy) and **A13** (current-HEAD line numbers); V8 restated as scope-notation discipline; C7 gained the "planned, not yet written" prose marker for forward references; §8 gained **R11**, whose self-reference exemption covers definition rows, `NEGATIVE EXAMPLE` lines and C7 forward references so the standard does not violate itself |
 | 1.5.0–1.5.3 | 2026-09-17 | **Withdrawn draft, retained only as history.** During a review window this file carried an alternative vocabulary that required explicit path tags instead of the mechanical P1–P5 classification, and that added a warning-level forward-reference rule. The captain withdrew that model on the spot (`reports/55-captain-ruling-path-notation.md` §2). The body of this file no longer contains it: no rule, identifier or example of that draft is authoritative, and no document may rely on one. |
 | 1.6.0 | 2026-09-17 | **Restore of the v1.4.0 vocabulary plus review fixes (task t15).** The body is the v1.4.0 text, so the vocabulary is again: bare paths, mechanical P1–P5 classification, `HOST:`/`DEVICE:` as the only mandatory scope, and the retired markers. Added or repaired: **C9** (cite this SPEC by section, never by line); §7.5 **revision pinning** (a pass/fail statement must carry the checker's `sha256sum` and mtime, and a conclusion without that fingerprint may not be reused); §2.1 row 5 and **J4** now carry in-repo evidence for the vendored binding symbol names, and the J4 wording follows the repository (the symbol names are generated by the vendored jar and held or asserted by in-repo tests); the host-prefix enumerations in the rule text are written without leading slashes; the A11 ownership table marks the host publish script with `HOST:`; citations ported for the NAT enum and its validator, for `ScalingSettings`, and for `FrameDropper` with its field-trial plumbing. **R11** is narrowed to the exemption the checker actually implements: an explicitly `NEGATIVE EXAMPLE` line. |
+| 1.7.0 | 2026-09-17 | **Bilingual layout registered (task t8).** §1 scope extended to the Chinese tree and `README.en.md`; §2 gains the i18n rows and **R12–R14** (language default and mirror naming, switcher duty, disclaimer duty); §3 limits the "Chinese column in prose" rule to the English pages; §5 records the switcher offset (a switcher line may precede the template inside the first 8 lines); **E1** is limited to the English documents and exempts the Chinese default pages and `doc/design/zh-CN/**`, whose writing standard is `doc/design/zh-CN/GLOSSARY.md`; §9 item 3 is split by language; §7 registers **V14/V15** (failure texts `missing language switcher` / `missing translation disclaimer`) and the new §7.6 fixes their reading; §7.5 records the mechanism. No existing rule changes meaning. |

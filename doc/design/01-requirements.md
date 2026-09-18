@@ -1,3 +1,5 @@
+> [中文（默认）](zh-CN/01-requirements.md) · English
+
 # 01 — Requirements
 
 > Status: draft · Owner: architect · Task: t1
