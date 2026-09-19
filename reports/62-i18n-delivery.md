@@ -314,9 +314,19 @@ EOF
 | tmp/check-AD.mjs | 1 485 | 1 | 同上 |
 | tmp/c4-list.txt | 533 | 1 | 配方已内联在 [reports/64](64-followup-requirements.md) §6.2 |
 
-**保留**（t6 记录为未动；2026-09-19 t7 撰写时现场复核，路径以纯文本列出以避免对已清理路径作存在性断言）：`tmp/i18n-audit-probe/`（22 517 618 B / 2 005 文件，**现场存在**；t7 引用原始 `tmp/i18n-audit-probe/out/matrix.txt`、`tmp/i18n-audit-probe/VERIFY-t2.txt` 等；captain 裁定保留，最终处置另行派单）、工作区根 `env.sh` / `env-go.sh` / `env-container.sh`（**现场存在**）、tmp/n1、tmp/n2、tmp/n3、tmp/n4、tmp/n6、tmp/n7 与 tmp/dev-logs-0019、tmp/dev-logs-2232、tmp/dev-logs-2250（**现场存在**）；以及其余无法确认属本轮产物的 tmp 条目（按 [reports/64](64-followup-requirements.md) §7「无法确认一律保留」）。
+**保留**（2026-09-19 t7 撰写时现场复核；路径以纯文本列出，避免对已清理路径作存在性断言）：`tmp/i18n-audit-probe/`（22 517 618 B / 2 005 文件，**现场存在**；t7 引用原始 `tmp/i18n-audit-probe/out/matrix.txt`、`tmp/i18n-audit-probe/VERIFY-t2.txt` 等；captain 裁定保留、最终处置另行派单）、工作区根 `env.sh` / `env-go.sh` / `env-container.sh`（**现场存在**）、tmp/n1、tmp/n2、tmp/n3、tmp/n4、tmp/n6、tmp/n7 与 tmp/dev-logs-0019、tmp/dev-logs-2232、tmp/dev-logs-2250（**现场存在**），以及**非本轮条目**（如 `tmp/t56`、`tmp/t56-libvpx.sh`、`tmp/verifier-recon` 等，按 [reports/64](64-followup-requirements.md) §7「无法确认或非本轮产物一律保留」不动）。**清理完成后本轮在工作区临时根只剩被保留的 `tmp/i18n-audit-probe/`**（`ls tmp | grep '^i18n-'` 仅此一项，t7 现场核对）。
 
-> **差异登记（如实）**：t6 的清理记录把 tmp/t5-verify/（22 552 918 B / 2 051 文件）列为「保留」，但 t7 撰写时现场 `test -d` 该路径**不存在**（`find` 在 `/data/dsh/home/workspace` 下 3 层内无命中）；`HOST: /tmp/c3-iso-clone` 亦已不存在。t5 的冻结基线与签名文件的判据结论已由 [reports/65](65-followup-verification.md) 完整承载，故不影响本轮绑定；差异本身作为 C5 清单与盘面不一致的记录，供 captain/t11 处置。
+> **增补清理（同一可逆方法；取代 t6 主单里「保留 t5-verify」的记录）**：t6 主单之后又执行了一次增补清理，**删除 20 个顶层条目（2 目录 + 18 文件）**：
+>
+> | 条目（纯文本，均已删除） | 大小(B) | 文件数 |
+> |---|---|---|
+> | tmp/t5-verify/ | 22 552 918 | 2 051 |
+> | tmp/t5-legacy/ | 407 886 | 18 |
+> | t5-*.out（t5-audit-{t0,r1,r2,final,final2}.out、t5-gate-{t0,report,report2,report3,report4,final,final2}.out、t5-c3-gate.out、t5-c3-gate-ws.out） | — | 14 |
+> | t5-fp-*.txt（t5-fp-t0.txt、t5-fp-19-detail.txt、t5-fp-19-lines.txt） | — | 3 |
+> | t5-c3-clone.log | 133 | 1 |
+>
+> 因此 t7 现场核对时 tmp/t5-verify/ **不存在**（`test -d` 为假、`find` 3 层内无命中）——这不是「清单与盘面不一致」，而是**增补删除的结果**；`tmp/t5*` 现仅剩非本轮条目 `tmp/t56`、`tmp/t56-libvpx.sh`。工作区外的 HOST: /tmp/c3-iso-clone 属验证后已清理的落点，未列入保留项。t5 的冻结基线与签名文件的判据结论已由 [reports/65](65-followup-verification.md) 完整承载，故**不影响本轮绑定**。
 
 **方法（t6 记录；t7 现场复核可验证部分）**：采用**可逆隔离**——先 mktemp -d 暂存 → mv 移出 → 跑双门禁 → 全绿才 rm；**清理前、隔离中（等价删除后）、删除后三轮**均 gate `EXIT=0`（PASS 3912 checks, 2 warnings）、audit `EXIT=0`（PASS 79 checks, 0 warnings）；`--only` 于 reports/54、62、64、65 全部 `EXIT=0`。
 
