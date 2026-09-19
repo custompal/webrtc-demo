@@ -224,6 +224,7 @@ sha256sum scripts/doc-verify.sh <17 个 i18n 工件> | md5sum   # fff4597c648506
 | GLOSSARY §2–§7 的逐字节不变性 | `unverified`（结构性核验通过） | 未跟踪文件、无 pre-edit 快照；见 §9.2 |
 | t16 改前字节 | `unverified` | 无留档；见 §9.4 |
 | advisory `NOTE` 行数 | 22（本文实测） vs 19（reports/63 §1.3） | 计数口径差异，非门禁结果差异 |
+| `scripts/i18n-audit.sh` 强杀残留空目录 | **已知限制**（本轮**不修**，可选后续修项） | 脚本用 mktemp -d 建临时目录，仅在 EXIT trap 中清理；进程被 SIGKILL 或超时强杀时**不执行 trap** → 残留一个**空目录**（实例：/tmp/i18n-audit.uc8cuy，纯文本路径）。**不影响任何判据**；修脚本会改变 `f93da7d5…` 的登记摘要并触发冻结重签，故按 captain 决定本轮不修、列为可选后续 |
 
 ---
 
@@ -333,6 +334,10 @@ EOF
 **证据完整性（补齐两份额外能力留痕）**：补齐 `tmp/i18n-audit-probe/out/Z2-uniqueness.out` 与 `tmp/i18n-audit-probe/out/Z9-forbidden-copy.out` 时**未重跑** `tmp/i18n-audit-probe/probe.sh`；t6 以 before → after 逐文件 `sha256` 对比证明「除新增两份外其余 20 个证据文件逐字节不变」，并声明**绑定版本 = after 最终捕获、此前预览值作废**。t7 现场复核一致：两份新证据存在（`tmp/i18n-audit-probe/out/Z2-uniqueness.out` = `004e3ed336e397a54bd4e9e6dc65664e76699e46e31acba684179b203aa77996` / 42 行；`tmp/i18n-audit-probe/out/Z9-forbidden-copy.out` = `060d369079a28fa65932f03ecc0937c8b80d3ca4284c28dbbafa7ffd41c6f2c9` / 43 行），`tmp/i18n-audit-probe/probe.sh` 仍 `0f9b246fc9bf616db7a73b466a43f266924c34bb75da6f1ee016cb37b2a2a52c` / 9 573 B、`tmp/i18n-audit-probe/VERIFY-t2.txt` 仍 `44c31185aad23ab59e650aee6e4a6db589f0a75454e51f8803e247fe00d5cf0b`——与补齐前的预览值一致，符合「未重跑 probe.sh」。注：[reports/65](65-followup-verification.md) 在 fenced 代码块内引用了 c3-bare-clone 路径（第 217/416 行），该目录删除后 `--only reports/65` 仍 PASS（fenced 块不计入路径存在性断言）。
 
 **仓库内零改动**：清理前后 `git status --porcelain` 一致；清理前后门禁 `doc-verify.sh` **PASS (3912/2) exit 0**、`i18n-audit.sh` **PASS (79/0) exit 0**；删除后 `--only` reports/54、62、64、65 全部 `EXIT=0`。
+
+> **口径闭环（captain 2026-09-19 裁定，取代按总量计数的旧口径）**：**工作区临时根之外的本轮 /tmp 产物**（HOST: /tmp；2026-09-19 mtime）＝ **doc-tooling 53 个 + translator-a 11 个 + f54.log、f62.log、audit-check.log + 两个空目录**，**不在 t6 的清理范围（t6 = 工作区临时根）内**；按 captain 裁定，**由 captain 在交付收口时按 mtime 统一清理**，**非本轮的 64 个旧文件保留不动**。此前 verifier 报的「66 个文件 / 213 975 B」是总量口径的时点快照，已被本条按成员拆分（并含空目录）的口径取代。
+>
+> 说明：t7 在办期间另在 /tmp 下解出 HEAD 树副本目录（t7-c4-head18/，18 个文件），用于**独立复算 C4 的 18 路径机制自检值**；该目录属**在飞工作**，本报告**不对其清理状态作任何断言**，处置归 captain 的 mtime 清扫。
 
 ### 14.6 治理记录（按事实，不美化）
 
