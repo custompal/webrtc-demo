@@ -325,7 +325,7 @@
 | D-1 | 历史重连文本写 3 s / 3 次；实现使用 1/2/4/8 s ×10 = 63 s | 客户端会在 90 s 宽限期之前放弃并断开通话 |
 | D-2 | 历史文本称旋转已烘焙进 I420 像素；实现只做旋转传递（`app/src/main/cpp/encoder/vp9_encoder.cpp` flag `kBakeRotationInEncoder = false`） | 照文本实现会改变像素方向 |
 | D-3 | coturn 选项是 `fingerprint`，不是 `use-fingerprint`，在 coturn 4.6.1 中如此 | coturn 拒绝启动或静默忽略该选项 |
-| D-4 | 历史文本「旋转已烘焙进 I420」被上游源码已证伪（disproven） | 对采集路径的错误心智模型 |
+| D-4 | 历史文本「旋转已烘焙进 I420」，上游源码已证伪（disproven） | 对采集路径的错误心智模型 |
 | D-5 | 仓库 `deploy/signaling.service` 先前缺少 `-room-grace 90s`，而在线 unit 有 | 从仓库重新部署会静默退回旧的断连行为 |
 | D-6 | 下载面（`parts/`、`SHA256SUMS`、`SOURCE.sha256`、发布脚本）位于主机、仓库之外 | 服务端无法仅凭仓库重建 |
 

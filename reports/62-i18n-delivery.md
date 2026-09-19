@@ -1,10 +1,11 @@
 # 62 — i18n 交付报告：中文文档切换能力（task t18）
 
 > Status: **delivered** · Owner: `i18n-architect` · Task: t18（t12 的替代整合单）, 2026-09-18
-> 冻结绑定：checker `6c62591af17669855638027b28c2f04095c0383b894d50151603f18989b1eb59` + bearing commit `543d94153f982fe93cb6f08bc886b7fdce48505b` + 17 个 i18n 工件终值（见 §7）
+> 冻结绑定：checker `6c62591af17669855638027b28c2f04095c0383b894d50151603f18989b1eb59` + bearing commit `543d94153f982fe93cb6f08bc886b7fdce48505b` + 17 个 i18n 工件终值（见 §7）；后续收尾轮（2026-09-19）的绑定见 §14.1（19 路径联合指纹 `40d9fa70…`）
 > 验证依据：[reports/61-i18n-verification.md](61-i18n-verification.md)（第三轮主报告，229 行 / 22 425 B / `1ed8cd80258768a5a44ca69e9f484e49dc404719b480236e4ec65f954a2e951a`，**承载完整 A1–A7 证据**，verdict = pass）与 [reports/63-i18n-verification.md](63-i18n-verification.md)（t17 **终审记录**，73 行 / 5 130 B / `d3b80c3a65c4312c76a7845d4891ae40e820a3e5d5f09bfc3856716205bf8aca`：verdict、绑定三元组、17 工件摘要、联合指纹、F1–F4 消解、G1 定性、determinism，并指向 `reports/61`；verdict = pass）
-> 冻结清单增补：[reports/54-docs-freeze-manifest.md](54-docs-freeze-manifest.md) §8（本轮 i18n 增补，现场实测）
-> 写作纪律：本文只写可核验事实；所有数值均为 2026-09-18 撰写时的现场实测；不确定处显式标注 `unverified`。
+> 冻结清单增补：[reports/54-docs-freeze-manifest.md](54-docs-freeze-manifest.md) §8（i18n 轮增补）与 §9（后续收尾轮，2026-09-19）
+> 后续收尾轮增补（task t7，2026-09-19）：见 §14 —— C1 SPEC v1.7.1、C2 已交付形态 D′、B3 `scripts/i18n-audit.sh`、C3 裸克隆实测、C4 规范配方与终值、C5 清理记录、治理记录（含 `reports/64` 修订链与 `CAPTAIN RULING`）
+> 写作纪律：本文只写可核验事实；§1–§13 的数值为 2026-09-18 撰写时的现场实测，§14 的数值为 2026-09-19 撰写时的现场实测；不确定处显式标注 `unverified`。
 
 ---
 
@@ -165,19 +166,23 @@
 2. `doc/design/SPEC.md` 第 **723** 行与 changelog 1.4.0 行的 `t11` 指**上一轮文档集项目**的 t11（路径记法裁定），与本轮验证单 t11 重名——属历史事实，非缺陷。
 3. `doc/design/zh-CN/01-requirements.md:328`「…被上游源码已证伪（disproven）」语序偏生硬：机械合规、纯风格（[reports/63](63-i18n-verification.md) §5）。
 
+**后续收尾轮（2026-09-19）处置**：第 1 项**已闭合**——`doc/design/SPEC.md` 升到 **v1.7.1**，§9 第 741 行改为角色式措辞（保留 `owner `verifier``、去掉轮次编号），changelog 增 1.7.1 行；第 3 项**已闭合**——`zh-CN/01:328` 改为已交付形态 **D′**（`| D-4 | 历史文本「旋转已烘焙进 I420」，上游源码已证伪（disproven） | 对采集路径的错误心智模型 |`，连续定译串保留）；第 2 项（`t11` 重名）为历史事实，保留不改。另新增一项：`doc/design/zh-CN/02-architecture.md:194` 的句读偏生硬但合规（形态 A 曾交付后按第 6 版还原指令撤销，captain 裁定接受 HEAD 原文），记为 criteria-vs-applied 观察项（§14.6）。
+
 ---
 
-## 10. 门禁口径：**工作区门禁**而非仓库门禁
+## 10. 门禁口径：**工作区门禁**而非仓库门禁（2026-09-19 重测并取代旧引用）
 
-引用 [reports/60-github-push-runbook.md](60-github-push-runbook.md) §7 的实测（匿名 `git clone --depth 1`，提交 `8ac1a14d…`，不含 submodule）：
+**本轮（后续收尾轮，task t5/t7）已在当前 revision 上重跑裸克隆实验**，取代下文中对 [reports/60-github-push-runbook.md](60-github-push-runbook.md) §7 的转述引用：
 
-```
-bash scripts/doc-verify.sh → FAIL (33 failures, 4 warnings, 2466 checks), exit 1
-```
+| 落点 | 命令 | 实测 | 归类 |
+|---|---|---|---|
+| 工作区内的临时落点（工作区 tmp 下的 c3-bare-clone，`reports/64` §5.1 指定；该克隆目录已于 C5 清理） | `git clone --depth 1 --no-recurse-submodules` + `bash scripts/doc-verify.sh` | **FAIL (4 failures, 5 warnings, 3912 checks)，exit 1** | ② submodule 内部引用 4；① 工作区证据缺失 0；③ env\*.sh 变体 0；④ 其他 0 |
+| 工作区外的落点（HOST: /tmp/c3-iso-clone，落点控制；该目录已清理） | 同上 | **FAIL (39 failures, 5 warnings, 3912 checks)，exit 1** | 去重后 = ② 4 + ③ 33（27 条 env\* P2 + 6 条 `//env*.sh` 引用失败）+「非 env 的 ①」2；④ 0 |
+| 作者工作区（对照） | `bash scripts/doc-verify.sh` | **PASS (3912 checks, 2 warnings)，exit 0** | — |
 
-失败构成：`missing workspace path`（P2）23 条（文档引用了**故意不纳入版本控制**的工作区证据：`tmp/**` 设备日志与 `env*.sh`）+ submodule 内部引用约 4 条 + workspace 根回退后 `env*.sh` 变体约 6 条。同一命令在**作者工作区**内为 `PASS (2466 checks, 2 warnings)` exit 0。
+**机理（实测）**：checker 第 80 行 `WORKSPACE_ROOT=$(cd "$REPO_ROOT/../.." && pwd)` 以「仓库根的上两级」为工作区根。真实仓库位于 `…/workspace/code/webrtc-demo`，上两级 = `…/workspace`；把克隆放在 `…/workspace/tmp/` 时上两级**同样是** `…/workspace`，P2 证据（`env*.sh`、`tmp/**`）恰好存在 → 只剩 4 条 submodule 失败；克隆落到工作区外时上两级退化为 `/` → 29 条 P2 失败并连带 6 条 `//env*.sh` 引用失败。
 
-结论：**门禁只能在作者工作区内全绿**；任何其他检出无法全绿，原因是 P2 证据按设计位于版本控制之外，而不是文档有误。本轮（i18n revision）**未重跑裸克隆实验**——该结论按 `unverified`（对 `6c62591a…` 而言）引用 reports/60 的实测，工作区内的当前实测为 `PASS (3912 checks, 2 warnings)` RAW EXIT=0。
+**结论（必须连同落点敏感性一起引用）**：门禁是**工作区门禁**，任何**裸克隆**（只含 HEAD 提交、不含本轮未提交改动、不含 submodule 内容、不含仓库外 P2 证据）都**无法全绿**；只写「4 条」会误导读者。旧引用（`8ac1a14d…` 上 33/4/2466）**已被取代**，不再是当前判据。逐条失败清单、归类依据与原始输出见 [reports/65-followup-verification.md](65-followup-verification.md) §7 与本报告 §14.3。
 
 ---
 
@@ -186,10 +191,10 @@ bash scripts/doc-verify.sh → FAIL (33 failures, 4 warnings, 2466 checks), exit
 1. 06–11 与 SPEC 正文未翻译（§2，索引标 planned，不计缺陷）。
 2. `doc/design/zh-CN/GLOSSARY.md`（v1.1.1）与 `SPEC-guide.md` 无英文对应物，不参与双向校验。
 3. `GLOSSARY.md` 的「规则未变」缺字节级基线（§9.2）。
-4. verifier 的联合指纹公式未复现（§6），记录为 `unverified`；两侧绑定事实一致。
-5. 裸克隆表现未在本轮 revision 上重测（§10）。
+4. verifier 的联合指纹**生成命令**未复现（§6）——**已由后续收尾轮收窄**：仅 `3bb89149…` 的生成命令不可复现，`fff4597c…` 已复现并解释（§14.4）。
+5. 裸克隆表现未在本轮 revision 上重测（§10）——**已闭合**：本轮在当前 revision 上双重测（工作区内 4 failures / 工作区外 39 failures），见 §10 与 §14.3。
 6. t16 改前字节无留档（§9.4）。
-7. 三项美容项（§9.5）。
+7. 三项美容项（§9.5）——后续收尾轮**闭合两项**（SPEC §9:741 角色式措辞、`zh-CN/01:328` D′），保留 `t11` 重名一项，另新增 `zh-CN/02:194` criteria-vs-applied 观察项（§9.5、§14.6）。
 
 ---
 
@@ -197,11 +202,13 @@ bash scripts/doc-verify.sh → FAIL (33 failures, 4 warnings, 2466 checks), exit
 
 ```bash
 cd code/webrtc-demo
-git rev-parse HEAD                                    # 543d94153f982fe93cb6f08bc886b7fdce48505b
-sha256sum scripts/doc-verify.sh                       # 6c62591a…1eb59
-git show HEAD:scripts/doc-verify.sh | sha256sum        # 6c62591a…1eb59
+git rev-parse HEAD                                    # 2026-09-18 撰写时 = 543d9415…；2026-09-19 收尾轮 = 1b5bb78d31c2d3baf8bcf93ce2170d5ae563a4ae
+sha256sum scripts/doc-verify.sh                       # 6c62591a…1eb59（两个时点相同）
+git show 543d9415…:scripts/doc-verify.sh | sha256sum    # 6c62591a…1eb59（bearing commit 复核）
 bash scripts/doc-verify.sh; echo "EXIT=$?"              # PASS (3912 checks, 2 warnings) / EXIT=0
-sha256sum scripts/doc-verify.sh <17 个 i18n 工件> | md5sum   # fff4597c64850695dd6f47db711f04a8
+bash scripts/i18n-audit.sh; echo "EXIT=$?"              # PASS (79 checks, 0 warnings) / EXIT=0（收尾轮新增）
+sha256sum scripts/doc-verify.sh <17 个 i18n 工件> | md5sum   # fff4597c64850695dd6f47db711f04a8（仅代表 2026-09-18 的改动前树，见 §14.4）
+# C4 规范配方（19 路径）与其终值见 §14.4 / reports/54 §9.7：40d9fa70…
 ```
 
 **路径可达自查（撰写时）**：本文的每一条 markdown 相对链接与每一个被断言存在的仓库相对路径都在磁盘上校验通过；被断言**不存在**的路径（`README.zh-CN.md`、`zh-CN/` 下的 `README.md`）按构造排除在「存在性断言」之外。自查命令与结果记录在任务 t18 的输出中（`--only` 两份报告 + 链接解析循环，0 失败）。
@@ -212,8 +219,142 @@ sha256sum scripts/doc-verify.sh <17 个 i18n 工件> | md5sum   # fff4597c648506
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| verifier 联合指纹 `3bb89149…` 的生成命令 | `unverified` | 三种候选公式均未复现；不影响 failures=0 与 checker 摘要两项绑定事实 |
-| 裸克隆在 `6c62591a…` 上的表现 | `unverified` | 引用 reports/60 在 `8ac1a14d…` 上的实测（33/4）；本轮未重跑 |
+| verifier 联合指纹 `3bb89149…` 的生成命令 | `unverified`（**已收窄**） | 10 种候选公式均未复现（[reports/65](65-followup-verification.md) §8.4）；另一旧值 `fff4597c…` **已复现并解释**（改动前树 18 路径未排序 `sha256sum … \| md5sum` 变体），故 `unverified` 仅剩前者；不影响 failures=0 与 checker 摘要两项绑定事实。见 §14.4 |
+| 裸克隆在 `6c62591a…` 上的表现 | **已闭合**（2026-09-19 现场重测） | 冻结落点 FAIL (4 failures, 5 warnings, 3912 checks) exit 1（② submodule 4）；工作区外落点 FAIL (39/5/3912) exit 1（② 4 + ③ 33 + 非 env ① 2）；工作区对照 PASS (3912/2) exit 0。见 §10、§14.3 |
 | GLOSSARY §2–§7 的逐字节不变性 | `unverified`（结构性核验通过） | 未跟踪文件、无 pre-edit 快照；见 §9.2 |
 | t16 改前字节 | `unverified` | 无留档；见 §9.4 |
 | advisory `NOTE` 行数 | 22（本文实测） vs 19（reports/63 §1.3） | 计数口径差异，非门禁结果差异 |
+
+---
+
+## 14. 后续收尾轮增补（task t7，2026-09-19）
+
+本节把后续收尾轮（C1 C1 SPEC v1.7.1 / C2 句读修订 / B3 审计脚本 / C3 裸克隆 / C4 规范配方 / C5 清理）的现场实测结果整合进本交付报告。所有数值均为 **2026-09-19 撰写时**在容器工作区（`/data/dsh/home/workspace`，仓库 `code/webrtc-demo`）现场实测，不沿用任务 output 或先前报告的转述值。
+
+### 14.1 本轮终值与绑定
+
+| 工件 | sha256（full） | 字节 / 行数 | 备注 |
+|---|---|---|---|
+| `scripts/doc-verify.sh` | `6c62591af17669855638027b28c2f04095c0383b894d50151603f18989b1eb59` | 41 673 / 919 | 未变；`-r--r--r--`（0444）；`git show 543d9415…:scripts/doc-verify.sh \| sha256sum` 现场复核同值 |
+| bearing commit | `543d94153f982fe93cb6f08bc886b7fdce48505b` | — | 未变（仍是承载 checker 的提交） |
+| runtime HEAD（本轮） | `1b5bb78d31c2d3baf8bcf93ce2170d5ae563a4ae` | — | 本轮无提交授权，工作树含未提交改动 |
+| `doc/design/SPEC.md` | `b3368522392205dd02073a8adf472566b58fad8234de96fbf69fcbc801c369e5` | 67 976 / 758 | **v1.7.1**（原 v1.7.0 / `a5724a40…` / 757） |
+| `doc/design/zh-CN/01-requirements.md` | `a4271a402396099f56ca952e6d489100b13027375e884751d89b900644c2c8d5` | 25 754 / 333 | 已交付形态 **D′**（只改第 328 行，`numstat 1 1`） |
+| `doc/design/zh-CN/02-architecture.md` | `716552cd063f0b5ff0d826eb07c24ab8a47937b544a86a775d67ae8ea4975b42` | 15 877 / 219 | **02 相对 HEAD 零差异（中程改动已还原）**，`git diff` 为空 |
+| `scripts/i18n-audit.sh` | `f93da7d5156edad9612740a30b952e5cf11e794eec57c89ec6b2b0d1c29fd82d` | 32 425 / 810 | 新增；`-rwxr-xr-x`（755） |
+| [reports/64](64-followup-requirements.md) | `5c1d96d4baf2e5fdc0b8261e891fbeecb4898f72b96e181132ca13109d1f7823` | 39 703 / 356 | 本轮判据来源；顶部含 captain 直接写入的 `CAPTAIN RULING` 段 |
+| [reports/65](65-followup-verification.md) | `8f7ed1a32e62759d4b736056e003f45558ae01305f5b45c29d21ca9497c34dab` | 35 533 / 439 | t5 独立验证报告，verdict = **pass**（终态后一次 in-scope 措辞修订：`8133aefd…` / 35 491 B → 本值） |
+
+**19 路径联合指纹（C4 规范配方）= `40d9fa70db57add32376157e181b1fe57c8fa250fe7a06253905d5a794adfa55`**（跑前 = 跑后、与输入顺序无关；配方见 §14.4）。登记明细同步写入 [reports/54](54-docs-freeze-manifest.md) **§9**。
+
+### 14.2 B3 审计脚本：检查项、用法与正反例结论
+
+* 身份：`scripts/i18n-audit.sh` = `f93da7d5…` / 810 行 / 32 425 B / mode 755；纯 bash + awk + grep + sed + realpath（无 node/python 依赖，`LC_ALL=C`），自解析仓库根，可从任意 cwd 调用；**不修改也不调用** checker（仅头部注释提及）。
+* 用法：`bash scripts/i18n-audit.sh`（全量，**PASS (79 checks, 0 warnings) / RAW EXIT=0**）、`bash scripts/i18n-audit.sh --only <path>…`（可重复/多路径；目录递归 `*.md`；与门禁 SPEC A5 同口径）、-h 或 --help（打印头部注释）。退出码 **0 = 无 FAIL / 1 = 有 FAIL / 2 = 调用或环境错误**；finding 格式 `file:line → FAIL[Z<id>] problem → fix`，按 Z-id/路径/行号排序，输出逐字节确定。
+* 检查项（9 项，无一条放宽）：**Z1** 配对切换器、**Z2** 逐字译文声明 + 全仓唯一性、**Z3** §6 术语表结构、**Z4** §5.5 状态词全角括号邻接、**Z5** §6.1 窄 denylist + §6 状态词行、**Z6** 引用集合对等/可达/在界、**Z7** code-span 多重集对等、**Z8** 结构计数对等、**Z9** 禁建副本 + 旧式切换器残留。
+* 冻结基线逐格复现：Z2 = 6 文件；Z3 = 74 行 × 4 列；Z4 = 44 命中 / 0 偏离；Z5 = `座位`/`会议室` 0 + 状态词行 2；Z7 = 321/155/289/413/314；Z8 = 7·16·52·0 / 10·4·40·1 / 9·0·40·3 / 9·0·70·1 / 9·0·70·0。
+* **正反例结论**：verifier 自研 **31 次运行（含 17 条负例）** 全部按预期 FAIL 且指向正确 `file:line` 与 Z-id，9 项判据均有 fail 出口、无 skip、无 FAIL→WARN 降级（[reports/65](65-followup-verification.md) §3、§3.3）；doc-tooling 探针矩阵 **13/13 OK**（P0 对照 PASS/exit 0；P1–P9 + P3b + P3c 全部 exit 1 且归因正确），原始留痕 `tmp/i18n-audit-probe/{probe.sh,out/matrix.txt,out/P*.out,VERIFY-t2.txt}`（captain 裁定保留）。典型负例：去掉声明行行首 `> ` → `doc/design/zh-CN/02-architecture.md:1 → FAIL[Z2] … (found 0)` + 全仓 `5 ≠ 6`，exit 1。
+* 关系声明：审计是**补充证据**，不替代门禁（SPEC §9）；两者冲突时以门禁为准并上报。
+
+### 14.3 C3 裸克隆门禁实测（取代 §10 的旧引用）
+
+命令与逐条证据见 [reports/65](65-followup-verification.md) §7（冻结落点：工作区 tmp 下的 c3-bare-clone；落点控制：HOST: /tmp/c3-iso-clone；两处 `CLONE_HEAD = MAIN_HEAD = 1b5bb78d…`；克隆内不含 `scripts/i18n-audit.sh`，`audit-in-clone=1`）：
+
+| 落点 | 实测 | 归类（去重后） |
+|---|---|---|
+| 冻结落点（工作区内 `tmp/`） | **FAIL (4 failures, 5 warnings, 3912 checks)，exit 1** | ② submodule 内部引用 **4**（`08-issues-and-solutions.md:311/314/468` 引用 `third_party/libwebrtc-src/…`；submodule 为 `160000` gitlink，克隆未初始化） |
+| 工作区外落点 | **FAIL (39 failures, 5 warnings, 3912 checks)，exit 1** | ② 4 + ③ 33（27 条 env\* P2 + 6 条 `//env*.sh` 引用失败，见 `07-build-and-deploy.md:23/27/28/90/91/180`）+ 非 env 的 ① 2 |
+| 作者工作区（对照） | **PASS (3912 checks, 2 warnings)，exit 0** | — |
+
+机理：checker 第 80 行 `WORKSPACE_ROOT=$(cd "$REPO_ROOT/../.." && pwd)`；克隆落点决定上两级是否等于真实工作区根，从而决定 P2 证据是否可见。**结论：门禁是工作区门禁，任何裸克隆都无法全绿；引用时必须写明落点敏感性**（只写「4 条」会误导）。旧值（reports/60 §7 在 `8ac1a14d…` 上的 33/4/2466）已取代。
+
+### 14.4 C4 联合指纹规范配方（唯一命令）
+
+```bash
+cd /data/dsh/home/workspace/code/webrtc-demo
+cat <<'EOF' | LC_ALL=C sort | xargs sha256sum | LC_ALL=C sort | sha256sum
+scripts/doc-verify.sh
+README.md
+README.en.md
+doc/design/README.md
+doc/design/README.en.md
+doc/design/SPEC.md
+doc/design/01-requirements.md
+doc/design/02-architecture.md
+doc/design/03-app-architecture.md
+doc/design/04-signaling-service.md
+doc/design/05-protocols.md
+doc/design/zh-CN/GLOSSARY.md
+doc/design/zh-CN/SPEC-guide.md
+doc/design/zh-CN/01-requirements.md
+doc/design/zh-CN/02-architecture.md
+doc/design/zh-CN/03-app-architecture.md
+doc/design/zh-CN/04-signaling-service.md
+doc/design/zh-CN/05-protocols.md
+scripts/i18n-audit.sh
+EOF
+```
+
+* 定义：`sha256(排序后的「sha256(file)␠␠file」行序列)`；输入为**固定 19 个路径**（checker + 17 个 i18n 工件 + 本轮新增审计脚本），**不含 `reports/**`**；两端 `LC_ALL=C sort` ⇒ 与输入顺序无关，且命令自包含（清单写在命令内）。
+* **终值 = `40d9fa70db57add32376157e181b1fe57c8fa250fe7a06253905d5a794adfa55`**（2026-09-19 现场实测；跑前 = 跑后一致；与 [reports/65](65-followup-verification.md) §8.2 一致）。
+* 18 路径机制自检值 = `1bf12697c411ba292c62234d5f6fb826eebe98ed8423277668794382b0a5d901`（不含审计脚本、取自 HEAD 树）；本轮用 `git archive HEAD <18 路径>` 在工作区外**独立复算命中**。
+* 旧值处置（**不篡改历史**）：`3bb8914931742191aab5e7f9e49d3b4f`（[reports/63](63-i18n-verification.md) 记录的旧联合指纹）**生成命令不可复现**——10 种候选公式在同一改动前树上逐一试算均未命中，就地标注「不可复现，已被规范配方取代」，原文保留；`fff4597c64850695dd6f47db711f04a8`（本报告 §6 记录）**已复现并解释**＝同一 HEAD 树、18 路径**未排序** `sha256sum … | md5sum` 变体（本轮独立复算命中）；两者**均不是**规范配方值，规范配方不能也不得据以宣称与旧值一致。
+
+### 14.5 C5 清理记录（task t6，现场实测）
+
+**删除**（仓库外临时产物，合计 **610 249 145 B / 21 552 文件**；下表路径以**纯文本**给出——它们是**已删除**的仓库外产物，本文不对其作存在性断言）：
+
+| 路径 | 大小(B) | 文件数 | 可重建性 |
+|---|---|---|---|
+| tmp/i18n-checker/ | 587 807 703 | 19 565 | 可重建（浅克隆 + 重跑 checker 模拟工作区脚本），无独立价值 |
+| tmp/c3-bare-clone/ | 22 387 924 | 1 982 | 可重建（`git clone --depth 1 --no-recurse-submodules` 一条命令）；测量值已由 [reports/65](65-followup-verification.md) §7 与本报告 §14.3 承载 |
+| tmp/verifier-t5-notes.md | 10 171 | 1 | 内容已进 [reports/65](65-followup-verification.md) |
+| tmp/t1-validate.mjs | 9 099 | 1 | 判据与结论已冻结进 [reports/64](64-followup-requirements.md) §2.6 |
+| tmp/check-A.mjs | 2 230 | 1 | 同上 |
+| tmp/check-AD.mjs | 1 485 | 1 | 同上 |
+| tmp/c4-list.txt | 533 | 1 | 配方已内联在 [reports/64](64-followup-requirements.md) §6.2 |
+
+**保留**（t6 记录为未动；2026-09-19 t7 撰写时现场复核，路径以纯文本列出以避免对已清理路径作存在性断言）：`tmp/i18n-audit-probe/`（22 517 618 B / 2 005 文件，**现场存在**；t7 引用原始 `tmp/i18n-audit-probe/out/matrix.txt`、`tmp/i18n-audit-probe/VERIFY-t2.txt` 等；captain 裁定保留，最终处置另行派单）、工作区根 `env.sh` / `env-go.sh` / `env-container.sh`（**现场存在**）、tmp/n1、tmp/n2、tmp/n3、tmp/n4、tmp/n6、tmp/n7 与 tmp/dev-logs-0019、tmp/dev-logs-2232、tmp/dev-logs-2250（**现场存在**）；以及其余无法确认属本轮产物的 tmp 条目（按 [reports/64](64-followup-requirements.md) §7「无法确认一律保留」）。
+
+> **差异登记（如实）**：t6 的清理记录把 tmp/t5-verify/（22 552 918 B / 2 051 文件）列为「保留」，但 t7 撰写时现场 `test -d` 该路径**不存在**（`find` 在 `/data/dsh/home/workspace` 下 3 层内无命中）；`HOST: /tmp/c3-iso-clone` 亦已不存在。t5 的冻结基线与签名文件的判据结论已由 [reports/65](65-followup-verification.md) 完整承载，故不影响本轮绑定；差异本身作为 C5 清单与盘面不一致的记录，供 captain/t11 处置。
+
+**方法（t6 记录；t7 现场复核可验证部分）**：采用**可逆隔离**——先 mktemp -d 暂存 → mv 移出 → 跑双门禁 → 全绿才 rm；**清理前、隔离中（等价删除后）、删除后三轮**均 gate `EXIT=0`（PASS 3912 checks, 2 warnings）、audit `EXIT=0`（PASS 79 checks, 0 warnings）；`--only` 于 reports/54、62、64、65 全部 `EXIT=0`。
+
+**证据完整性（补齐两份额外能力留痕）**：补齐 `tmp/i18n-audit-probe/out/Z2-uniqueness.out` 与 `tmp/i18n-audit-probe/out/Z9-forbidden-copy.out` 时**未重跑** `tmp/i18n-audit-probe/probe.sh`；t6 以 before → after 逐文件 `sha256` 对比证明「除新增两份外其余 20 个证据文件逐字节不变」，并声明**绑定版本 = after 最终捕获、此前预览值作废**。t7 现场复核一致：两份新证据存在（`tmp/i18n-audit-probe/out/Z2-uniqueness.out` = `004e3ed336e397a54bd4e9e6dc65664e76699e46e31acba684179b203aa77996` / 42 行；`tmp/i18n-audit-probe/out/Z9-forbidden-copy.out` = `060d369079a28fa65932f03ecc0937c8b80d3ca4284c28dbbafa7ffd41c6f2c9` / 43 行），`tmp/i18n-audit-probe/probe.sh` 仍 `0f9b246fc9bf616db7a73b466a43f266924c34bb75da6f1ee016cb37b2a2a52c` / 9 573 B、`tmp/i18n-audit-probe/VERIFY-t2.txt` 仍 `44c31185aad23ab59e650aee6e4a6db589f0a75454e51f8803e247fe00d5cf0b`——与补齐前的预览值一致，符合「未重跑 probe.sh」。注：[reports/65](65-followup-verification.md) 在 fenced 代码块内引用了 c3-bare-clone 路径（第 217/416 行），该目录删除后 `--only reports/65` 仍 PASS（fenced 块不计入路径存在性断言）。
+
+**仓库内零改动**：清理前后 `git status --porcelain` 一致；清理前后门禁 `doc-verify.sh` **PASS (3912/2) exit 0**、`i18n-audit.sh` **PASS (79/0) exit 0**；删除后 `--only` reports/54、62、64、65 全部 `EXIT=0`。
+
+### 14.6 治理记录（按事实，不美化）
+
+1. **判据文件竞态**：本轮判据 `reports/64` 在约 15 分钟内出现 **7 个版本**（`e5e2e116 → 76d97797 → 9db6c582 → 283f3794 → 2cf5704b → 883f8992 → 37904ea7`），最终由 captain 在文件**顶部直接写入 `CAPTAIN RULING` 段**，其效力高于该文件 §0.1/§4.1/§9.3/§9.11 中关于 C2 形态与 t4/t8 处置的一切表述。冲突文本**保留为历史提案、不作更正**。
+2. **C2 的最终盘面（criteria-vs-applied）**：`doc/design/zh-CN/02-architecture.md` 保持 **HEAD 原文**（形态 A 曾在 t4 attempt 2 交付，随后按第 6 版 §0.1/§4.2 的还原指令撤销；captain 接受）；`doc/design/zh-CN/01-requirements.md:328` 保持**已交付形态 D′**（`reports/64` §4.1 的「形态 D」**未采纳**——D 与 D′ 均满足 GLOSSARY §5.5 连续定译串与 §4.4 判定，第三次改写收益为零）。t4 的终态记录（形态 A）与盘面不符，t4/t8 均**不重开、台账不改写**。
+3. **C1**：`doc/design/SPEC.md` v1.7.0 → **v1.7.1**，3 处改动（版本行、§9 第 741 行角色式措辞、changelog 1.7.1 行），`numstat 3 2`；§9 段内已无轮次编号。
+4. **休眠替代链（t9/t10/t11）**：三者均在 t4 以 blocker failed 的窗口内创建，用于替代 t5/t6/t7。t4 随后由 `reports/64` 修订版重开并以 attempt 2 完成（其形态 A 交付后被第 6 版还原指令撤销，captain 接受 02 保持 HEAD 原文），原链 t5/t6/t7 因此恢复为有效链。**t9 在调度器自动派发后由 verifier 依 captain 的显式暂停指令置为 `cancelled`（superseded，理由：其交付物 `reports/65` 已由 t5 完整交付并通过门禁，且其契约文本已过期）；t10（deps t9）与 t11（deps t9/t10）因依赖已 cancelled 而永久不可达，captain 尝试接管作废时被平台拒绝（`blocked by unfinished dependencies`），故三者全程未使用。**
+5. **成员移除**：`translator-b`（上一轮已移除：captain 认定其在冻结窗口内长跑改写 checker）与 `doc-architect`（本轮移除：约 15 分钟内对同一冻结件产出 7 个版本、其第 6 版「必须 `git checkout` 还原 02」的指令直接导致已交付形态 A 被撤销、在 captain 三次终局裁定后仍持续发出冲突指令、对有效链与暂停链持续混淆）。doc-architect 的有效交付保留计入：`reports/64`（含顶部 `CAPTAIN RULING`，现 `5c1d96d4…`）与 `doc/design/SPEC.md` v1.7.1（`b3368522…` / 758 行 / 3 hunk / `numstat 3 2`）。
+6. **§9 台账文本差异**：`t8` 的验收文本仍写「不得改写 `02-architecture.md`（`reports/64` §0.1 明确禁止）」，而实际落点是 t8 只写 01、t4 只写 02，**互不代改**；该冲突为文本层面，按实际执行记录（t8 只改 01，02 由 t4 触碰后还原）。
+7. **`reports/65` 的 in-scope 措辞修订**：t5 终态后 verifier 把 02 的表述改为「相对 HEAD 零差异（中程改动已还原）」，报告身份 `8133aefd…`（35 491 B）→ **`8f7ed1a3…`（35 533 B）**；改后复验 `--only reports/65` PASS 50 checks、全量 PASS (3912/2) exit 0、`i18n-audit.sh` PASS (79/0) exit 0、19 路径指纹仍 `40d9fa70…`、checker 仍 `6c62591a…`。
+
+### 14.7 未受影响的 15 行 — 0 DRIFT
+
+[reports/54](54-docs-freeze-manifest.md) §8.3（去掉本轮改动的 `doc/design/zh-CN/01-requirements.md`）与 §8.4（去掉本轮改动的 `doc/design/SPEC.md`）合计 **15 行**逐行现场重测 `sha256sum` + `wc -c` + `wc -l`，与登记值逐格相等（循环输出 **OK × 15**，任一不等会打印 `DRIFT`）：`doc/design/zh-CN/GLOSSARY.md`、`doc/design/zh-CN/SPEC-guide.md`、`doc/design/zh-CN/02-architecture.md` … `doc/design/zh-CN/05-protocols.md`、`README.en.md`、`doc/design/README.en.md`、`doc/design/01-requirements.md` … `doc/design/05-protocols.md`、`README.md`、`doc/design/README.md`。checker `6c62591a…` 与 bearing commit `543d9415…` 保持不变。
+
+### 14.8 本节复现命令
+
+```bash
+cd /data/dsh/home/workspace/code/webrtc-demo
+git rev-parse HEAD                                     # 1b5bb78d31c2d3baf8bcf93ce2170d5ae563a4ae
+sha256sum scripts/doc-verify.sh scripts/i18n-audit.sh   # 6c62591a…1eb59 / f93da7d5…fd82d
+git show 543d9415…:scripts/doc-verify.sh | sha256sum     # 6c62591a…1eb59
+bash scripts/doc-verify.sh; echo "EXIT=$?"               # PASS (3912 checks, 2 warnings) / EXIT=0
+bash scripts/i18n-audit.sh; echo "EXIT=$?"               # PASS (79 checks, 0 warnings) / EXIT=0
+bash scripts/doc-verify.sh --only reports/54-docs-freeze-manifest.md   # PASS / EXIT=0
+bash scripts/doc-verify.sh --only reports/62-i18n-delivery.md          # PASS / EXIT=0
+# C4：见 §14.4 配方；C3：见 reports/65 §7；15 行 0 DRIFT：逐行 sha256sum + wc -c + wc -l
+```
+
+### 14.9 本轮更新/新增的不确定项
+
+* `3bb89149…` 生成命令：仍 `unverified`（已收窄，见 §13）。
+* 裸克隆表现：**已闭合**（§14.3 现场重测）。
+* 形态 A 撤销后 `zh-CN/02` 的「改前字节」：由 `git diff` 为空（净差异为零）证明，无需字节级快照；`doc/design/zh-CN/**` 未跟踪的既有边界（§9.2）不变。
+* 本轮报告的绑定同 §7/§8.8：任何进一步编辑（含对 01/02/`reports/64`）都会使 §14.1 的登记值失效，须重新现场测量。
