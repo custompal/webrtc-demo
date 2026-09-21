@@ -38,9 +38,9 @@
 #     full-width bracket form) therefore fails V14. Extra content on the
 #     switcher line is reported as a warning (GLOSSARY §3.1). Pairs:
 #     README.md ↔ README.en.md, doc/design/README.md ↔ doc/design/README.en.md,
-#     and doc/design/zh-CN/NN-*.md ↔ doc/design/NN-*.md (NN = 01..05).
+#     and doc/design/zh-CN/NN-*.md ↔ doc/design/NN-*.md (NN = 01..11).
 #   * V15 `missing translation disclaimer` — every translated page on the §4
-#     Y-1 list (doc/design/zh-CN/01-05 and zh-CN/SPEC-guide.md) states
+#     Y-1 list (doc/design/zh-CN/01-11 and zh-CN/SPEC-guide.md) states
 #     `> 译文：若与英文原文冲突，以英文原文为准。` in its first 8 lines;
 #     zh-CN/GLOSSARY.md, root README.md and doc/design/README.md are exempt
 #     (Y-4).
@@ -59,12 +59,27 @@
 #     one writer's gate is not blocked by another writer's unfinished page.
 #
 # Usage
-#   bash scripts/doc-verify.sh [--only <path>]...
+#   bash scripts/doc-verify.sh [--only <path>]... [--repo-mode]
 #
 #   --only <path>   restrict the run to a file or directory (repeatable, and
 #                   accepts several paths after one flag). SPEC A5: the delivery
 #                   gate for a writer task is
 #                   `bash scripts/doc-verify.sh --only <its own files>`.
+#
+#   --repo-mode     repository-only run, for a bare clone / CI runner where the
+#                   surrounding workspace does not exist. It downgrades exactly
+#                   four classes of reference that are unsatisfiable outside the
+#                   workspace — p2-workspace paths, p4-container paths, citations
+#                   under a gitlink (uninitialised submodule) directory, and
+#                   `../`-relative env-script citations — to per-record
+#                   `NOTE <file>:<line> → UNVERIFIED (repo-mode: <class>) ...`
+#                   lines, and prints a machine-readable count summary before
+#                   the verdict. Nothing else changes: every other check, message
+#                   and fix text is byte-identical to the default mode, and the
+#                   checks count is the same. In this mode `exit 0` means "no
+#                   failure outside those four downgraded classes", so a green
+#                   CI run is NOT a green workspace gate — the workspace gate is
+#                   the default mode, run by the author and by verification.
 #
 # Exit code: 0 only when there are no failures (SPEC A6). Findings are printed
 # as `file:line → problem → suggested fix`.
@@ -93,6 +108,69 @@ fail() { printf '%s:%s → %s → %s\n' "$1" "$2" "$3" "$4"; FAILURES=$((FAILURE
 note() { printf 'NOTE %s:%s → %s\n' "$1" "$2" "$3"; }
 warn() { printf 'WARN %s:%s → %s\n' "$1" "$2" "$3"; WARNINGS=$((WARNINGS + 1)); }
 
+# -----------------------------------------------------------------------------
+# --repo-mode (repository-only run; C-1..C-6). The four downgraded classes are
+# decided by reference SHAPE, never by message text or by where a check lands:
+#   P2        a PATH classified p2-workspace whose workspace-root existence fails
+#   P4        a PATH classified p4-container whose existence fails
+#   SUBMODULE a CIT/PATH target under a gitlink directory taken at run time from
+#             `git ls-files -s` (mode 160000) — never a hard-coded directory name
+#   ENVSLASH  a CIT payload shaped `(../)+env[-go|-container].sh:LINE`
+# Default mode never enters these branches, so its stdout stays byte-identical.
+# -----------------------------------------------------------------------------
+REPO_MODE=0
+RM_P2=0
+RM_P4=0
+RM_SUBMODULE=0
+RM_ENVSLASH=0
+GITLINK_DIRS=()
+
+rm_note() { # class file line problem-text
+  note "$2" "$3" "UNVERIFIED (repo-mode: $1) $4"
+  case "$1" in
+    P2) RM_P2=$((RM_P2 + 1)) ;;
+    P4) RM_P4=$((RM_P4 + 1)) ;;
+    SUBMODULE) RM_SUBMODULE=$((RM_SUBMODULE + 1)) ;;
+    ENVSLASH) RM_ENVSLASH=$((RM_ENVSLASH + 1)) ;;
+  esac
+  return 0
+}
+
+is_envslash_payload() { # raw CIT payload path[:linespec] -> 0 when ENVSLASH-shaped
+  local rp=${1%:*}
+  case "$rp" in
+    *env.sh|*env-go.sh|*env-container.sh) : ;;
+    *) return 1 ;;
+  esac
+  # the frozen shape is `(../)+` + env script name; the absolute/`//` display
+  # forms of the same record (workspace collapse, CI runner) are matched too so
+  # the predicate never depends on where the run happens.
+  case "$rp" in
+    ../*|/*) return 0 ;;
+  esac
+  return 1
+}
+
+load_gitlinks() { # read the gitlink (submodule) directories from the index
+  [ "${#GITLINK_DIRS[@]}" -gt 0 ] && return 0
+  local m sha st p
+  while read -r m sha st p; do
+    [ "$m" = "160000" ] || continue
+    [ -n "$p" ] && GITLINK_DIRS+=("$p")
+  done < <(git -C "$REPO_ROOT" ls-files -s 2>/dev/null)
+  return 0
+}
+
+under_gitlink() { # path (absolute / repo-relative) -> 0 when it is inside a gitlink
+  [ "${#GITLINK_DIRS[@]}" -gt 0 ] || return 1
+  local p=$1 d
+  p=${p#"$REPO_ROOT"/}
+  for d in "${GITLINK_DIRS[@]}"; do
+    case "$p" in "$d"/*) return 0 ;; esac
+  done
+  return 1
+}
+
 ONLY=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -101,7 +179,8 @@ while [ $# -gt 0 ]; do
       while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do ONLY+=("$1"); shift; done
       ;;
     --only=*) ONLY+=("${1#--only=}"); shift ;;
-    -h|--help) sed -n '2,73p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    --repo-mode) REPO_MODE=1; shift ;;
+    -h|--help) awk 'NR >= 2 { print; if (NR > 2 && $0 ~ /^# =+$/) exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) printf 'doc-verify.sh: unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
@@ -141,6 +220,10 @@ fi
 # the files it was given).
 declare -A TARGET_SET=()
 for d in "${DOCS[@]}"; do TARGET_SET["$d"]=1; done
+
+# --repo-mode reads the gitlink set only while that mode is active, so a default
+# run never spawns git and its output cannot change.
+if [ "$REPO_MODE" = 1 ]; then load_gitlinks; fi
 
 # =============================================================================
 # Extraction. One pass per document, emitted as tab-separated records
@@ -607,8 +690,8 @@ if [ -d "$ZH_TREE" ]; then
   while IFS= read -r zf; do
     base=$(basename "$zf")
     case "$base" in
-      # GLOSSARY §3.4 / SPEC §7.6: the pairing list is exhaustive — NN = 01-05.
-      0[1-5]-*.md) pair_add "$zf" "doc/design/$base" "tree" ;;
+      # GLOSSARY §3.4 / SPEC §7.6: the pairing list is exhaustive — NN = 01-11.
+      0[1-9]-*.md|1[01]-*.md) pair_add "$zf" "doc/design/$base" "tree" ;;
       GLOSSARY.md|SPEC-guide.md) : ;;
       # The entry/index duplicate is covered by the advisory NOTE below, not by
       # this warning (one diagnostic per condition, and it never fails).
@@ -645,6 +728,16 @@ for doc in "${DOCS[@]}"; do
         fi
         ext_checked "$path" || continue
         if [ ! -e "$path" ]; then
+          if [ "$REPO_MODE" = 1 ]; then
+            if is_envslash_payload "$payload"; then
+              rm_note ENVSLASH "$file" "$line" "cited file does not exist: \`$path\`"
+              continue
+            fi
+            if under_gitlink "$path"; then
+              rm_note SUBMODULE "$file" "$line" "cited file does not exist: \`$path\`"
+              continue
+            fi
+          fi
           fail "$file" "$line" "cited file does not exist: \`$path\`" \
             "fix the path or remove the citation (SPEC V1)"
           continue
@@ -696,8 +789,12 @@ for doc in "${DOCS[@]}"; do
         case "$cls" in
           p4-container)
             if [ ! -e "$payload" ]; then
-              fail "$file" "$line" "missing container path: \`$payload\` (P4 is hard-checked)" \
-                "fix the path (SPEC §7.1 P4)"
+              if [ "$REPO_MODE" = 1 ]; then
+                rm_note P4 "$file" "$line" "missing container path: \`$payload\` (P4 is hard-checked)"
+              else
+                fail "$file" "$line" "missing container path: \`$payload\` (P4 is hard-checked)" \
+                  "fix the path (SPEC §7.1 P4)"
+              fi
             fi
             ;;
           p3-host)
@@ -715,8 +812,12 @@ for doc in "${DOCS[@]}"; do
             rp="$payload"
             while [ "${rp#../}" != "$rp" ]; do rp="${rp#../}"; done
             if [ ! -e "$WORKSPACE_ROOT/$rp" ]; then
-              fail "$file" "$line" "missing workspace path: \`$payload\` (P2 is hard-checked against the workspace root)" \
-                "fix the path (workspace root = $WORKSPACE_ROOT)"
+              if [ "$REPO_MODE" = 1 ]; then
+                rm_note P2 "$file" "$line" "missing workspace path: \`$payload\` (P2 is hard-checked against the workspace root)"
+              else
+                fail "$file" "$line" "missing workspace path: \`$payload\` (P2 is hard-checked against the workspace root)" \
+                  "fix the path (workspace root = $WORKSPACE_ROOT)"
+              fi
             fi
             ;;
           p5-artifact)
@@ -732,8 +833,12 @@ for doc in "${DOCS[@]}"; do
             ;;
           *)
             if [ ! -e "$payload" ]; then
-              fail "$file" "$line" "missing repo path: \`$payload\`" \
-                "fix the path or remove the backticks (SPEC §7.1 P1)"
+              if [ "$REPO_MODE" = 1 ] && under_gitlink "$payload"; then
+                rm_note SUBMODULE "$file" "$line" "missing repo path: \`$payload\`"
+              else
+                fail "$file" "$line" "missing repo path: \`$payload\`" \
+                  "fix the path or remove the backticks (SPEC §7.1 P1)"
+              fi
             fi
             ;;
         esac
@@ -815,7 +920,7 @@ done
 # V15: the translation disclaimer on every translated page.
 for f in "${DOCS[@]}"; do
   case "$f" in
-    "$ZH_TREE"/SPEC-guide.md|"$ZH_TREE"/0[1-5]-*.md) : ;;
+    "$ZH_TREE"/SPEC-guide.md|"$ZH_TREE"/0[1-9]-*.md|"$ZH_TREE"/1[01]-*.md) : ;;
     *) continue ;;
   esac
   [ -f "$f" ] || continue
@@ -909,6 +1014,11 @@ else
 fi
 
 # =============================================================================
+if [ "$REPO_MODE" = 1 ]; then
+  printf 'doc-verify.sh: repo-mode summary (downgraded: P2=%d P4=%d SUBMODULE=%d ENVSLASH=%d; default-mode failures=%d; remaining failures=%d)\n' \
+    "$RM_P2" "$RM_P4" "$RM_SUBMODULE" "$RM_ENVSLASH" \
+    "$((FAILURES + RM_P2 + RM_P4 + RM_SUBMODULE + RM_ENVSLASH))" "$FAILURES"
+fi
 printf '\n'
 if [ "$FAILURES" -eq 0 ]; then
   printf 'doc-verify.sh: PASS (%d checks, %d warnings)\n' "$CHECKS" "$WARNINGS"

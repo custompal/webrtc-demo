@@ -1,3 +1,5 @@
+> [中文（默认）](zh-CN/06-flows.md) · English
+
 # 06 — Key flows
 
 > Status: draft · Owner: writer-app · Task: t3

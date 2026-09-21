@@ -1,3 +1,5 @@
+> [中文（默认）](zh-CN/07-build-and-deploy.md) · English
+
 # 07 — Build and Deploy
 
 > Status: draft · Owner: writer-ops · Task: t5

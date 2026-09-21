@@ -17,12 +17,12 @@
 | Android 应用内部结构 | [03 App 架构（中文）](doc/design/zh-CN/03-app-architecture.md) |
 | 信令服务内部结构 | [04 信令服务（中文）](doc/design/zh-CN/04-signaling-service.md) |
 | 线上协议与 JNI 契约 | [05 协议与交互（中文）](doc/design/zh-CN/05-protocols.md) |
-| 端到端通话流程 | [06-flows.md](doc/design/06-flows.md)（待翻译（planned）） |
-| 构建、部署与发布 | [07-build-and-deploy.md](doc/design/07-build-and-deploy.md)（待翻译（planned）） |
-| 历史缺陷与被否决的改法 | [08-issues-and-solutions.md](doc/design/08-issues-and-solutions.md)（待翻译（planned）） |
-| 哪些已验证、哪些没有 | [09-verification-and-limitations.md](doc/design/09-verification-and-limitations.md)（待翻译（planned）） |
-| 症状对应哪段代码 | [10-code-map.md](doc/design/10-code-map.md)（待翻译（planned）） |
-| 改代码前必读的规范 | [11-coding-standards.md](doc/design/11-coding-standards.md)（待翻译（planned）） |
+| 端到端通话流程 | [06 关键流程（中文）](doc/design/zh-CN/06-flows.md) |
+| 构建、部署与发布 | [07 构建与部署（中文）](doc/design/zh-CN/07-build-and-deploy.md) |
+| 历史缺陷与被否决的改法 | [08 问题与解决（中文）](doc/design/zh-CN/08-issues-and-solutions.md) |
+| 哪些已验证、哪些没有 | [09 验证与限制（中文）](doc/design/zh-CN/09-verification-and-limitations.md) |
+| 症状对应哪段代码 | [10 代码地图（中文）](doc/design/zh-CN/10-code-map.md) |
+| 改代码前必读的规范 | [11 编码规范（中文）](doc/design/zh-CN/11-coding-standards.md) |
 | 这里如何写文档 | [SPEC.md](doc/design/SPEC.md)（英文唯一规范，不翻译）与 [中文导读](doc/design/zh-CN/SPEC-guide.md) |
 
 ## 2. 生成的参考表
@@ -31,15 +31,15 @@
 
 ## 3. 构建与部署
 
-构建配方、它自己的门禁、发布链与仅主机侧的发布步骤记录在 [07-build-and-deploy.md](doc/design/07-build-and-deploy.md)（待翻译（planned））。应用构建由 `scripts/build_app.sh` 驱动。
+构建配方、它自己的门禁、发布链与仅主机侧的发布步骤记录在 [07 构建与部署（中文）](doc/design/zh-CN/07-build-and-deploy.md)。应用构建由 `scripts/build_app.sh` 驱动。
 
 ## 4. 编码规范
 
-语言约定、改动安全清单与文档门禁在 [11-coding-standards.md](doc/design/11-coding-standards.md)（待翻译（planned））。
+语言约定、改动安全清单与文档门禁在 [11 编码规范（中文）](doc/design/zh-CN/11-coding-standards.md)。
 
 ## 5. 验证
 
-验证矩阵、已知限制与复测方法在 [09-verification-and-limitations.md](doc/design/09-verification-and-limitations.md)（待翻译（planned））。文档门禁本身是 `bash scripts/doc-verify.sh`，文档改动被接受之前它必须报告零 failures。冻结的门禁修订与冻结工件集记录在 [reports/54-docs-freeze-manifest.md](reports/54-docs-freeze-manifest.md)。
+验证矩阵、已知限制与复测方法在 [09 验证与限制（中文）](doc/design/zh-CN/09-verification-and-limitations.md)。文档门禁本身是 `bash scripts/doc-verify.sh`，文档改动被接受之前它必须报告零 failures。冻结的门禁修订与冻结工件集记录在 [reports/54-docs-freeze-manifest.md](reports/54-docs-freeze-manifest.md)。
 
 ## 6. 文档索引与历史材料
 

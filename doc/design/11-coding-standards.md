@@ -1,3 +1,5 @@
+> [中文（默认）](zh-CN/11-coding-standards.md) · English
+
 # 11 — Coding Standards and Change Safety
 
 > Status: draft · Owner: writer-ops · Task: t9

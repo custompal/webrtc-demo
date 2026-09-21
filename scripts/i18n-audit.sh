@@ -8,13 +8,21 @@
 # that reports/61-i18n-verification.md §2–§3 performed by hand. When the two
 # disagree, the gate wins and the divergence is reported to the captain.
 #
-# Frozen criteria (reports/64-followup-requirements.md §2, T1):
+# Frozen criteria (reports/64-followup-requirements.md §2 T1; pair/declaration
+# enumeration extended to NN = 01–11 by reports/66-followup2-requirements.md
+# §3.4.3, with the existence-armed counting rule ruled by the captain
+# (message b1c180c8-f28f-41b4-8987-5ea7bda15dcd, restated in
+# cd5f2e73-e0cd-436d-9895-2360d836f7b2):
 #   Z1 PAIR          bilingual switcher, both directions, exact frozen shape,
 #                    half-width parentheses, target resolves to the counterpart
-#   Z2 DISCLAIMER    the verbatim translation disclaimer in the 6 Y-1 files,
-#                    exactly once in the first 8 lines, and exactly 6 non-fenced
-#                    whole-line occurrences repo-wide
-#   Z3 TERMS-TABLE   GLOSSARY §6 is 74 data rows x 4 non-empty cells, # = 1..74
+#   Z2 DISCLAIMER    the verbatim translation disclaimer in every §4 Y-1 file
+#                    that exists on disk: exactly once in the first 8 lines, and
+#                    one non-fenced whole-line occurrence per existing Y-1 page
+#                    repo-wide (expected count = |Y-1 ∩ disk|; 12 once all 12
+#                    registered pages exist). Existence-armed per reports/66
+#                    §3.4.3 + captain ruling: pages that are not on disk yet are
+#                    not reported as failures
+#   Z3 TERMS-TABLE   GLOSSARY §6 is 98 data rows x 4 non-empty cells, # = 1..98
 #   Z4 TERMS-STATUS  GLOSSARY §5.5 status words: the English original inside
 #                    full-width parentheses is preceded by its frozen Chinese
 #                    translation (0 deviations; baseline 44 hits over the whole
@@ -24,32 +32,65 @@
 #                    fail; occurrences inside inline code spans are exempt,
 #                    because there they are code content (e.g. the code span
 #                    `unverified (host script)` in zh-CN/01-requirements.md)
-#   Z5 TERMS-DENY    §6.1 narrow denylist: 座位 / 会议室 absent from the 6
+#   Z5 TERMS-DENY    §6.1 narrow denylist: 座位 / 会议室 absent from the 12
 #                    translated pages; §6 rows whose 首现说明 says 状态词 take
 #                    their 中文定译 from the §5.5 frozen forms
-#   Z6 CITATIONS     5 body pairs: deduplicated `path:LINE` / `path:L1-L2`
+#   Z6 CITATIONS     11 body pairs: deduplicated `path:LINE` / `path:L1-L2`
 #                    citation sets are equal, every target exists, every line
 #                    (or range endpoint) is inside the target file
-#   Z7 CODESPAN      5 body pairs: inline code-span MULTISETS are equal
-#   Z8 STRUCTURE     5 body pairs: h2 / h3 / table data rows / fenced code
+#   Z7 CODESPAN      11 body pairs: inline code-span MULTISETS are equal
+#   Z8 STRUCTURE     11 body pairs: h2 / h3 / table data rows / fenced code
 #                    blocks are equal
 #   Z9 LAYOUT        no language-suffixed copy of an entry/index page; no
 #                    legacy `语言 / Language:` switcher left in the doc set
 #
-# Normative sources: doc/design/SPEC.md §7.5/§7.6/§9, GLOSSARY.md v1.1.1
-# §3/§4/§5.3/§5.4/§5.5/§6/§6.1, reports/61 §2–§3, reports/64 §2.
+# Existence-armed enumeration (reports/66 §3.4.3 + captain rulings b1 and b2):
+# Z1, Z2 and the Z6/Z7/Z8 pair set are registered for the full frozen 13-pair
+# (2 entry + 11 body) and 12 Y-1 list (NN = 01–11), but a registered pair is
+# judged only once it is armed. Arming (the audit-side mirror of the gate's V14
+# `has_switcher` rule) is: the Chinese page exists under doc/design/zh-CN/, or
+# either side already carries its frozen switcher line, or — for the two entry
+# pairs only — the English side exists. An armed pair whose counterpart is
+# absent is a FAIL[Z1]. A registered pair that is not armed is skipped and
+# reported only in the Z1 NOTE line; the delivery state must leave no
+# registered pair unarmed (armed pairs = 13, armed body pairs = 11, skipped =
+# 0). Z2's expected count is |Y-1 ∩ disk|, which equals 12 once every
+# registered page exists. This keeps full gate strength for every page that
+# exists while a partially landed 01–11 set is never reported as a failure for
+# pages that do not exist yet.
+#
+# Normative sources: doc/design/SPEC.md §7.5/§7.6/§9, GLOSSARY.md v1.1.1+
+# §3/§4/§5.3/§5.4/§5.5/§6/§6.1, reports/61 §2–§3, reports/64 §2, reports/66
+# §3.4.3.
 #
 # Usage
 #   bash scripts/i18n-audit.sh                    # full audit
 #   bash scripts/i18n-audit.sh --only <path>      # only the given file's own
 #                                                 # obligations (repeatable, and
 #                                                 # several paths after one flag)
+#   bash scripts/i18n-audit.sh --repo-mode        # repository-only audit (CI /
+#                                                 # bare clone); see below
 #   bash scripts/i18n-audit.sh -h | --help        # print this header, exit 0
+#
+# `--repo-mode` is the audit-side mirror of the gate's flag of the same name
+# (captain governance item 11). A faithful bare clone has no surrounding
+# workspace, so Z6 cannot satisfy the reference classes that depend on it. In
+# this mode exactly those classes are downgraded to per-record, class-tagged
+# NOTEs plus a machine-readable summary line, and `exit 0` then means "no
+# failure outside those classes". The class set is the gate's four class names
+# with the gate's own predicates: P2 (a citation payload of the gate's
+# p2-workspace shape — `../`-prefix, `tmp/`-prefix, or an env-script basename —
+# whose WORKSPACE_ROOT target is missing), ENVSLASH (`(../)+env[-go|-container]
+# .sh:LINE`), SUBMODULE (target under a gitlink directory read at run time from
+# `git ls-files -s`), P4 (target inside the container root). Nothing else is
+# downgraded: in both modes a genuinely missing in-repo path, an out-of-bounds
+# line, a missing switcher, a missing disclaimer, a Z7 code-span mismatch and a
+# Z8 structure mismatch all stay FAIL.
 #
 # `--only` follows the gate's SPEC A5 reading (reports/64 §2.3): a file answers
 # only for its own obligations. Pair-equality checks (Z6/Z7/Z8) still READ the
 # counterpart, but a failure is attributed to the listed file. Per file:
-#   * zh body page 01–05 : Z1 (own switcher), Z2, Z4, Z5(a), Z6/Z7/Z8 of its pair
+#   * zh body page 01–11 : Z1 (own switcher), Z2, Z4, Z5(a), Z6/Z7/Z8 of its pair
 #   * zh-CN/SPEC-guide.md: Z2, Z5(a)      (Z1 exempt per GLOSSARY §3.4 S4)
 #   * zh-CN/GLOSSARY.md  : Z3, Z4         (Z1/Z2 exempt; §2.3)
 #   * the two READMEs and the EN pages: Z1 (own switcher), their pair's
@@ -71,7 +112,14 @@
 # across runs on the same tree.
 #
 # Reads only: never writes inside the repository, never runs Gradle, never
-# commits. Temporary files live under mktemp -d and are removed on exit.
+# commits. Temporary files live under mktemp -d and are removed on EXIT and on
+# INT/TERM/HUP (cleanup is re-entrant, so a signal trap followed by the EXIT
+# trap is safe). SIGKILL (9) is NOT catchable and no trap can cover it: a
+# `kill -9`, an OOM kill, or a `timeout --kill-after` fallback still leaves the
+# i18n-audit.XXXXXX directory behind (empty only if the kill lands in the short
+# window before the first record is written). That is an irreducible known
+# boundary — this script does not claim to leave nothing behind under all
+# circumstances.
 # ==== end of header ====
 set -uo pipefail
 
@@ -81,14 +129,22 @@ export LC_ALL
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$REPO_ROOT"
 
+# The gate resolves workspace-root references against WORKSPACE_ROOT
+# (doc-verify.sh line 80); Z6 must use the same root or the two scripts
+# disagree on the same citation (captain revision b2).
+WORKSPACE_ROOT=$(cd "$REPO_ROOT/../.." && pwd)
+
 ZH_TREE="doc/design/zh-CN"
 GLOSSARY="$ZH_TREE/GLOSSARY.md"
 SPEC_GUIDE="$ZH_TREE/SPEC-guide.md"
 SWITCHER_WINDOW=8
 DISCLAIMER='> 译文：若与英文原文冲突，以英文原文为准。'
 
-# The 7 frozen pairs (reports/64 §2.2). Indexes 0..1 are the entry/index pairs,
-# 2..6 are the five body pairs that Z6/Z7/Z8 cover.
+# The 13 frozen pairs (reports/64 §2.2, extended to NN = 01–11 by reports/66
+# §3.4.3). Indexes 0..1 are the entry/index pairs, 2..12 are the eleven body
+# pairs that Z6/Z7/Z8 cover. Z1/Z6/Z7/Z8 are existence-armed (see the header):
+# arming follows the V14 has_switcher rule, and an armed pair whose counterpart
+# is absent is a FAIL[Z1]; an unarmed registered pair is skipped.
 PAIR_ZH=(
   "README.md"
   "doc/design/README.md"
@@ -97,6 +153,12 @@ PAIR_ZH=(
   "doc/design/zh-CN/03-app-architecture.md"
   "doc/design/zh-CN/04-signaling-service.md"
   "doc/design/zh-CN/05-protocols.md"
+  "doc/design/zh-CN/06-flows.md"
+  "doc/design/zh-CN/07-build-and-deploy.md"
+  "doc/design/zh-CN/08-issues-and-solutions.md"
+  "doc/design/zh-CN/09-verification-and-limitations.md"
+  "doc/design/zh-CN/10-code-map.md"
+  "doc/design/zh-CN/11-coding-standards.md"
 )
 PAIR_EN=(
   "README.en.md"
@@ -106,14 +168,26 @@ PAIR_EN=(
   "doc/design/03-app-architecture.md"
   "doc/design/04-signaling-service.md"
   "doc/design/05-protocols.md"
+  "doc/design/06-flows.md"
+  "doc/design/07-build-and-deploy.md"
+  "doc/design/08-issues-and-solutions.md"
+  "doc/design/09-verification-and-limitations.md"
+  "doc/design/10-code-map.md"
+  "doc/design/11-coding-standards.md"
 )
-BODY_PAIRS=(2 3 4 5 6)
+BODY_PAIRS=(2 3 4 5 6 7 8 9 10 11 12)
 Y1=(
   "doc/design/zh-CN/01-requirements.md"
   "doc/design/zh-CN/02-architecture.md"
   "doc/design/zh-CN/03-app-architecture.md"
   "doc/design/zh-CN/04-signaling-service.md"
   "doc/design/zh-CN/05-protocols.md"
+  "doc/design/zh-CN/06-flows.md"
+  "doc/design/zh-CN/07-build-and-deploy.md"
+  "doc/design/zh-CN/08-issues-and-solutions.md"
+  "doc/design/zh-CN/09-verification-and-limitations.md"
+  "doc/design/zh-CN/10-code-map.md"
+  "doc/design/zh-CN/11-coding-standards.md"
   "doc/design/zh-CN/SPEC-guide.md"
 )
 FORBIDDEN_COPIES=("README.zh-CN.md" "$ZH_TREE/README.md")
@@ -126,6 +200,7 @@ usage() { sed -n '2,/^# ==== end of header ====$/p' "${BASH_SOURCE[0]}"; }
 # Arguments
 # -----------------------------------------------------------------------------
 ONLY=()
+REPO_MODE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --only)
@@ -133,6 +208,7 @@ while [ $# -gt 0 ]; do
       while [ $# -gt 0 ] && [ "${1#--}" = "$1" ]; do ONLY+=("$1"); shift; done
       ;;
     --only=*) ONLY+=("${1#--only=}"); shift ;;
+    --repo-mode) REPO_MODE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'i18n-audit.sh: unknown argument: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -147,7 +223,88 @@ AUDIT_TMP=$(mktemp -d "${TMPDIR:-/tmp}/i18n-audit.XXXXXX") || {
   printf 'i18n-audit.sh: cannot create a temporary directory\n' >&2
   exit 2
 }
-trap 'rm -rf "$AUDIT_TMP"' EXIT
+# Cleanup covers all four catchable exits: EXIT plus INT/TERM/HUP. Each signal
+# exit is 128+signum (INT=130, TERM=143, HUP=129) so a killed CI run can never
+# be mistaken for a pass. cleanup() is idempotent and re-entrant: the signal
+# trap runs it and then `exit`, which fires the EXIT trap again; the empty-value
+# guard keeps `rm -rf` off an empty string, and the trailing assignment leaves
+# the function status 0 even when the directory is already gone, so the exit
+# code is never polluted. SIGKILL is uncatchable and stays an open boundary
+# (see the header).
+cleanup() { [ -n "${AUDIT_TMP:-}" ] && rm -rf -- "$AUDIT_TMP"; AUDIT_TMP=""; }
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 129' HUP
+
+# -----------------------------------------------------------------------------
+# --repo-mode (audit-side mirror of the gate's repository-only mode; captain
+# governance item 11). Only Z6's citation-existence failures can be attributed
+# to a missing surrounding workspace, so only they consult this block. The class
+# names and predicates are the gate's; default mode never enters here, so its
+# product surface stays byte-identical.
+# -----------------------------------------------------------------------------
+CONTAINER_ROOT="/data/dsh/home/workspace"
+RM_P2=0
+RM_P4=0
+RM_SUBMODULE=0
+RM_ENVSLASH=0
+GITLINK_DIRS=()
+
+rm_note() { # class file line problem-text
+  note "$2" "$3" "UNVERIFIED (repo-mode: $1) $4"
+  case "$1" in
+    P2) RM_P2=$((RM_P2 + 1)) ;;
+    P4) RM_P4=$((RM_P4 + 1)) ;;
+    SUBMODULE) RM_SUBMODULE=$((RM_SUBMODULE + 1)) ;;
+    ENVSLASH) RM_ENVSLASH=$((RM_ENVSLASH + 1)) ;;
+  esac
+  return 0
+}
+
+is_envslash_payload() { # raw CIT payload path[:linespec] -> 0 when ENVSLASH-shaped
+  local rp=${1%:*}
+  case "$rp" in
+    *env.sh|*env-go.sh|*env-container.sh) : ;;
+    *) return 1 ;;
+  esac
+  case "$rp" in
+    ../*|/*) return 0 ;;
+  esac
+  return 1
+}
+
+load_gitlinks() { # gitlink (submodule) directories, read from the index
+  [ "${#GITLINK_DIRS[@]}" -gt 0 ] && return 0
+  local m sha st p
+  while read -r m sha st p; do
+    [ "$m" = "160000" ] || continue
+    [ -n "$p" ] && GITLINK_DIRS+=("$p")
+  done < <(git -C "$REPO_ROOT" ls-files -s 2>/dev/null)
+  return 0
+}
+
+under_gitlink() { # path -> 0 when it lies inside a gitlink directory
+  [ "${#GITLINK_DIRS[@]}" -gt 0 ] || return 1
+  local p=${1#"$REPO_ROOT"/} d
+  for d in "${GITLINK_DIRS[@]}"; do
+    case "$p" in "$d"/*) return 0 ;; esac
+  done
+  return 1
+}
+
+audit_repo_class() { # raw citation path -> the gate's class name, or empty
+  local p=$1
+  if is_envslash_payload "$p"; then printf 'ENVSLASH'; return 0; fi
+  if under_gitlink "$p"; then printf 'SUBMODULE'; return 0; fi
+  case "$p" in
+    "$CONTAINER_ROOT"/*) printf 'P4'; return 0 ;;
+  esac
+  if is_p2_payload "$p"; then printf 'P2'; return 0; fi
+  printf ''
+}
+
+if [ "$REPO_MODE" = 1 ]; then load_gitlinks; fi
 
 # -----------------------------------------------------------------------------
 # Output buffering: every record is sorted at the end so the whole run is
@@ -181,6 +338,21 @@ in_list() { # needle, then list
   shift
   for x in "$@"; do [ "$x" = "$n" ] && return 0; done
   return 1
+}
+
+# switcher_count <file> <side> -> number of frozen switcher lines among the first
+# SWITCHER_WINDOW lines. Used only to decide whether a pair is armed: this is the
+# audit-side mirror of the checker's `has_switcher` arming rule (doc-verify.sh
+# V14: a pair is judged as soon as one side carries an i18n marker).
+switcher_count() { # file side(zh|en)
+  local file=$1 side=$2 re
+  [ -f "$file" ] || { printf '0'; return 0; }
+  if [ "$side" = zh ]; then
+    re='^> \*\*中文（默认）\*\* · \[English\]\([^()]+\)$'
+  else
+    re='^> \[中文（默认）\]\([^()]+\) · English$'
+  fi
+  count_lines "$(head -n "$SWITCHER_WINDOW" -- "$file" | grep -E -- "$re" || true)"
 }
 
 # -----------------------------------------------------------------------------
@@ -301,8 +473,13 @@ z2_global() { # full mode only
       if (infence) next
       if ($0 == target) print FILENAME ":" FNR
     }' > "$AUDIT_TMP/z2.hits"
-  local total f ln
+  local total expected f ln n
   total=$(count_lines "$(cat "$AUDIT_TMP/z2.hits")")
+  # Existence-armed expectation (reports/66 §3.4.3 + captain ruling): the count
+  # is taken over the §4 Y-1 pages that exist on disk, so a partially landed
+  # NN = 01–11 set is never reported as a failure for pages not on disk yet.
+  expected=0
+  for f in "${Y1[@]}"; do [ -f "$f" ] && expected=$((expected + 1)); done
   while IFS= read -r hit; do
     [ -z "$hit" ] && continue
     f=${hit%:*}
@@ -312,9 +489,19 @@ z2_global() { # full mode only
       fail Z2 "$f" "$ln" "translation disclaimer appears outside the §4 Y-1 list → remove it (Y-4 exemption) or register the file as a translated page"
     fi
   done < "$AUDIT_TMP/z2.hits"
-  if [ "$total" != 6 ]; then
-    fail Z2 "$GLOSSARY" 1 "the verbatim disclaimer occurs $total times outside fenced code blocks, expected 6 (one per §4 Y-1 file) → keep exactly one occurrence per Y-1 file"
+  # Every existing Y-1 page must contribute exactly one non-fenced whole-line
+  # occurrence; pages that are not on disk are skipped, not failed.
+  for f in "${Y1[@]}"; do
+    [ -f "$f" ] || continue
+    n=$(awk -F: -v p="./$f" '$1 == p { c++ } END { print c + 0 }' "$AUDIT_TMP/z2.hits")
+    if [ "$n" != 1 ]; then
+      fail Z2 "$f" 1 "the verbatim disclaimer occurs $n times outside fenced code blocks in this existing §4 Y-1 file, expected exactly 1 → keep exactly one occurrence per existing Y-1 page"
+    fi
+  done
+  if [ "$total" != "$expected" ]; then
+    fail Z2 "$GLOSSARY" 1 "the verbatim disclaimer occurs $total times outside fenced code blocks, expected $expected (one per §4 Y-1 file that exists on disk; $expected of ${#Y1[@]} registered) → keep exactly one occurrence per existing Y-1 file"
   fi
+  note "scripts/i18n-audit.sh" 1 "Z2: disclaimer occurrences = $total, expected = $expected (= |Y-1 ∩ disk| of ${#Y1[@]} registered Y-1 pages)"
 }
 
 # =============================================================================
@@ -347,8 +534,8 @@ z3_check() {
   ' "$GLOSSARY" > "$AUDIT_TMP/z3.out"
   local rows
   rows=$(awk -F'\t' '$1 == "ROWS" { print $2 }' "$AUDIT_TMP/z3.out")
-  if [ "$rows" != 74 ]; then
-    fail Z3 "$GLOSSARY" 1 "§6 table has $rows data rows, expected 74 → restore the frozen 74-row terms table (GLOSSARY §6)"
+  if [ "$rows" != 98 ]; then
+    fail Z3 "$GLOSSARY" 1 "§6 table has $rows data rows, expected 98 → restore the frozen 98-row terms table (GLOSSARY §6)"
   fi
   local line n
   while IFS=$'\t' read -r kind l a b; do
@@ -357,7 +544,7 @@ z3_check() {
         fail Z3 "$GLOSSARY" "$l" "§6 row has $a non-empty cells, expected 4 (#, 英文原词, 中文定译, 首现说明与边界) → restore the frozen row shape"
         ;;
       IDX)
-        fail Z3 "$GLOSSARY" "$l" "§6 row number column is $a, expected $b (1..74 in order) → renumber the row"
+        fail Z3 "$GLOSSARY" "$l" "§6 row number column is $a, expected $b (1..98 in order) → renumber the row"
         ;;
     esac
   done < "$AUDIT_TMP/z3.out"
@@ -438,7 +625,7 @@ z4_check() { # file
 # =============================================================================
 # Z5 — §6.1 narrow denylist and §6 status-word rows
 # =============================================================================
-z5_deny() { # file (one of the 6 translated pages)
+z5_deny() { # file (one of the 12 translated pages)
   CHECKS=$((CHECKS + 1))
   awk -v file="$1" '
     index($0, "NEGATIVE EXAMPLE") > 0 { next }
@@ -535,6 +722,27 @@ extract_spans() { # file -> span <TAB> file <TAB> line
 
 file_lines() { awk 'END { print NR + 0 }' "$1"; }
 
+# is_p2_payload <raw citation path> -> 0 when the gate's P2 classification
+# applies. The gate's class pattern is `../*|tmp/*|*env.sh|*env-container.sh|
+# *env-go.sh` (doc-verify.sh §P2); Z6 mirrors it literally so the two scripts
+# classify the same payload the same way (captain revision b2).
+is_p2_payload() {
+  case "$1" in
+    ../*|tmp/*|*env.sh|*env-container.sh|*env-go.sh) return 0 ;;
+  esac
+  return 1
+}
+
+# p2_target_path <raw P2 path> -> "$WORKSPACE_ROOT/<path with every leading
+# ../ stripped>", exactly the gate's p2-workspace resolution. The caller still
+# requires the result to exist, so a missing P2 target stays a FAIL[Z6]; no
+# branch turns "not found" into a pass.
+p2_target_path() {
+  local rp=$1
+  while [ "${rp#../}" != "$rp" ]; do rp=${rp#../}; done
+  printf '%s/%s' "$WORKSPACE_ROOT" "$rp"
+}
+
 norm_cite() { # file raw -> "repo-relative:linespec" on stdout, or empty
   local file=$1 raw=$2 p spec dir cand rel
   p=${raw%:*}
@@ -550,6 +758,11 @@ norm_cite() { # file raw -> "repo-relative:linespec" on stdout, or empty
 
 z6_pair() { # idx
   local idx=$1 en=${PAIR_EN[$1]} zh=${PAIR_ZH[$1]}
+  # Existence-armed (reports/66 §3.4.3 + captain rulings b1/b2): the equality
+  # obligations apply once both sides are on disk; an armed pair whose
+  # counterpart is absent is already a FAIL[Z1], so returning here never
+  # weakens the verdict, and an unarmed registered pair is skipped.
+  [ -f "$en" ] && [ -f "$zh" ] || return 0
   local d="$AUDIT_TMP/p$idx"
   mkdir -p "$d"
   CHECKS=$((CHECKS + 1))
@@ -570,14 +783,29 @@ z6_pair() { # idx
       # but not asserted against.
       is_target "$file" || continue
       local target="${norm%:*}"
-      local range="${norm##*:}" a b nlines
+      local range="${norm##*:}" a b nlines fs
       a=${range%%-*}
       b=${range##*-}
-      if [ ! -e "$REPO_ROOT/$target" ]; then
+      # Resolution mirrors the gate (captain revision b2): a P2-type payload is
+      # opened under WORKSPACE_ROOT, everything else under REPO_ROOT. Both sides
+      # of a pair go through this same code, so the mapping stays symmetric.
+      if is_p2_payload "$p"; then
+        fs=$(p2_target_path "$p")
+      else
+        fs="$REPO_ROOT/$target"
+      fi
+      if [ ! -e "$fs" ]; then
+        if [ "$REPO_MODE" = 1 ]; then
+          rmclass=$(audit_repo_class "$p")
+          if [ -n "$rmclass" ]; then
+            rm_note "$rmclass" "$file" "$ln" "citation target does not exist: \`$raw\`"
+            continue
+          fi
+        fi
         fail Z6 "$file" "$ln" "citation target does not exist: \`$raw\` → fix the path or drop the citation"
         continue
       fi
-      nlines=$(file_lines "$REPO_ROOT/$target")
+      nlines=$(file_lines "$fs")
       if [ "$a" -lt 1 ] || [ "$b" -gt "$nlines" ] || [ "$b" -lt "$a" ]; then
         fail Z6 "$file" "$ln" "citation \`$raw\` is out of bounds (target has $nlines lines) → correct the line number"
       fi
@@ -616,6 +844,8 @@ _z6_report_side() { # idx side listfile counterpart
 z7_pair() { # idx
   local idx=$1 en=${PAIR_EN[$1]} zh=${PAIR_ZH[$1]}
   is_target "$en" || is_target "$zh" || return 0
+  # Existence-armed: equality arms only when both sides exist (see z6_pair).
+  [ -f "$en" ] && [ -f "$zh" ] || return 0
   local d="$AUDIT_TMP/p$idx"
   mkdir -p "$d"
   CHECKS=$((CHECKS + 1))
@@ -651,6 +881,8 @@ _z7_report_side() { # idx side listfile counterpart
 z8_pair() { # idx
   local idx=$1 en=${PAIR_EN[$1]} zh=${PAIR_ZH[$1]}
   is_target "$en" || is_target "$zh" || return 0
+  # Existence-armed: equality arms only when both sides exist (see z6_pair).
+  [ -f "$en" ] && [ -f "$zh" ] || return 0
   local d="$AUDIT_TMP/p$idx"
   mkdir -p "$d"
   CHECKS=$((CHECKS + 1))
@@ -730,18 +962,60 @@ z9_legacy() { # file
 # Run
 # =============================================================================
 if [ "$FULL" = 1 ]; then
+  # Existence-armed Z1 (reports/66 §3.4.3 + captain ruling; the arming rule
+  # mirrors the checker's V14 `has_switcher` rule): a pair is judged as soon as
+  # one side carries an i18n marker — the Chinese page exists under
+  # doc/design/zh-CN/, an entry pair's English side exists, or either side
+  # already carries its frozen switcher line. Pairs with no marker anywhere are
+  # skipped; an armed pair whose counterpart is absent is a FAIL.
+  ARMED_PAIRS=0
+  SKIPPED_PAIRS=0
   for i in "${!PAIR_ZH[@]}"; do
-    [ -f "${PAIR_ZH[$i]}" ] || fail Z1 "${PAIR_ZH[$i]}" 1 "paired Chinese page is missing → restore the frozen pair (GLOSSARY §3.4)"
-    [ -f "${PAIR_EN[$i]}" ] || fail Z1 "${PAIR_EN[$i]}" 1 "paired English page is missing → restore the frozen pair (GLOSSARY §3.4)"
+    zf=${PAIR_ZH[$i]}
+    ef=${PAIR_EN[$i]}
+    armed=0
+    case "$zf" in
+      "$ZH_TREE"/*) [ -f "$zf" ] && armed=1 ;;
+    esac
+    if [ "$armed" = 0 ] && [ "$i" -lt 2 ] && [ -f "$ef" ]; then armed=1; fi
+    if [ "$armed" = 0 ] && [ "$(switcher_count "$zf" zh)" != 0 ]; then armed=1; fi
+    if [ "$armed" = 0 ] && [ "$(switcher_count "$ef" en)" != 0 ]; then armed=1; fi
+    if [ "$armed" = 0 ]; then
+      SKIPPED_PAIRS=$((SKIPPED_PAIRS + 1))
+      continue
+    fi
+    ARMED_PAIRS=$((ARMED_PAIRS + 1))
+    if [ -f "$zf" ]; then
+      z1_check "$zf"
+    else
+      fail Z1 "$ef" 1 "paired Chinese page is missing: $zf → create it from the English original and add the frozen switcher line (GLOSSARY §3.4)"
+    fi
+    if [ -f "$ef" ]; then
+      z1_check "$ef"
+    else
+      fail Z1 "$zf" 1 "paired English page is missing: $ef → restore the frozen pair (GLOSSARY §3.4)"
+    fi
   done
-  for f in "${PAIR_ZH[@]}" "${PAIR_EN[@]}"; do z1_check "$f"; done
-  for f in "${Y1[@]}"; do z2_file "$f"; done
+  note "scripts/i18n-audit.sh" 1 "Z1: armed pairs = $ARMED_PAIRS, skipped (existence-armed, no i18n marker on either side) = $SKIPPED_PAIRS of ${#PAIR_ZH[@]} registered pairs"
+  for f in "${Y1[@]}"; do [ -f "$f" ] && z2_file "$f"; done
   z2_global
   z3_check
   while IFS= read -r f; do z4_check "$f"; done < <(zh_tree_files)
-  for f in "${Y1[@]}"; do z5_deny "$f"; done
+  for f in "${Y1[@]}"; do [ -f "$f" ] && z5_deny "$f"; done
   z5_status_rows
-  for i in "${BODY_PAIRS[@]}"; do z6_pair "$i"; z7_pair "$i"; z8_pair "$i"; done
+  BODY_ARMED=0
+  BODY_SKIPPED=0
+  for i in "${BODY_PAIRS[@]}"; do
+    if [ -f "${PAIR_EN[$i]}" ] && [ -f "${PAIR_ZH[$i]}" ]; then
+      BODY_ARMED=$((BODY_ARMED + 1))
+    else
+      BODY_SKIPPED=$((BODY_SKIPPED + 1))
+    fi
+    z6_pair "$i"
+    z7_pair "$i"
+    z8_pair "$i"
+  done
+  note "scripts/i18n-audit.sh" 1 "Z6/Z7/Z8: armed body pairs = $BODY_ARMED, skipped (existence-armed, both sides required) = $BODY_SKIPPED of ${#BODY_PAIRS[@]} registered body pairs"
   z9_forbidden
   { for f in README.md README.en.md; do [ -f "$f" ] && printf '%s\n' "$f"; done
     find doc/design -name '*.md' -type f | LC_ALL=C sort; } > "$AUDIT_TMP/z9.files"
@@ -802,6 +1076,11 @@ printf '%s\n' "$SUMMARY" | grep -v '^__COUNTS__' || true
 COUNTS=$(printf '%s\n' "$SUMMARY" | grep '^__COUNTS__' | awk '{ print $2 " " $3 " " $4 }')
 FAILURES=$(printf '%s' "$COUNTS" | awk '{ print $1 + 0 }')
 WARNINGS=$(printf '%s' "$COUNTS" | awk '{ print $2 + 0 }')
+if [ "$REPO_MODE" = 1 ]; then
+  printf 'i18n-audit.sh: repo-mode summary (downgraded: P2=%d P4=%d SUBMODULE=%d ENVSLASH=%d; default-mode failures=%d; remaining failures=%d)\n' \
+    "$RM_P2" "$RM_P4" "$RM_SUBMODULE" "$RM_ENVSLASH" \
+    "$((FAILURES + RM_P2 + RM_P4 + RM_SUBMODULE + RM_ENVSLASH))" "$FAILURES"
+fi
 if [ "$FAILURES" -gt 0 ]; then
   printf 'i18n-audit.sh: FAIL (%d failures, %d warnings, %d checks)\n' "$FAILURES" "$WARNINGS" "$CHECKS"
   exit 1

@@ -374,3 +374,161 @@ bash scripts/doc-verify.sh --only reports/62-i18n-delivery.md          # PASS / 
 * 裸克隆表现：**已闭合**（§14.3 现场重测）。
 * 形态 A 撤销后 `zh-CN/02` 的「改前字节」：由 `git diff` 为空（净差异为零）证明，无需字节级快照；`doc/design/zh-CN/**` 未跟踪的既有边界（§9.2）不变。
 * 本轮报告的绑定同 §7/§8.8：任何进一步编辑（含对 01/02/`reports/64`）都会使 §14.1 的登记值失效，须重新现场测量。
+
+---
+
+## 15. 第三轮交付增补（task t16，2026-09-21）
+
+本节登记**第三轮**（A/B/C/D/E/F 六项后续）的交付与验证结论，与 [reports/54](54-docs-freeze-manifest.md) §10（同一批数值的重签侧）成对阅读；所有数值均为**撰写时在当前修订上现场实测**（HEAD `8bb69d260f6d4f5a5e0961ee980e68592a5816de`），不沿用任务 output 的历史数字（SPEC §7.5）。独立验证见 [reports/67](67-followup2-verification.md)（T14，verdict = pass；其 §0.2 四落点、§4.6 克隆端到端、§4.7 六类负例、§7.9 附录编号）。
+
+### 15.1 结论
+
+第三轮六项全部落地：**A** 审计脚本临时目录清理（EXIT+INT/TERM/HUP；SIGKILL 边界如实声明）；**C** 门禁 `--repo-mode` + CI 工作流（忠实克隆端到端两步 `EXIT=0`）；**D** `zh-CN/02` 第 194 行终值（captain 终局裁定 ②）；**B** 06–11 六篇中文页落地、GLOSSARY v1.1.3、SPEC v1.7.2、索引/入口去 planned；**E** 由 T17 复核（本报告与 reports/54 为被复核对象）；**F** 归档 `tmp/i18n-audit-probe` 并清理（本轮工作区新建条目 = 0，删除项 = NONE）。**交付态**：审计 `PASS (133 checks, 0 warnings)`、门禁 `PASS (4795 checks, 4 warnings)`、13 对配对全 arm 且 `skipped = 0`。
+
+### 15.2 A 项 — 审计脚本临时目录清理（T2）
+
+* **交付**：`scripts/i18n-audit.sh` 的清理覆盖 **EXIT + INT(130) + TERM(143) + HUP(129)**，清理函数幂等、空值守卫、状态恒 0；脚本头部写明「SIGKILL(9) 不可捕获，`kill -9`/OOM/`timeout --kill-after` 仍残留空目录」的**边界声明**（T2 的 output）。
+* **默认模式逐字节不变**（与 A 的判据同源）：pinned T9 副本（`944d2aff…`）与 t18 终版（`c778c831…`）在**同一工作树**上跑全量与 `--only doc/design/zh-CN/07-build-and-deploy.md`，**stdout `diff` 均为空**、输出 sha256 分别为 `5dddf93d…` / `e9f6f70d…`、两侧 rc 均 0（doc-architect 独立复现，见 [reports/67](67-followup2-verification.md)）。
+* **证据基础替换（captain 裁定，登记项 1/2）**：`reports/66` §1.3 的 **A-7 负控在本平台不可复现**——pristine 脚本在 bash 5.2.15 下收到未捕获的 TERM/HUP **仍执行 EXIT trap**（rc = 128+signum、residue = 0），**唯一可复现残留 = SIGKILL**（rc 137、residue 1）；**A-6 的 SIGINT 分支需 `set -m`**（非交互后台子进程继承 SIG_IGN）。故 T14 的 A 项验收改为「显式信号处理存在 + rc 语义正确 + SIGKILL 边界如实声明」，**不再以「pristine 残留对照」为通过条件**。
+* **成对证据（禁删，由 captain 的清扫清单显式排除）**：清单见下。这些工件位于宿主临时区、不在仓库内，按 SPEC T1/V11 以 `scope=host` 的清单形式登记（不写成仓库相对路径，以免与 P1 路径类混淆）：
+
+```text
+HOST（禁删证据）：
+/tmp/vfy-base*             基线与 capture（含 scripts/i18n-audit-fixed.sh = t9 中间修订 044d9dd8… 的唯一存世
+                           capture，与基线副本 f93da7d5…）
+/tmp/vfy-t2-probe2.sh      capture 的产生方式（cp 命令载体）
+/tmp/t18-frozen.sh         T9 逐字 944d2aff…
+/tmp/t18-frozen-pinned.sh  同内容 + 1 行 pinning 补丁 a4c2e6ea…
+/tmp/keep/i18n-audit-T2.sh T2 逐字 316bb2db…
+/tmp/t18-evidence.log      T18 证据日志
+/tmp/t18n1.out … /tmp/t18n6.out、/tmp/t18n7-def.out、/tmp/t18n7-repo.out、/tmp/t18-n1.out、/tmp/t18-p1.out
+/tmp/t18-neg.sh            probe cmd 与 rc 的载体（第 10 行 echo "rc=$?"）
+/tmp/vfy-base/evidence/vfy-neg-probe.txt   b2 负例原始留痕（c036cfca… / 79 行）
+/tmp/keep/doc-verify-t3.sh 与 /tmp/t3-bare-ws/scripts/doc-verify.sh   T3 逐字 fa2ce899…
+/tmp/log-probe.out
+```
+
+### 15.3 C 项 — 门禁 `--repo-mode`、CI 与 C-5② 精确配对（T3/T8/T18）
+
+* **`--repo-mode` 语义（T3，验收见 [reports/67](67-followup2-verification.md) §4）**：四类**降级为逐条带类别代号的计数 NOTE**（`P2` / `P4` / `SUBMODULE` / `ENVSLASH`），并打印**机器可读汇总**（`default-mode failures = 降级之和 + remaining failures`）；**任何非上述类别的失败仍为 FAIL**（六类负例，见 §15.7）。
+* **默认模式逐字节不变**：T3-only（`fa2ce899…`）与 HEAD（`6c62591a…`）在**三种运行**（全量、`--only doc/design/SPEC.md`、`--only doc/design/zh-CN`）下 stdout **逐字节相同**、rc 相同、三元组相同（见 [reports/67](67-followup2-verification.md) §4.4）；唯一强制的差异是命令行帮助文本（新增 `--repo-mode` 的说明块，§4.5）。
+* **CI 工作流（`.github/workflows/docs.yml`）**：满足 [reports/66](66-followup2-requirements.md) §2.4/C-8 的十条（触发 `push`/PR、`permissions: contents: read`、checkout `submodules: false`、两步独立命名、`set -euo pipefail`、失败即红、无新依赖、注释写明「CI 绿 ≠ 工作区门禁绿」）；**T18 把两步都改为 `--repo-mode`**（`i18n-audit.sh --repo-mode` 与 `doc-verify.sh --repo-mode`）。
+* **忠实克隆端到端（T18 收口判据）**：克隆内默认模式 `i18n-audit.sh` = `EXIT=1` / **22 × `FAIL[Z6]`**（12 ENVSLASH + 8 SUBMODULE + 2 P2），`--repo-mode` = **`EXIT=0`** / `PASS (133 checks, 0 warnings)` 且 summary `P2=2 P4=0 SUBMODULE=8 ENVSLASH=12; default-mode failures=22; remaining failures=0`（2+8+12 = 22 ✓）、checks `133 = 133` ✓；门禁默认 `EXIT=1` / 59 failures → `--repo-mode` `EXIT=0`（`P2=39 …; default 59; remaining 0`、checks 4795）。见 [reports/67](67-followup2-verification.md) §4.6。
+* **C-5② 精确配对**：HEAD ↔ T3-only 的 stdout 逐字节相同（配对件 = §15.2 的 HOST 证据清单所列 T3 副本，均 `fa2ce899…`）；**A 项默认模式不变**的配对件 = §15.2 列表。**C-8 缺口（登记项 11）**：冻结的 C-8 要求「CI 跑两脚本且可绿」，而审计原无 repository-only 语义 → 第 1 步必然红；该缺口由 **T18** 收口（不是 T3 的实现缺陷，T3 保持 completed、不回溯）。
+
+### 15.4 D 项 — `doc/design/zh-CN/02-architecture.md` 第 194 行（T4）
+
+* **终值（captain 终局裁定的形态 ②）**：`  doc/design/08-issues-and-solutions.md 中的旋转烘焙实验：已否决（rejected）。`；文件 `b4182633a78f9895d0ae3ced1cf0d9555ab764ac2ce4347244c15ded16f116cd` / 219 行 / 15 880 B / `numstat 1 1`；第 193 行与 HEAD 逐字相同。
+* **三段形态链**：① HEAD `716552cd…`（`…中已否决（rejected）的…`）→ ② **终值** `b4182633…`（T4 交付、已接受）→ ③「…中记为已否决（rejected）的…」（`2e7ce7ed…` 预测）为 captain 在交叉时点的**口头提议，未采纳、未落盘**。**该文件写权限已关闭**（T4 终态；任何成员不得再写入）。
+* **治理状态变化**：本轮 D 项**闭合**了第二轮遗留的「02:194 句读偏生硬但合规」**美容项**（[reports/54](54-docs-freeze-manifest.md) §9.4 的「净差异为零」记录随之被 §10.2 A-5 的非零差异取代）；第二轮「保留 HEAD 原文」的历史记录保留不改。
+
+### 15.5 B 项 — 06–11 六篇译文、GLOSSARY、SPEC、索引（T5–T13）
+
+* **GLOSSARY**：§6 由 **74 → 98** 条（新增 24 条，编号 75–98）；版本 **v1.1.1 → v1.1.2（T5）→ v1.1.3（T7）**；§3.4 配对清单与 §4 Y-1 声明清单扩到 **NN = 01–11**（Y-1 共 **12** 个文件）；终值 `7b38bed57ea57954d28e815b7e24c4522e3dc5208da9a2b69b5806a3d772ad66` / 373 行 / 30 290 B / `numstat 38 14` / **15 hunk**（11 内容行 + 3 版本行 + §6 的 24 行插入）。
+* **SPEC**：**v1.7.2**，`numstat 4 3` / 4 hunk（第 3 行版本、§7.6 第 696/704 行枚举、changelog 新增行），终值 `78787978…` / 759 行 / 68 586 B。
+* **六篇译文**：12 个工件（6 中文页 + 6 英文页）的 sha256/字节/行数见 [reports/54](54-docs-freeze-manifest.md) §10.2 的 A-8…13 与 B-16…21；英文页**各纯插入 2 行**（切换行 + 空行），`numstat 2 0` / 恰 1 hunk，与 01–05 既成形态一致。对等性（Z6/Z7/Z8）由审计逐对判定，六篇落地后**零失败**。
+* **索引/入口（T13）**：`doc/design/README.md`（`c64ec28f…` / 37 行 / 2 830 B / `numstat 6 6`）与根 `README.md`（`8f42fd89…` / 46 行 / 3 211 B / `numstat 9 9`）的 06–11 行改中文页链接并去 planned；`grep -rn "待翻译（planned）"` 对两份文件**无输出**；链接抽取 51 个目标 0 MISS；`--only` 两份 = PASS 59 checks。
+* **b1 交付态**：`Z1 armed = 13, skipped = 0 of 13`、`Z2 occurrences = 12, expected = 12`、`Z6/Z7/Z8 armed body = 11, skipped = 0 of 11`（三项目标全中）。**【附录 14】盲区实证**：删 `zh-CN/11` 且去 EN 11 第 1 行切换行 → 两侧无标记 → 该对**静默跳过**、审计仍 `EXIT=0` ⇒ **`EXIT=0` 本身不足以证明交付态**，「零跳过」必须由 T14 以 NOTE 行独立断言。
+
+### 15.6 F 项 — 归档与清理（T15），及本轮报告身份
+
+T15 归档值（逐字取自 t15 的 output；与 [reports/54](54-docs-freeze-manifest.md) §10.4 **逐字相同**，E-8）：
+
+```text
+ARCHIVE PATH = /data/dsh/home/workspace/tmp/i18n-audit-probe-8bb69d2.tar.gz
+SHA256       = 2bda1048c8cec8b2a86b890c767c2a0c68278ec7df02b59a932322d49d32241a
+BYTES        = 17507348
+MEMBERS      = 2354 总计 = 2005 常规文件 + 1 符号链接 + 348 目录
+PACK SECONDS = 1
+ORIGINAL (F-1, preserved) = /data/dsh/home/workspace/tmp/i18n-audit-probe ; 22517618 bytes ; 2005 文件 ; 目录在位 (drwxr-xr-x 4, mtime Sep 19 23:30)
+命令         = 冻结 F-2 形式（tar -czf … -C tmp i18n-audit-probe，HEAD 短哈希 8bb69d2）
+脚注（避免 2005 vs 2354 被误读）：tar 总成员 2354 的非目录项 = 2006 = 2005 常规文件 + 1 符号链接
+  （i18n-audit-probe/tree/docs → doc/design）；差 349 = 348 目录 + 1 符号链接。
+F-4/F-5 清理候选集 = 空（以 team 目录创建时刻 2026-09-20 22:45 为界，find tmp -maxdepth 1 -newermt … 除本归档外无输出）
+  → 无 mv / 无隔离目录 / 无 rm；F-5 不可删清单逐项在位（env.sh / env-go.sh / env-container.sh、tmp/n1…n7、
+  tmp/t47b-captain-build.sh、tmp/probe-forms-matrix-writer-ops.md、tmp/i18n-audit-probe、本归档）。
+F-6：未触碰仓库内任何文件；git status --porcelain 清理前/后一致（22 行，diff 为空）。
+F-7：doc-verify.sh 前/后 EXIT=0 且同行 PASS (4795 checks, 4 warnings)；i18n-audit.sh 前/后 EXIT=0 且
+  同行 PASS (133 checks, 0 warnings)；原始输出 HOST /tmp/t15-gate-before.out、t15-gate-after.out、
+  t15-audit-before.out、t15-audit-after.out；两份 stdout diff 均为空。
+F-8（范围外，只列不删）：HOST /tmp 第三轮产物 461 项（/tmp 合计 107M，清单 HOST /tmp/t15-host-tmp-round3.txt）；
+  未移动、未删除任何路径。
+排除清单新增（禁删）：HOST /tmp/t15-*（t15-kept-inventory.txt、t15-gate-{before,after}.out、
+  t15-audit-{before,after}.out、t15-git-{before,after}.txt、t15-host-tmp-round3.txt）。
+流程留痕：t15 首次完成提交被平台拒为 stale attempt，随后以同一 attempt_id 成功 → 登记为平台瞬态事件（非偏差），
+  终态记录即其报文所载。
+自证：以上 2354 / 348 / 2006 / 1 符号链接、17507348 B 与 22517618 B/2005 文件，均由 T16 在盘面独立复测
+  （tar -tvzf 类型分解 + find -type f/-type d/-type l + du -sb），非转述。
+```
+
+本轮报告身份（**t19 收口口径：不再内嵌对方哈希，避免互指哈希的循环失效**）：`reports/54-docs-freeze-manifest.md` 的身份**不在本文件内嵌** —— 本文件此前登记的 `reports/54` 旧值（R3 值；完整修订链见 reports/54 §10.9）即因随后的 R4 一字修正而落后一轮，故此处改为**指针式耐久登记**：**最终身份以 task t19 的 output、t17 round-2 复审（reports/69-followup2-review-round2.md，本单收口后由 verifier 创建）与最终 commit message 的现场实测登记为准**。**冻结时刻与绑定（F3，对称声明）**：**t19 收口完成后，`reports/54` 与 `reports/62` 在最终提交前不再有任何写入**；本文件自身 sha256/字节/行数**不在本文件内自指**（自指悖论），登记于 task t19 output、`reports/69` 与最终 commit message。其余被引报告身份：`reports/66-followup2-requirements.md` = `a9dc8d1d…`（705 行 / 70 589 B，冻结）；`reports/67-followup2-verification.md` = `b43fda65…`（325 行 / 34 857 B；**修订链四值 `2da3354b…`（首写 / 318 行 / 33 107 B）→ `6fbd0126…`（书写约定修正后 / 318 行 / 33 206 B）→ `715e950c…`（t14 终态记录值 / 324 行 / 34 380 B）→ `b43fda65…`（最终），以及「终态后修订 = 唯一 1 hunk（反向重建证明）」的治理如实性见 [reports/54](54-docs-freeze-manifest.md) §10.8 与本节 §15.7 如实性条目⑥**）。**本报告自身的 sha256/字节/行数不在本文件内自指**：登记在 task t16 的 output 中（同 §14.1 的既有约定）；**t16 已终态、不可原地更新**，故本轮追加（`reports/67` 修订链 + T15 逐字登记）之后的本报告身份由 doc-architect 对 captain 与 verifier 的两份通报承载（2026-09-21 14:3x），T17 一律以**盘面现场实测值**为准。
+
+### 15.7 治理记录（第三轮，按事实，不美化）
+
+**登记集 = 11 条 + 附录 11/12/13/14/15/16/18/19/20**（**附录 17 定义在 [reports/67](67-followup2-verification.md) §0.2**，本集不重复定义：`39`（`WORKSPACE_ROOT=/` + HEAD）、`46`（`/tmp` + HEAD）、`59 = 39+8+12`（`/tmp` + 交付树）、runner 类比 `59`；成因 = 7 条散文 token `tmp/` 的 SPEC 六处 + SPEC-guide 一处）。
+
+1. **A-7 负控不可复现**（pristine 在 bash 5.2.15：TERM 143/0、HUP 129/0、INT 0/0 被忽略、**仅 SIGKILL 137/1 可复现**）。
+2. **A-6 的 SIGINT 分支需 `set -m`**。
+3. **`reports/66` §3.5 第 95/96 条的示例措辞与自身规避规则冲突**（示例含「状态词」触发 Z5(b)）；实际落地按**规则**改为「不进 §5.5 冻结词表」；判据一律以规则为准。
+4. **Z6 的 P2 解析分歧 → captain 裁定 b2（修法 (a)）并落地**：审计向门禁对齐（WORKSPACE_ROOT + is_p2_payload + p2_target_path，**保留行界检查、无放过分支**）；改前 12 条 `FAIL[Z6]`（仅 pair 07、仅存在性类、零镜像缺失）→ 0；负例仍 FAIL（`vfy-neg-probe.txt` 为直接 raw）。
+5. **D 的三段形态链**（见 §15.4）与**写权限关闭**。
+6. **`reports/66` 的改写链**：`f972e352…` → `0baa3c7d…` → `05777639…` → **`a9dc8d1d…`（终值；captain 冻结、此后不得再编辑）**。
+7. **§3.4.3 字面「expected 12」被存在性武装取代**（期望计数 = `|Y-1 ∩ 盘面|`，交付态等价 12）。
+8. **b1 头注释勘误与窄范围覆盖**：b1 只覆盖 §3.4.3 第 349 行的 Z1/Z2/Z6/Z7/Z8 武装与 NOTE，**不含** Z3/Z4/Z5/Z9、SWITCHER_WINDOW、DISCLAIMER、FORBIDDEN_COPIES、LEGACY_SWITCHER、STATUS_ZH；「half-pair」措辞仅存在于**无留档的在飞中间修订**（captain 直读 + doc-architect 同期引用；现存 capture = HOST: `/tmp/vfy-base/scripts/i18n-audit-fixed.sh` 即 `044d9dd8…`，第 50/118 行），HEAD/T2/交付版均无该句 ⇒ **属措辞精化，不登记为「勘误」或「历史误述」**。
+9. **并发红窗口口径**：共享工作树，T14 只判**最终静默树**；红仅当来自该任务自身交付物时才算其 finding，来自他人半落地者记 **concurrency observation**（本轮实例：t10/t12 在飞窗口、`2×Z7/128 checks + skipped 1`、t11 的 12 条 Z6 窗口）。**附录（第 9 条下）**：武装规则使单侧窗口**内在化**（两文件写入无法原子化）→ 缓解只能靠**调度串行化**；另有**指令时序**交叉（HOLD/GO 到达时状态可能已前移；实例：对 t12 的 HOLD 到达时 t12 已终态）→ 今后一切 HOLD/GO/裁定附发出时状态与时间戳。
+10. **门禁 V14/V15 枚举滞后**：t8 前对 `zh-CN/06|07|08|09|10|11` 报 **6 条** `… not in the frozen V14 pair list` WARN（非 FAIL）；**t8 落地后 6 → 0**（V14 = `0[1-9]-*.md|1[01]-*.md`、V15 = `SPEC-guide.md|0[1-9]-*.md|1[01]-*.md`）；**t8 后 `warnings = 4`**，且 4 条**必须仍在**（09 篇 L-9 自指样例：EN 09:140/:147、zh-CN 09:134/:141）——`warnings = 0` 亦须报（意味着样例被改动）。当前门禁 = `PASS (4795 checks, 4 warnings)`。
+11. **C-8 缺口（本轮冻结需求缺口）与 t18 收口**：忠实克隆下审计默认 **22 × `FAIL[Z6]`**、门禁默认 59 failures ⇒「CI 可绿」在冻结文本下不可满足（**非 T3 缺陷**，t3 保持 completed）。**T18 类别集合（实测声明）**：`P2/P4/SUBMODULE/ENVSLASH`（复用门禁词表、**无新类**；P4 本容器 0 条）；克隆内 `P2=2 P4=0 SUBMODULE=8 ENVSLASH=12; default=22; remaining=0`、`EXIT=0`、checks `133 = 133` 与同落点默认相等；其中 2 条 P2 = `08` 篇的 `../tmp/n6/x/app.log:6170`（EN+ZH），属**门禁 CIT 面因 `ext_checked()` 白名单无 `log` 而根本不产出**的记录（【附录 18】）⇒ 审计此处**严格更严**、**不扩大门禁类别**；**未放水证据** = 注入真实缺失后**默认模式仍 `FAIL[Z6]`**（`24 failures`）、仅 `--repo-mode` 按 P2 降级；六类不可降级负例在 `--repo-mode` 下**全部仍 rc=1**。
+
+**六类负例登记表（六列 + 表注；主证据 = [reports/67](67-followup2-verification.md) §4.7 的 T14 原始输出）**
+
+| 探针 cmd（仓库外副本） | rc | `repo-mode` 剩余 FAIL 行数 | `summary: default-mode failures` | 算术式 | 首行 FAIL（逐字） |
+|---|---|---|---|---|---|
+| N1 in-repo 幽灵路径（T14 实现） | 1 | 3 | 25 | `25 = 22+3` ✓ | `doc/design/01-requirements.md:60 → FAIL[Z6] citation target does not exist: \`signaling/room/room.go:13\`` |
+| N2 path:LINE 越界（单侧追加式：01:60 引用 signaling/room/room.go:999999，目标 306 行） | 1 | 3 | 25 | `25 = 22+3` ✓ | `doc/design/01-requirements.md:60 → FAIL[Z6] citation \`signaling/room/room.go:999999\` is out of bounds (target has 306 lines)` |
+| N3 缺切换器（Z1） | 1 | 1 | 23 | `23 = 22+1` ✓ | `doc/design/zh-CN/01-requirements.md:1 → FAIL[Z1] missing language switcher in the first 8 lines` |
+| N4 缺声明（Z2） | 1 | 3 | 25 | `25 = 22+3` ✓ | `doc/design/zh-CN/01-requirements.md:1 → FAIL[Z2] translation disclaimer is not present exactly once in the first 8 lines (found 0)` |
+| N5 Z7 code-span 多重集不等 | 1 | 1 | 23 | `23 = 22+1` ✓ | `doc/design/01-requirements.md:333 → FAIL[Z7] inline code span \`ZZZ_t18_unique_span\` is missing from the counterpart` |
+| N6 Z8 结构计数不等 | 1 | 2 | 24 | `24 = 22+2` ✓ | `doc/design/01-requirements.md:1 → FAIL[Z8] h2 headings count is 7, the counterpart has 8` |
+| 复原后 | 0 | 0 | 22 | `22 = 22+0` ✓ | — |
+
+> **表注**：`.out` 只含 stdout；**rc 证据 = T14 独立复跑（[reports/67](67-followup2-verification.md) 表第 188–194 行）**；t18 侧的 rc 载体见 §15.2 的 HOST 证据清单第 10 行（`echo "rc=$?"`）。**N2 的 3 vs 5 已闭合**：verifier 用**同一克隆、同一 checker `c778c831…`、同一落点（WS=/tmp）、同一四类降级计数**复现并给出解释 —— **差异只由注入形状决定**：把**镜像对两侧**的 room.go:13 都替换为行号 999999（爆炸半径覆盖镜像两侧）→ 剩余 **5**（`27 = 22+5`）；在 07:208 **追加一条单侧**新引用 → 剩余 **3**（`25 = 22+3`，即本表 N2 行）；verifier 按我方构造重跑得到**与我方 HOST: /tmp/t18n2.out 完全相同的 5 条**与同一 summary ⇒ **确定性成立、非缺陷、非不确定性**。同属这一类的还有 N1：整体移除目标（`128 = 22+106`）vs 单条幽灵引用（3）——**半径差异**，两类读数下 rc 均 1、均不降级，故「未放水」结论不受影响。**N2 不再作为 T17 的 open item**。
+
+```text
+(doc-architect 复核读数，同批；落点 WORKSPACE_ROOT=/，探针树 /tmp/t18-neg ← /tmp/ci-sim-faithful/repo 拷贝)
+驱动 /tmp/t18-neg.sh（--repo-mode 输出重定向到 /tmp/t18nN.out）：
+  N3/N4/N5/N6 与上表逐值一致（1/3/1/2 ↔ 23/25/23/24；去重消息/文件 = 1/1、3/2、1/1、2/2）
+  N1（真删 signaling/room/room.go）= 剩余 106 / default 128 / 去重 20 条消息 / 12 文件
+      —— 与 T14 的 in-repo 幽灵路径（3）属同一类「爆炸半径」差异（整体移除目标 vs 单条幽灵引用）
+  N2 同形（镜像对两侧整体替换 room.go:13 → :999999）复核读数 5（去重 5 / 2 文件）
+      —— 已闭合：与 T14 的单侧追加式（3）差异**只由注入形状决定**；verifier 同克隆/同 checker/同落点
+         复现出与我方完全相同的 5 条与同一 summary ⇒ 确定性成立、非缺陷、非不确定性
+```
+
+**如实性条目（六条，另有 captain 主动更正一条）**：① doc-architect 主动更正「第 8 条原句唯一出现处」的归因错误（真实出处 = 在飞中间修订 `044d9dd8…` 的逐字 capture）；② doc-architect 主动更正「无留档/不可复现」的表述（该 capture 存世）；③ captain 主动更正其把复核读数中的 `106` 初判为「默认模式总数」的度量判断（由 HOST: `/tmp/t18n1.out` 的文件自证纠正：`106 = remaining`、`128 = default = 22+106`）——**以原始输出为准**的实例；④ **流程留痕**：t1 两次派发（attempt 1 → 2）、`reports/66` 多次事后改写、HOLD/GO 时序交叉、t15 曾遇 `stale attempt` 拒绝后按同一 attempt_id 重提交；⑤ **上一轮遗留项引用**：`reports/64` 的七版链与 `CAPTAIN RULING`、t9/t10/t11 不可达、以及 **doc-architect 与 translator-b 在上一轮被移除的记录**（`reports/54` §9.10 与 §14.6 均载）；本轮 doc-architect 与 translator-a/b 均为在册成员，其交付按本节登记。⑥ **终态后修订（captain 裁定登记、不判 finding；双方均有责）**：「`reports/67` 在 t14 标记 completed 之后又修订一次，唯一改动 = §4.3 补入『t18 的 `--repo-mode` 与其默认模式同落点成对引用』一行；该『唯一 1 hunk』已由**反向重建证明**（重建件 sha 与 t14 终态记录值逐字节吻合、与最终件 diff 恰 1 hunk、`@@ -157,7 +157,8 @@` 即第 160 行 1 行 → 2 行）。起因 = captain 的 GO 与作者的完成报告交叉、GO 中的该条款在终态后才被比对到（**流程双方均有责**）。作者**主动披露**（t14 output 记录的是修订前哈希，并要求 T16/T17 以现场实测为准），captain 现场核对最终件（sha / 行数 / 字节 / 自证 86 checks / 双门禁）后**接受并登记**；**不判 finding**（补齐 GO 条款、完整披露、范围可核），但**登记为一次流程偏差**（终态后修订交付物），T17 须以**现场最终哈希**复核并对该链作一致性检查。」
+
+### 15.8 不确定性清单（显式 unverified）
+
+* **CI 未在真实 GitHub runner 上执行**：本容器无法验证远端行为；「CI 可绿」的证据是**忠实克隆端到端复现**（[reports/67](67-followup2-verification.md) §4.6），非远端实跑。
+* **P4 类降级**：本容器 `/data/dsh/home/workspace/**` 存在、`unshare` 不可用 ⇒ P4 的计数证据来自**声明式单行探针副本**（[reports/66](66-followup2-requirements.md) §2.3），非本容器真实缺失；runner 上 P4 计数未实测。
+* **N2 的 3 vs 5 —— 已闭合（不再是悬置项）**：差异**只由注入形状决定**（单侧追加式 → 3；镜像对两侧整体替换 → 5），verifier 以同一克隆、同一 checker、同一落点、同一四类计数复现出与 doc-architect 完全相同的 5 条与同一 summary ⇒ 确定性成立、非缺陷；详见 §15.7 表注。N1 的 `128 = 22+106` vs `3` 同属「爆炸半径」差异。
+* **`reports/67` 的修订链（已登记，权威值 = 现行最终）**：`6fbd0126…`（初稿 / 318 行）→ `715e950c…`（t14 终态记录值 / 324 行 / 34 380 B）→ **`b43fda65…`（现行最终 / 325 行 / 34 857 B）**；T17 以**现场最终哈希**复核（[reports/54](54-docs-freeze-manifest.md) §10.8、本节 §15.7 条目⑥）。
+* **reports/68（T17 交付物）：本节撰写后它已出现于工作树**（未跟踪，T17 仍在进行；首测 mtime 2026-09-21 14:36）。其身份不在本轮登记范围内——它是 T17 自己的交付物，须由 T17 现场自证；本节**不作任何哈希/行数/字节断言**，待 T17 收口后由后续增补登记。
+* **历史 `3bb89149…` 公式**：仍 `unverified`（同 §13）。
+* **本节绑定**：任何进一步编辑（含对 `reports/54`/`reports/66`/`reports/67`/`scripts/**`/`doc/**`）都会使本节与本轮登记值失效，须重新现场测量。
+
+### 15.9 本节复现命令
+
+```bash
+cd /data/dsh/home/workspace/code/webrtc-demo
+git rev-parse HEAD                                    # 8bb69d260f6d4f5a5e0961ee980e68592a5816de
+sha256sum scripts/doc-verify.sh scripts/i18n-audit.sh .github/workflows/docs.yml
+bash scripts/doc-verify.sh; echo "EXIT=$?"            # PASS (4795 checks, 4 warnings) / 0
+bash scripts/i18n-audit.sh; echo "EXIT=$?"            # PASS (133 checks, 0 warnings) / 0
+bash scripts/i18n-audit.sh --repo-mode; echo "EXIT=$?"  # EXIT=0；summary 四类全 0（工作区落点）
+bash scripts/doc-verify.sh --repo-mode; echo "EXIT=$?"  # EXIT=0
+bash scripts/doc-verify.sh --only reports/54-docs-freeze-manifest.md reports/62-i18n-delivery.md; echo "EXIT=$?"
+# C4 31 路径：见 [reports/54] §10.3 的 heredoc 配方（两端 LC_ALL=C sort）
+# 0 DRIFT 11 行：见 [reports/54] §10.2 C 表的登记值，逐行 sha256sum + wc -c + wc -l
+```
+
+**覆盖范围（避免误读两条门禁数字）**：默认目标集（脚本第 191–210 行的 DOCS 构造）= doc/design 顶层 md + doc/design/zh-CN 顶层 md + 三个根 README，**不含 reports 目录**；因此 `reports/**` 的两份本报告与 reports/54 由上面的 `--only` 行单独校验——**t19 收口时现场实测** `PASS (314 checks, 1 warnings)` / `EXIT=0`，其唯一 warning = reports/54 第 532 行的 L-9 自指样例（typo-suspect，与全量运行中的 4 条同源）。全量 `PASS (4795 checks, 4 warnings)` 覆盖的是文档面；两条命令合起来构成本轮的门禁结论。

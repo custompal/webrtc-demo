@@ -20,12 +20,12 @@
 | 03 | [zh-CN/03-app-architecture.md](zh-CN/03-app-architecture.md) | 应用分层、线程模型、生命周期、恢复与开关（中文） |
 | 04 | [zh-CN/04-signaling-service.md](zh-CN/04-signaling-service.md) | 服务布局、房间与席位状态机、路由与健康（中文） |
 | 05 | [zh-CN/05-protocols.md](zh-CN/05-protocols.md) | 字段级消息、重连策略、ICE/TURN/SDP 与 JNI 契约（中文） |
-| 06 | [06-flows.md](06-flows.md) | 带步骤清单与设备日志证据的 Mermaid 流程（待翻译（planned）） |
-| 07 | [07-build-and-deploy.md](07-build-and-deploy.md) | 工具链、构建阶段、构建不变量、发布链与主机服务（待翻译（planned）） |
-| 08 | [08-issues-and-solutions.md](08-issues-and-solutions.md) | 缺陷史、根因、被否决与被证伪的替代方案（待翻译（planned）） |
-| 09 | [09-verification-and-limitations.md](09-verification-and-limitations.md) | 验证矩阵、已知限制与勘误（待翻译（planned）） |
-| 10 | [10-code-map.md](10-code-map.md) | 代码地图、报告索引、症状到代码的查找（待翻译（planned）） |
-| 11 | [11-coding-standards.md](11-coding-standards.md) | 语言约定、改动安全清单与门禁规则（待翻译（planned）） |
+| 06 | [zh-CN/06-flows.md](zh-CN/06-flows.md) | 带步骤清单与设备日志证据的 Mermaid 流程（中文） |
+| 07 | [zh-CN/07-build-and-deploy.md](zh-CN/07-build-and-deploy.md) | 工具链、构建阶段、构建不变量、发布链与主机服务（中文） |
+| 08 | [zh-CN/08-issues-and-solutions.md](zh-CN/08-issues-and-solutions.md) | 缺陷史、根因、被否决与被证伪的替代方案（中文） |
+| 09 | [zh-CN/09-verification-and-limitations.md](zh-CN/09-verification-and-limitations.md) | 验证矩阵、已知限制与勘误（中文） |
+| 10 | [zh-CN/10-code-map.md](zh-CN/10-code-map.md) | 代码地图、报告索引、症状到代码的查找（中文） |
+| 11 | [zh-CN/11-coding-standards.md](zh-CN/11-coding-standards.md) | 语言约定、改动安全清单与门禁规则（中文） |
 | SPEC | [SPEC.md](SPEC.md) | 文档标准本体（英文唯一规范，不翻译）；读法见[中文导读](zh-CN/SPEC-guide.md) |
 
 ## 3. 生成的表格

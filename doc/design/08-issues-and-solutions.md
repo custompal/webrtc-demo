@@ -1,3 +1,5 @@
+> [中文（默认）](zh-CN/08-issues-and-solutions.md) · English
+
 # 08 — Issues and solutions
 
 > Status: draft · Owner: writer-history · Task: t6

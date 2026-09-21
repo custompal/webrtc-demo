@@ -191,7 +191,7 @@ SDP 与 ICE 候选，然后经由 WebRTC 承载媒体。应用自带 VP9 编码�
 * **I-4** — 本地存活判定绝不能结束媒体仍在流动的通话
   （`app/src/main/kotlin/com/example/webrtcdemo/ui/call/CallSurvivability.kt:105`）。
 * **I-5** — 媒体几何（旋转、stride、缓冲容量）在每个方向上只在一处决定；见
-  doc/design/08-issues-and-solutions.md 中已否决（rejected）的旋转烘焙实验。
+  doc/design/08-issues-and-solutions.md 中的旋转烘焙实验：已否决（rejected）。
 
 ## 8.1 JNI 边界与证据类别
 

@@ -379,3 +379,188 @@ bash scripts/i18n-audit.sh; echo "EXIT=$?"              # PASS (79 checks, 0 war
 * **`doc/design/zh-CN/**` 仍未跟踪**（同 §8）：`zh-CN/01` 与 `zh-CN/02` 的本轮改前字节只能由 `reports/64`/`65` 的现场留档与 git COMMIT 值约束；`zh-CN/02` 的「形态 A → HEAD 原文」由 `git diff` 为空证明净差异为零。
 * **台账与盘面的差异**（终态任务不可原地更新）：t4 台账 output 记录形态 A 交付，而盘面在还原指令后为 HEAD 原文；t8 台账记 D′（与盘面一致）；t9/t10/t11 为「创建后未使用」。权威值一律以本节与 [reports/62](62-i18n-delivery.md) §14 的现场实测为准。
 * **任何进一步编辑都会使本节绑定失效**（同 §7/§8.8）：须重新现场测量并再次增补，不得据旧值重述。
+
+---
+
+## 10. 增补 — 第三轮（task t16，2026-09-21）
+
+本节登记第三轮（A/B/C/D/E/F 六项后续）在 §8/§9 基线之上的**全部**变化，是继 §8（i18n 轮）与 §9（后续收尾轮）之后的**第三次增补**（既有各节的原始冻结值保留不改）。所有数值均为**撰写时在当前修订上现场实测**（2026-09-21 14:2x +0800；HEAD `8bb69d260f6d4f5a5e0961ee980e68592a5816de`），**不沿用任何任务 output 或先前报告的转述值**（SPEC §7.5 修订绑定：结论绑定到修订，修订变化后必须重测）。判据来源 = [reports/66](66-followup2-requirements.md)（第三轮冻结口径）+ captain 裁定（b1/b2、D 终局裁定、中间态裁定与外设裁定；原文与窄范围见 [reports/62](62-i18n-delivery.md) §15.7）。
+
+### 10.1 三条链（多段并列，不写单一数字）
+
+| 链 | 段落（sha256 / 行数 / 字节 / 权限 / md5） |
+|---|---|
+| 审计 `scripts/i18n-audit.sh` | `f93da7d5…`（HEAD 810 行）→ `316bb2db…`（T2 829 行）→ `944d2aff…`（T9 989 行 / 41 635 B）→ **`c778c83127489f3f8b36b72b2ab0e6b1afe381a66e1325b659aea3c29e4c0828`（T18：1089 行 / 45 596 B / 755 / md5 `ab41d994219e50bb2dd2963b96ca8fb1`）** |
+| 门禁 `scripts/doc-verify.sh` | `6c62591a…`（HEAD 919 行 / 41 673 B）→ `fa2ce899…`（T3 1029 行）→ **`9c154dbe6169f00d4f8fe6e5f3846d11f9e5c7f34eec18870ee73dc3c90454d6`（T8：1029 行 / 46 617 B / 444 / md5 `b37a51b7326974218aedf8ca3f9a5c6d`）** |
+| CI workflow `.github/workflows/docs.yml` | `34a5bc0d…`（T3 45 行）→ **`a2d9818c23b7b8790c6da8e01ac0028f220f364bab1ed752e4a7fb9619534578`（T18：45 行 / 1 397 B / 644 / md5 `b257abc23acf7fdce545738b7b04d387`）** |
+
+`numstat`（相对 HEAD）：审计 **`312 33`**、门禁 **`123 13`**；workflow 为**未跟踪新文件**（45 行 / 1 397 B）。身份的时间戳口径：门禁 `fa2ce899…` = t3 收口（13:40:38）、`9c154dbe…` = t8 收口后；审计 `944d2aff…` = t9 收口（13:31:42）、`c778c831…` = t18 收口（13:53:23）。
+
+### 10.2 本轮重签清单（逐行，撰写时现场实测）
+
+**A. 重签（值发生变化）**
+
+| # | 路径 | sha256 | 字节 | 行数 | 权限 | 变化来源 |
+|---|---|---|---|---|---|---|
+| 1 | `scripts/doc-verify.sh` | `9c154dbe6169f00d4f8fe6e5f3846d11f9e5c7f34eec18870ee73dc3c90454d6` | 46 617 | 1029 | 444 | T3（`--repo-mode` + CI 工作流）+ T8（V14/V15 枚举 01–11） |
+| 2 | `scripts/i18n-audit.sh` | `c778c83127489f3f8b36b72b2ab0e6b1afe381a66e1325b659aea3c29e4c0828` | 45 596 | 1089 | 755 | T2（trap）+ T9（Z1/Z2/Z3 枚举与存在性武装）+ T18（审计侧 `--repo-mode`） |
+| 3 | `doc/design/SPEC.md` | `78787978e04ab9e739790b3351d50e30cd1168a2c11809e20c250635ea24722c` | 68 586 | 759 | 600 | T6：v1.7.1 → **v1.7.2**（§7.6 第 696/704 行枚举 + changelog 新增行），`numstat 4 3` |
+| 4 | `doc/design/zh-CN/GLOSSARY.md` | `7b38bed57ea57954d28e815b7e24c4522e3dc5208da9a2b69b5806a3d772ad66` | 30 290 | 373 | 644 | T5（§6 74 → 98 条，v1.1.2）+ T7（§3.4/§4 Y-1 扩到 01–11，v1.1.3），`numstat 38 14` |
+| 5 | `doc/design/zh-CN/02-architecture.md` | `b4182633a78f9895d0ae3ced1cf0d9555ab764ac2ce4347244c15ded16f116cd` | 15 880 | 219 | — | T4：第 194 行句读润色（captain 终局裁定的终值 ②），`numstat 1 1` |
+| 6 | `README.md` | `8f42fd8932c6cf2afc93567d88b1ba9bec80a6ff86d9443002c93fff13ce9f65` | 3 211 | 46 | 600 | T13：§1 表 06–11 行改中文页链接 + §3/§4/§5 行内提示，`numstat 9 9` |
+| 7 | `doc/design/README.md` | `c64ec28f6a62557abd75602350a0a6e332561f57a108af5139be14ce1b26c614` | 2 830 | 37 | 600 | T13：§2 导航 06–11 行改中文页链接并去 planned，`numstat 6 6` |
+| 8 | `doc/design/06-flows.md` | `798aa45d9ec3e5142e863459e552f0b40f613583571cfc13d68f4406e197a415` | 29 052 | 506 | — | T10：纯插入 2 行（切换行 + 空行），`numstat 2 0` / 1 hunk |
+| 9 | `doc/design/07-build-and-deploy.md` | `067b69d8523693d945de0a676a0fdc03fe5a8e15920d8c3fabcd9ee1d659c8b8` | 11 676 | 206 | — | T11：同上（`numstat 2 0` / 1 hunk） |
+| 10 | `doc/design/08-issues-and-solutions.md` | `b5a2a6b63d553a5cd04a465b05b627a0d89a56aa2cae947654cab35a1ab47f99` | 55 878 | 499 | — | T11：同上 |
+| 11 | `doc/design/09-verification-and-limitations.md` | `b2ebcbd02ad0f7d6dfb264041f56a01de1ae8ef5eca708faccb9d6d55ab0d4fa` | 24 014 | 217 | — | T12：同上 |
+| 12 | `doc/design/10-code-map.md` | `40749a1c2ee6560c48ae4ba892ddd6978b33aa14eb8ffb3024db974ccc987d4d` | 20 342 | 270 | — | T10：同上 |
+| 13 | `doc/design/11-coding-standards.md` | `1fa6acb3aecba7e8718dc7ac20478644b8c2dc9b95cf6498faac0a34664044bf` | 18 934 | 239 | — | T12：同上 |
+| 14 | `reports/66-followup2-requirements.md` | `a9dc8d1d1ce2b2ea178984de3c6581806e184e3d1f34cfd459817e4922a01c44` | 70 589 | 705 | — | T1（冻结；captain 裁定「此后不得再编辑」；改写链见 §10.8） |
+| 15 | `reports/67-followup2-verification.md` | `b43fda6536982b78dd04ba09d7c7165683787b35a56f9075c9fcdc49e8fc6739` | 34 857 | 325 | — | T14 独立验证报告（§0.2 四落点、§4.7 六类负例表、§7.9 附录编号）；**修订链四值与「终态后修订」治理登记见 §10.8**（本行为现行最终值） |
+
+**B. 本轮新增**
+
+| # | 路径 | sha256 | 字节 / 行数 | 来源 |
+|---|---|---|---|---|
+| 16 | `doc/design/zh-CN/06-flows.md` | `3b6045214f768997b03cd92c9d8687c6d2aeff3fafaa424b0ae391dc157ffdd3` | 28 184 / 423 | T10 |
+| 17 | `doc/design/zh-CN/07-build-and-deploy.md` | `c5a863dfcfd98d029c94df10dbf99fe2ce02db08d2ea146c31ddd79732243ec3` | 10 707 / 199 | T11 |
+| 18 | `doc/design/zh-CN/08-issues-and-solutions.md` | `9e895fa70135ec7ea0e00ffb892e180606d9eadef04d5e78711a5a8b9f845fe7` | 50 211 / 496 | T11 |
+| 19 | `doc/design/zh-CN/09-verification-and-limitations.md` | `62cfa5df8df459db50bf4c764c3681456b40ecd067444aa7ded9ae9f270d46bc` | 21 544 / 210 | T12 |
+| 20 | `doc/design/zh-CN/10-code-map.md` | `bdf8d97a04738104dc36fa5ced3b9eb1c1c3eceeafb426905fdaacb7f7c2b02f` | 18 987 / 242 | T10 |
+| 21 | `doc/design/zh-CN/11-coding-standards.md` | `d0731f3a31c20da619e7ca5ba4fbca94844096fd6b110d29d88784d890dcfad4` | 17 074 / 218 | T12 |
+| 22 | `.github/workflows/docs.yml`（未跟踪新文件） | `a2d9818c23b7b8790c6da8e01ac0028f220f364bab1ed752e4a7fb9619534578` | 1 397 / 45 | T3（新建）+ T18（两步改走 `--repo-mode`） |
+| 23 | `tmp/i18n-audit-probe-8bb69d2.tar.gz`（**仓库外工件**） | `2bda1048c8cec8b2a86b890c767c2a0c68278ec7df02b59a932322d49d32241a` | 17 507 348 B | T15（F）归档；不可随仓库分发 |
+
+**C. 0 DRIFT（本轮未受影响的登记行，逐行现场重测）**
+
+§8.3/§8.4 与 §9.3–§9.6 的台账行中**未受本轮影响**的 **11 行**逐行重测 `sha256sum` + `wc -c` + `wc -l`，与登记值**逐格相等**，循环输出 **OK × 11**（任一不等即打印 `DRIFT`）：
+
+| 行（来源） | 路径 | 登记值（sha256 全文） | 字节 / 行数 | 本轮实测 |
+|---|---|---|---|---|
+| §8.3-21 | `doc/design/zh-CN/SPEC-guide.md` | `dd8911469c31a71cb9e407e10ed2ca0018b422591affb68351ac4ba12be742c7` | 7 895 / 108 | OK |
+| §8.3-24 | `doc/design/zh-CN/03-app-architecture.md` | `7b923659876b77c4409bbb854b24b760cceff6499488bef202c7fed80ebefb48` | 28 403 / 367 | OK |
+| §8.3-25 | `doc/design/zh-CN/04-signaling-service.md` | `36d180bc03f1f2520168516d1488ef91307f49d6c4aa9c01fa0b7db8867f713a` | 19 726 / 275 | OK |
+| §8.3-26 | `doc/design/zh-CN/05-protocols.md` | `4acd7b70d37ac121d4e7b0a40e630c491fb4dc76664049d89bb31f30195d0773` | 22 037 / 288 | OK |
+| §8.3-27 | `README.en.md` | `72b7a3c45ff87d9ecb45e8579a83be10b3132ba63fa802ad8ef87970a54262b8` | 3 235 / 61 | OK |
+| §8.3-28 | `doc/design/README.en.md` | `44cda01a35f5c663d47844347282c55a823a5da8521765b7c4e4a1937dc7feeb` | 2 429 / 43 | OK |
+| §8.4-2 | `doc/design/01-requirements.md` | `55e9b8a52722e08a78e6843257523bf3954c469daa1aef26921ab079a80f8387` | 25 977 / 331 | OK |
+| §8.4-3 | `doc/design/02-architecture.md` | `6a2fc862af61d0511115e47d50c2065f29d93912f4feacb88fa6847d567d1be8` | 16 312 / 222 | OK |
+| §8.4-4 | `doc/design/03-app-architecture.md` | `097bbf2393b42df45973b866529d02d007411264494aa988949be41f3e493584` | 29 449 / 387 | OK |
+| §8.4-5 | `doc/design/04-signaling-service.md` | `ca79073949c806d3bee82ab95768d88e87f3cdad0b109374acde950454c594a0` | 20 155 / 279 | OK |
+| §8.4-6 | `doc/design/05-protocols.md` | `042b79cdf53e6232d338883535368fdf8029ae45dd74a2ee9f958615cfdb2e3f` | 22 953 / 295 | OK |
+
+**分类完整性（逐行对齐，无漏登）**：A 表 15 行（本轮值变化者）+ B 表 8 行（本轮新增者）+ C 表 11 行（0 DRIFT）= 34 行；台账侧对应为 §8.3（9 行）+ §8.4（8 行）+ §9.3 的两行重签（SPEC 与 zh-CN/01）+ §9.5（审计脚本 1 行）+ §9.6（15 行 0 DRIFT 名单，其中 4 行本轮被改：GLOSSARY、zh-CN/02、README.md、doc/design/README.md）。**本轮三集合互不重叠且覆盖全部台账行**（`reports/66` §7.1 的 A/B/C 三分法已逐条落表）。**本清单自身的本轮身份不在本文件内自指**：`reports/54` 的值由 [reports/62](62-i18n-delivery.md) §15.6 的反向登记给出，其自身值在 task t16 的 output 中登记（同 §7 的既有约定）；**该 t16 值已被后续写入取代**，现行登记见 §10.9。
+
+### 10.3 联合指纹 C4（19 → 31 路径）
+
+配方未变（[reports/66](66-followup2-requirements.md) §7.2；两端 `LC_ALL=C sort`），路径由 19 扩到 **31**（追加 06–11 的英文页与中文页各 6 条），断言删除：无——`xargs` 输入 31 条**全部存在**（缺失计数 = 0）。
+
+* **31 路径终值 = `053e23bf5ac07e8f532b8d2f0ad6d7ed987a61ca546836b44d950ddbcc6edc29`**（撰写时实测）。
+* **旧值处置（不篡改历史）**：`40d9fa70db57add32376157e181b1fe57c8fa250fe7a06253905d5a794adfa55`（§9.7 的 19 路径）与 §9.7 的 18 路径机制自检值 `1bf12697c411ba292c62234d5f6fb826eebe98ed8423277668794382b0a5d901` 同轮作废（其路径集不含 06–11）。
+* 逐路径 sha256（撰写时实测；以下为原始 `sha256sum` 输出的前 20 位与路径，全长见 t16 output 的原始留痕）：
+
+```text
+042b79cdf53e6232d338 doc/design/05-protocols.md
+067b69d8523693d945de doc/design/07-build-and-deploy.md
+097bbf2393b42df45973 doc/design/03-app-architecture.md
+1fa6acb3aecba7e8718d doc/design/11-coding-standards.md
+36d180bc03f1f2520168 doc/design/zh-CN/04-signaling-service.md
+3b6045214f768997b03c doc/design/zh-CN/06-flows.md
+40749a1c2ee6560c48ae doc/design/10-code-map.md
+44cda01a35f5c663d478 doc/design/README.en.md
+4acd7b70d37ac121d4e7 doc/design/zh-CN/05-protocols.md
+55e9b8a52722e08a78e6 doc/design/01-requirements.md
+62cfa5df8df459db50bf doc/design/zh-CN/09-verification-and-limitations.md
+6a2fc862af61d0511115 doc/design/02-architecture.md
+72b7a3c45ff87d9ecb45 README.en.md
+78787978e04ab9e73979 doc/design/SPEC.md
+798aa45d9ec3e5142e86 doc/design/06-flows.md
+7b38bed57ea57954d28e doc/design/zh-CN/GLOSSARY.md
+7b923659876b77c4409b doc/design/zh-CN/03-app-architecture.md
+8f42fd8932c6cf2afc93 README.md
+9c154dbe6169f00d4f8f scripts/doc-verify.sh
+9e895fa70135ec7ea0e0 doc/design/zh-CN/08-issues-and-solutions.md
+a4271a402396099f56ca doc/design/zh-CN/01-requirements.md
+b2ebcbd02ad0f7d6dfb2 doc/design/09-verification-and-limitations.md
+b4182633a78f9895d0ae doc/design/zh-CN/02-architecture.md
+b5a2a6b63d553a5cd04a doc/design/08-issues-and-solutions.md
+bdf8d97a04738104dc36 doc/design/zh-CN/10-code-map.md
+c5a863dfcfd98d029c94 doc/design/zh-CN/07-build-and-deploy.md
+c64ec28f6a62557abd75 doc/design/README.md
+c778c83127489f3f8b36 scripts/i18n-audit.sh
+ca79073949c806d3bee8 doc/design/04-signaling-service.md
+d0731f3a31c20da619e7 doc/design/zh-CN/11-coding-standards.md
+dd8911469c31a71cb9e4 doc/design/zh-CN/SPEC-guide.md
+```
+
+### 10.4 T15 归档（逐字取自 t15 的 output；与 [reports/62](62-i18n-delivery.md) §15.6 **逐字相同**，E-8）
+
+```text
+ARCHIVE PATH = /data/dsh/home/workspace/tmp/i18n-audit-probe-8bb69d2.tar.gz
+SHA256       = 2bda1048c8cec8b2a86b890c767c2a0c68278ec7df02b59a932322d49d32241a
+BYTES        = 17507348
+MEMBERS      = 2354 总计 = 2005 常规文件 + 1 符号链接 + 348 目录
+PACK SECONDS = 1
+ORIGINAL (F-1, preserved) = /data/dsh/home/workspace/tmp/i18n-audit-probe ; 22517618 bytes ; 2005 文件 ; 目录在位 (drwxr-xr-x 4, mtime Sep 19 23:30)
+命令         = 冻结 F-2 形式（tar -czf … -C tmp i18n-audit-probe，HEAD 短哈希 8bb69d2）
+脚注（避免 2005 vs 2354 被误读）：tar 总成员 2354 的非目录项 = 2006 = 2005 常规文件 + 1 符号链接
+  （i18n-audit-probe/tree/docs → doc/design）；差 349 = 348 目录 + 1 符号链接。
+F-4/F-5 清理候选集 = 空（以 team 目录创建时刻 2026-09-20 22:45 为界，find tmp -maxdepth 1 -newermt … 除本归档外无输出）
+  → 无 mv / 无隔离目录 / 无 rm；F-5 不可删清单逐项在位（env.sh / env-go.sh / env-container.sh、tmp/n1…n7、
+  tmp/t47b-captain-build.sh、tmp/probe-forms-matrix-writer-ops.md、tmp/i18n-audit-probe、本归档）。
+F-6：未触碰仓库内任何文件；git status --porcelain 清理前/后一致（22 行，diff 为空）。
+F-7：doc-verify.sh 前/后 EXIT=0 且同行 PASS (4795 checks, 4 warnings)；i18n-audit.sh 前/后 EXIT=0 且
+  同行 PASS (133 checks, 0 warnings)；原始输出 HOST /tmp/t15-gate-before.out、t15-gate-after.out、
+  t15-audit-before.out、t15-audit-after.out；两份 stdout diff 均为空。
+F-8（范围外，只列不删）：HOST /tmp 第三轮产物 461 项（/tmp 合计 107M，清单 HOST /tmp/t15-host-tmp-round3.txt）；
+  未移动、未删除任何路径。
+排除清单新增（禁删）：HOST /tmp/t15-*（t15-kept-inventory.txt、t15-gate-{before,after}.out、
+  t15-audit-{before,after}.out、t15-git-{before,after}.txt、t15-host-tmp-round3.txt）。
+流程留痕：t15 首次完成提交被平台拒为 stale attempt，随后以同一 attempt_id 成功 → 登记为平台瞬态事件（非偏差），
+  终态记录即其报文所载。
+自证：以上 2354 / 348 / 2006 / 1 符号链接、17507348 B 与 22517618 B/2005 文件，均由 T16 在盘面独立复测
+  （tar -tvzf 类型分解 + find -type f/-type d/-type l + du -sb），非转述。
+```
+
+### 10.5 现场门禁结果（撰写时）
+
+```text
+bash scripts/doc-verify.sh   # PASS (4795 checks, 4 warnings)  EXIT=0
+bash scripts/i18n-audit.sh   # PASS (133 checks, 0 warnings)   EXIT=0
+```
+
+门禁的 4 条 WARN 全部为 **L-9 自指样例**（`app/build/nope.apk` 的 typo-suspect，EN 09:140/:147 与 zh-CN 09:134/:141）；**t8 落地后 V14 配对滞后 WARN 由 6 → 0**（第三轮第 10 条判据，见 [reports/62](62-i18n-delivery.md) §15.7）。
+
+### 10.6 治理与差异披露（指针）
+
+第三轮全部治理条目（11 条 + 附录 11/12/13/14/15/16/18/19/20）及其证据位置见 [reports/62](62-i18n-delivery.md) §15.7；其中 **附录 17**（冻结锚 vs 交付树重算）按 captain 裁定**定义在 [reports/67](67-followup2-verification.md) §0.2**，本节不重复定义。
+
+### 10.7 本节数值的测量方式（可复现）
+
+```bash
+cd /data/dsh/home/workspace/code/webrtc-demo
+git rev-parse HEAD                                    # 8bb69d260f6d4f5a5e0961ee980e68592a5816de
+sha256sum scripts/doc-verify.sh scripts/i18n-audit.sh .github/workflows/docs.yml
+git diff --numstat scripts/doc-verify.sh scripts/i18n-audit.sh        # 123 13 / 312 33
+sha256sum doc/design/SPEC.md doc/design/zh-CN/GLOSSARY.md doc/design/zh-CN/02-architecture.md README.md doc/design/README.md
+bash scripts/doc-verify.sh; echo "EXIT=$?"            # PASS (4795 checks, 4 warnings) / 0
+bash scripts/i18n-audit.sh; echo "EXIT=$?"            # PASS (133 checks, 0 warnings) / 0
+# C4 31 路径：见 §10.3 的 heredoc 配方（两端 LC_ALL=C sort）
+# 0 DRIFT 11 行：逐行 sha256sum + wc -c + wc -l 与 §10.2 C 表登记值比对（循环输出 OK × 11）
+```
+
+### 10.8 本节新增 open items
+
+* **`reports/67` 的修订链（四值并列，来源各异，如实登记）**：`2da3354b…`（首写 / 318 行 / 33 107 B）→ `6fbd0126…`（书写约定修正后 / 318 行 / 33 206 B）→ `715e950c845d78ce0786afe82538e522c2e34d03f1adda3d084d1306809e1d13`（**t14 终态时记录值** / 324 行 / 34 380 B）→ **`b43fda6536982b78dd04ba09d7c7165683787b35a56f9075c9fcdc49e8fc6739`（最终 / 325 行 / 34 857 B / mtime 2026-09-21 14:15:25）**。前两值由 captain 提供、**盘面已无 capture**（原件被后续修订取代）；后两值我方独立实测：最终件 `doc-verify.sh --only` → PASS (86 checks, 0 warnings) EXIT=0（全量门禁 PASS 4795/4、审计 PASS 133/0），终态值 `715e950c…` 由**反向重建**取得 —— HOST: `/tmp/rev-715e950c.md`（sha256 `715e950c…` / 324 行 / 34 380 B），与最终件 `diff` = **恰 1 hunk**（`@@ -157,7 +157,8 @@`，即第 160 行「1 行 → 2 行」），新增内容在最终件第 160–161 行（§4.3 标题在第 158 行）。
+* **治理如实性 — 终态后修订（登记为流程偏差，不判 finding；双方均有责）**：「`reports/67` 在 t14 标记 completed 之后又修订一次，唯一改动 = §4.3 补入『t18 的 `--repo-mode` 与其默认模式同落点成对引用』一行；该『唯一 1 hunk』已由**反向重建证明**（重建件 sha 与 t14 终态记录值逐字节吻合、与最终件 diff 恰 1 hunk）。起因 = captain 的 GO 与作者的完成报告交叉、GO 中的该条款在终态后才被比对到（**流程双方均有责**：派单/GO 时序与交付侧在同一窗口前移）。作者**主动披露**（t14 output 记录的是修订前哈希，并要求 T16/T17 以现场实测为准），captain 现场核对最终件（sha / 行数 / 字节 / 自证 86 checks / 双门禁）后**接受并登记**；**不判 finding**（补齐 GO 条款、完整披露、范围可核），但**登记为一次流程偏差**（终态后修订交付物），T17 须以**现场最终哈希**复核并对该链作一致性检查。」
+* **`reports/68`（T17 交付物）：本节撰写后它已出现于工作树**（未跟踪，T17 仍在进行；本节撰写时的首测 mtime 2026-09-21 14:36）。其身份不在本轮登记范围内——它是 T17 自己的交付物，须由 T17 现场自证；本节**不作任何哈希/行数/字节断言**，待 T17 收口后由后续增补登记（沿用「报告自身不自指」的既有约定）。
+* **`reports/66` 的改写链**：`f972e352…` → `0baa3c7d…` → `05777639…` → **`a9dc8d1d…`（终值 / 705 行 / 70 589 B；captain 冻结、此后不得再编辑）**——治理事实，不得省略。
+* **D 的口径沿革**：`doc/design/zh-CN/02-architecture.md` 第 194 行历经 ① HEAD `716552cd…` → ② **终值** `b4182633…`（captain 终局裁定）→ ③「记为已否决」式（交叉时点的口头提议，**未采纳、未落盘**）。
+* **任何进一步编辑都会使本节绑定失效**（同 §7/§8.8/§9.10）：须重新现场测量并再次增补，不得据旧值重述。
+
+### 10.9 冻结声明、`reports/62` 身份登记与已被取代的登记值（task t19 / repair-round-2）
+
+* **冻结时刻与绑定（F3）**：captain 明确冻结后，`reports/54-docs-freeze-manifest.md` 与 `reports/62-i18n-delivery.md` 在最终提交前**不再有任何写入**；本单（t19）落盘即为二者的冻结修订。绑定声明：`reports/54` = **本文件**（按既有「报告自身不自指」约定，其 sha256 / 行数 / 字节 / mtime 由 task t19 的 output 与 t17 round-2 复审登记）；`reports/62` = 下条登记值（登记时刻）**并**以 task t19 output 中的最终值为准。
+* **`reports/62` 身份登记（F5；登记时刻现场实测）**：sha256 `717d031b2d7e9aebe5ac11776ffc84da90bff9bd17e92884dc7e892ab9880302` / 534 行 / 69 597 B / mtime 2026-09-21 14:37:18。**声明**：本单随后仍须对该文件写入 F4/F3 两处修订，故此值在 62 落盘后失效；`reports/62` 的**最终**身份以 task t19 的 output（与 t17 round-2 复审）登记值为准 —— 「双向互相登记」在哈希层面无法同时精确（回填即循环失效），故本节显式区分「登记时刻值」与「最终值」。
+* **已被取代的登记值（F3，如实登记，含本轮全部写入的链）**：task t16 output 中登记的 `reports/54` = `3b9fd1b9…` / 545 行 / 43 475 B、`reports/62` = `80fc8fa8…` / 519 行 / 64 711 B **均已被后续写入取代，一律以现场最终值为准**。时间序（同一共享树、不同时点测量，按**时序**归因，不归任何一方失误）：R1（t16 收口）54 = `3b9fd1b9…` / 545 / 43 475、62 = `80fc8fa8…` / 519 / 64 711 → W1（14:29）54 = `f02a1952…` / 546 / 44 808、62 = `1431d9ad…` / 519 / 65 854 → W2（14:34）54 = `7f6ea929…` / 559 / 46 071、62 = `bda58a14…` / 533 / 67 534 → W3（14:37）54 = `fe4f3b0f…` / 559 / 46 771、62 = `717d031b…` / 534 / 69 597 → R4（14:39:59，captain 授权的一字修正：§10.2 表 A 第 15 行来源列的修订链条数表述由旧值改为「四值」）54 = `0f82c5de…` / 559 / 46 771（62 未改）→ **R5 = 本单（t19）**：54 = 本文件、62 = 见 task t19 output。
+* **措辞残留复核（captain 授权范围的顺带项）**：`grep -n "三值" reports/54 reports/62` 在 R4 之前命中 **1 处**（即上条所述 §10.2 表 A 第 15 行来源列，与 §10.8 的「四值」矛盾），已在 R4 按授权改为「四值」；R4 之后两份报告该词命中 **0**，本单未再发现同语义残留。

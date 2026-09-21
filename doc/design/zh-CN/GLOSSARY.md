@@ -1,9 +1,9 @@
 > **中文（默认）** · [English](../SPEC.md)
 > 中文原创规范：豁免译文声明（§4）与双向切换校验（§3.4）；本条依 captain 裁定 A 冻结。
 
-# 中文文档规范 — 目录布局、语言切换与术语表（冻结 v1.1.1）
+# 中文文档规范 — 目录布局、语言切换与术语表（冻结 v1.1.3）
 
-> Status: frozen v1.1.1 · Owner: i18n-architect · Task: t14, 2026-09-17（t1 attempt 1 冻结的 v1.1.0 规则不变；本条仅同步 §8.2 到 SPEC v1.7.0）
+> Status: frozen v1.1.3 · Owner: i18n-architect · Task: t7, 2026-09-21（相对 v1.1.2：**只扩充配对/声明枚举到 NN = 01–11，并同步因 06–11 落地而失效的事实断言句**；§2.2 L1/L2/L4/L5/L6、§3.1、§3.3、§4.1、§5、§6/§6.1/§6.2、§7.1、§8 的规则正文零改动；v1.1.0–v1.1.2 的历史见 §8.2 与文末自证）
 > Doc standard: [SPEC.md](../SPEC.md) — 英文 SPEC 是唯一规范（normative）；本文件是它的中文配套规范，只约束中文页
 > 适用范围: `doc/design/zh-CN/` 全部中文页、默认中文的 `README.md` 与 `doc/design/README.md`
 
@@ -17,7 +17,7 @@
 2. **语言切换器**：中英双向切换行的逐字节格式与可达性要求（§3）。
 3. **翻译规则与术语表**：哪些内容一律不译、数字与标点的写法、以及「英文原词 → 中文定译 → 首现说明」的术语表（§5、§6）。
 
-本文件不覆盖：英文页的写作规则（见 [SPEC.md](../SPEC.md) §6）、英文 SPEC 正文（不翻译，见 §4）、06–11 章的翻译排期（见 §2.3）。
+本文件不覆盖：英文页的写作规则（见 [SPEC.md](../SPEC.md) §6）、英文 SPEC 正文（不翻译，见 §4）。06–11 章的翻译已在第三轮落地，其配对与声明义务见 §2.3、§3.4 与 §4 Y-1。
 
 本文件是**规范**（normative for Chinese pages）：译者不得静默偏离。若某条规则与英文 SPEC 冲突，以英文 SPEC 为准，并把冲突报给 captain（§8.2 记录了本文件最初列出的五处 SPEC 修订已在 SPEC v1.7.0 落地）。
 
@@ -38,7 +38,7 @@
 | `doc/design/SPEC.md` | **唯一规范**（normative），不翻译 | 英文 | architect |
 | `doc/design/_generated/` | 机器生成表格，维持原样 | 英文 | 生成脚本 |
 | `docs`（符号链接 → `doc/design`） | 兼容入口；中文页可经 `docs/zh-CN/` 访问 | — | 不动 |
-| `doc/design/06-*` … `11-*.md` | 暂不翻译的英文页（已知缺口，不算缺陷） | 英文 | — |
+| `doc/design/06-*` … `11-*.md` | 英文正文页（06–11 已译为中文；英文页只加一行切换器） | 英文 | T10–T12 |
 
 **不存在的文件（不得创建）：** 根 `README.zh-CN.md`；本表未列出的中文页（例如 `zh-CN/` 下的 `README.md`）都不在本次命名清单内。命名清单是唯一真相。
 
@@ -46,20 +46,20 @@
 
 * **L1 — 镜像命名。** 英文正文页 `NN-<name>.md` 的中文页严格命名为 `doc/design/zh-CN/` 下的**同名**文件（例：`05-protocols.md` ↔ `zh-CN/` 下的 `05-protocols.md`）。不新增编号、不改文件名、不加语言后缀（因此也不存在 `README.zh-CN.md`）。
 * **L2 — 默认中文、英文留作参照。** 根 `README.md` 与 `doc/design/README.md` 以中文书写（默认阅读路径）；其英文原文整体移入同目录的 `README.en.md`。两份 `README.en.md` 是**原文参照**，不再接收新内容，只加一行切换器。
-* **L3 — 英文页只加切换行。** 英文正文页（01–05）本次只允许在顶部前 8 行内新增一行语言切换器；设计陈述、引用、表格、行号一律不动（`git diff` 必须只显示新增行）。
+* **L3 — 英文页只加切换行。** 英文正文页（01–11）只允许在顶部前 8 行内新增一行语言切换器；设计陈述、引用、表格、行号一律不动（`git diff` 必须只显示新增行）。
 * **L4 — 不新增页面。** 除 §2.1 列出的文件外不新增任何页面；根 `README.zh-CN.md` 与 `zh-CN/` 下的额外索引页（例如 `zh-CN/` 下的 `README.md`）都不存在、不得创建。
 * **L5 — 符号链接与生成物不动。** `docs` 继续指向 `doc/design`；中文页经 `docs/zh-CN/` 可达，不得改写为真实目录。同理，`doc/` 下的历史存档、`doc/design/_generated/` 的生成表格不得因本次改动而变化。
 * **L6 — 辅助页命名。** `zh-CN/` 下的 `GLOSSARY.md` 与 `SPEC-guide.md` 是不带编号的辅助页，豁免英文 SPEC §5 的 `NN` 编号要求；除此之外所有中文页仍遵守 §5 模板与 `NN-<name>.md` 命名。
 
 ### 2.3 不翻译的篇章
 
-06–11 章与英文 SPEC 本次不翻译：标注为「待翻译（planned）」的已知缺口，不计缺陷。中文索引 `doc/design/README.md` 的 12 行导航中，已译篇章指向 `zh-CN/` 下的中文页，未译篇章指向英文页并注明「待翻译（planned）」。
+第三轮起，本目录下不再有「待翻译（planned）」的篇章：06–11 章已译为中文（配对与切换器见 §3.4，声明见 §4 Y-1）；中文索引 `doc/design/README.md` 与根 `README.md` 对这六章**不得**再标注「待翻译（planned）」，其导航指向 `zh-CN/` 下的中文页。**仍不翻译的唯一文档是英文 SPEC**（见 §4.1）；本规范不为其提供译文，中文索引对它标注「英文唯一规范，不翻译」。
 
 ### 2.4 各类中文页的义务一览
 
 | 类别 | 文件 | 切换器（§3） | 译文声明（§4） | 双向校验（§3.4） |
 |---|---|---|---|---|
-| 中文正文页（译文） | `zh-CN/NN-<name>.md`（NN = 01–05） | 需要，指向英文同名页 | **需要**，逐字 | 参与 |
+| 中文正文页（译文） | `zh-CN/NN-<name>.md`（NN = 01–11） | 需要，指向英文同名页 | **需要**，逐字 | 参与 |
 | 中文导读 | `zh-CN/` 下的 `SPEC-guide.md` | 需要，指向 `SPEC.md` | **需要**，逐字 | 不参与（无英文对应物） |
 | 中文原创规范 | `doc/design/zh-CN/GLOSSARY.md` | 需要，指向 `SPEC.md` | **豁免** | 不参与 |
 | 中文默认入口/索引 | 根 `README.md`、`doc/design/README.md` | 需要，指向同目录 `README.en.md` | 不要求 | 参与（与其 `README.en.md` 配对） |
@@ -82,7 +82,7 @@
 
 | 中文页 | 链接目标 |
 |---|---|
-| `zh-CN/NN-<name>.md`（01–05） | 上一级目录（两点加斜杠的上级前缀）下的英文同名文件；逐字节示例见上方 05 篇的那一行 |
+| `zh-CN/NN-<name>.md`（01–11） | 上一级目录（两点加斜杠的上级前缀）下的英文同名文件；逐字节示例见上方 05 篇的那一行 |
 | 根 `README.md` | 同目录的 `README.en.md` |
 | `doc/design/README.md` | 同目录的 `README.en.md` |
 | `zh-CN/` 下的 `GLOSSARY.md` 与 `SPEC-guide.md` | 上一级目录的 `SPEC.md`（英文唯一规范） |
@@ -111,17 +111,17 @@
 |---|---|
 | 根 `README.md` | 根 `README.en.md` |
 | `doc/design/README.md` | `doc/design/` 下的 `README.en.md` |
-| `zh-CN/NN-<name>.md`（NN = 01–05） | `doc/design/NN-<name>.md` |
+| `zh-CN/NN-<name>.md`（NN = 01–11） | `doc/design/NN-<name>.md` |
 
 * **S1** — 配对中的中文页前 8 行内必须存在切换器行，且其链接目标在磁盘上存在。
 * **S2** — 配对中的英文页前 8 行内必须存在切换器行，且其链接目标在磁盘上存在。
 * **S3** — 任一侧缺失、目标不存在或指向错误文件（例如 05 的译文指到 04 的英文页），门禁报 FAIL 并给出精确文件与行号，修复提示为「补上切换器行或修正链接目标」。
 * **S4** — **豁免**：`zh-CN/` 下的 `GLOSSARY.md`、`zh-CN/` 下的 `SPEC-guide.md` 以及任何无英文对应物的文件**不参与**双向校验；其中 `SPEC-guide.md` 仍需要 §4 的译文声明，`GLOSSARY.md` 不需要。
-* **S5** — 未翻译的英文页（06–11）本次不加切换器，也不列入校验；它们被标注为「待翻译（planned）」。
+* **S5** — 06–11 章的英文页与其中文页**同属上表的配对清单**：两侧都必须有切换器并参与双向校验（V14）；本目录下不再有豁免于 §3.4 的正文页（豁免仅限 S4 列出的辅助页）。
 
 ## 4. 译文声明
 
-* **Y-1（适用范围，唯一清单）** — 只有下列 6 个文件需要译文声明：`zh-CN/` 下的 `01-requirements.md`、`02-architecture.md`、`03-app-architecture.md`、`04-signaling-service.md`、`05-protocols.md`，以及 `zh-CN/` 下的 `SPEC-guide.md`。
+* **Y-1（适用范围，唯一清单）** — 只有下列 12 个文件需要译文声明：`zh-CN/` 下的 `01-requirements.md`、`02-architecture.md`、`03-app-architecture.md`、`04-signaling-service.md`、`05-protocols.md`、`06-flows.md`、`07-build-and-deploy.md`、`08-issues-and-solutions.md`、`09-verification-and-limitations.md`、`10-code-map.md`、`11-coding-standards.md`，以及 `zh-CN/` 下的 `SPEC-guide.md`。
 * **Y-2（文本逐字）** — 声明是独立成行的一行引用块，必须逐字写成：
 
 ```text
@@ -188,7 +188,7 @@
 * 状态词写作「中文定译（英文原词）」，首次出现带英文原词，例：`已实现（implemented）`、`部分实现（partially implemented）`、`已知限制（known limitation）`、`未验证（unverified）`、`已否决（rejected）`、`已证伪（disproven）`。英文原词必须保留，供门禁与机器对照。
 * 需求与验收标识（`FR-*`、`NFR-*`、`D-1`…）不译。
 * 路径 scope 标记 `HOST`、`CONTAINER`、`DEVICE`、`REPO` 不译；`WORKSPACE` 与 `ARTIFACT` 是已退役标记，不得使用——违规写法是在行首写标记加冒号再跟一个路径，例如：NEGATIVE EXAMPLE `WORKSPACE: tmp/n1/x/app.log`（本行显式标注为反面示例，勿照抄）。
-* 未翻译篇章在中文索引中标注「待翻译（planned）」，不视为缺陷。
+* 英文 SPEC 不翻译；中文索引对它标注「英文唯一规范，不翻译」，不视为缺陷。
 
 ## 6. 术语表（冻结，≥40 条）
 
@@ -270,6 +270,30 @@
 | 72 | known limitation | 已知限制 | 状态词，见 §5.5 |
 | 73 | unverified | 未验证 | 状态词，见 §5.5 |
 | 74 | signalling table | 信令表 | 由生成脚本产出的机器表格，不得手改 |
+| 75 | flow | 流程 | 06 篇标题用词；指端到端业务流程，不译成「流」 |
+| 76 | step list | 步骤清单 | 编号步骤 + 引用；与同篇 Mermaid 图一一对应 |
+| 77 | device capture | 设备采集 | 真机日志证据；采集文件路径不译（见 §5.1） |
+| 78 | evidence index | 证据索引 | 各篇末节的「声明 → 引用 → 证据」表 |
+| 79 | open item | 待办事项 | 篇末未闭合项；不译成「开放项」 |
+| 80 | root cause | 根因 | 缺陷史条目字段；不译成别的变体 |
+| 81 | symptom | 症状 | 缺陷史条目字段；不译成「现象」 |
+| 82 | log signature | 日志特征 | 缺陷史条目字段；日志键与事件名原样 |
+| 83 | residual risk | 残留风险 | 修复后的剩余风险；不译成「剩余风险」 |
+| 84 | counter-pattern | 反例模式 | 规范表列名；指该规则要防止的写法 |
+| 85 | build stage | 构建阶段 | 五阶段构建；阶段名与命令不译 |
+| 86 | build invariant | 构建不变量 | 构建前后必须成立的条件 |
+| 87 | release chain | 发布链 | 冻结 → 打包 → 发布 → 核对的全链 |
+| 88 | rollback | 回滚 | 发布失败后的回退动作；不译成「退回」 |
+| 89 | identity guard | 身份守卫 | 发布前校验制品身份 |
+| 90 | shard | 分片 | 发布产物切分；不译成「碎片」 |
+| 91 | reconcile | 对账 | 分片与总清单逐项核对；不译成「调和」 |
+| 92 | host service | 主机服务 | HOST 侧 systemd 服务；服务名不译 |
+| 93 | toolchain | 工具链 | 版本表标题用词 |
+| 94 | verification matrix | 验证矩阵 | 09 篇 §3 主表 |
+| 95 | reproduced | 已复现 | 09 篇 §3 图例取值；不进 §5.5 冻结词表（Z4 仍为 6 词） |
+| 96 | static | 静态 | 09 篇 §3 图例取值（仅读源码、未执行）；同上不进 §5.5 |
+| 97 | byte-reproducible | 字节可复现 | 08 篇 §6.4 的否定结论用「不可字节复现」 |
+| 98 | code map | 代码地图 | 10 篇标题用词；不译成「代码索引」 |
 
 ### 6.1 一词多义与冲突处理
 
@@ -311,7 +335,7 @@ bash scripts/doc-verify.sh
 
 1. 扫描集合包含：根 `README.md` 与 `README.en.md`、`doc/design/` 下的英文正文页与 `README.en.md`、`doc/design/zh-CN/` 下的全部中文页（不再要求根 `README.zh-CN.md`——该文件不存在）；
 2. 对 §3.4 配对清单中的三组文件做双向切换校验（S1–S3），切换器缺失或链接不可达即 FAIL 并给出精确文件名与修复提示；
-3. 对 §4 Y-1 清单（`zh-CN/` 下的 01–05 与 `SPEC-guide.md`）校验译文声明逐字出现；`GLOSSARY.md` 与根 `README.md`、`doc/design/README.md` 豁免；
+3. 对 §4 Y-1 清单（`zh-CN/` 下的 01–11 与 `SPEC-guide.md`）校验译文声明逐字出现；`GLOSSARY.md` 与根 `README.md`、`doc/design/README.md` 豁免；
 4. 中文页的 `path:LINE` 引用按与英文页相同的规则硬校验（存在性 + 行覆盖）；
 5. 英文页既有校验强度不得削弱；全量运行 `failures` 为 0。
 
@@ -346,4 +370,4 @@ SPEC v1.7.0 同时登记了 **V14/V15**（失败消息 `missing language switche
 
 ## 附：本文件的自证
 
-本文件（v1.1.1，captain 裁定 A 后修订，§8.2 于 t14 同步到 SPEC v1.7.0）自身通过门禁：`bash scripts/doc-verify.sh --only doc/design/zh-CN/GLOSSARY.md` 期望 PASS、failures 0。冻结值与门禁修订号在 T12（原 T7）的交付报告中登记（见 [54-docs-freeze-manifest.md](../../../reports/54-docs-freeze-manifest.md)）。
+本文件（v1.1.3，captain 裁定 A 后修订，§8.2 于 t14 同步到 SPEC v1.7.0；v1.1.2 新增 §6 术语 24 条，v1.1.3 将配对与声明枚举扩到 NN = 01–11）自身通过门禁：`bash scripts/doc-verify.sh --only doc/design/zh-CN/GLOSSARY.md` 期望 PASS、failures 0。冻结值与门禁修订号在 T12（原 T7）的交付报告中登记（见 [54-docs-freeze-manifest.md](../../../reports/54-docs-freeze-manifest.md)）。

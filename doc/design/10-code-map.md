@@ -1,3 +1,5 @@
+> [中文（默认）](zh-CN/10-code-map.md) · English
+
 # 10 — Code Map
 
 > Status: draft · Owner: writer-ops · Task: t5
