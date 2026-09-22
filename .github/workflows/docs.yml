@@ -1,0 +1,45 @@
+# Documentation gate — repository-only (CI) run.
+#
+# Both steps run in repository-only (`--repo-mode`) semantics, because a CI
+# checkout is a bare clone with no surrounding workspace: the reference classes
+# that cannot be satisfied there (P2 workspace paths, P4 container paths,
+# gitlink/submodule citations, `../`-relative env-script citations) are
+# downgraded to explicitly counted NOTE lines and listed in a machine-readable
+# summary by each script.
+#
+# A green CI run is NOT a green workspace gate. The workspace gate is the
+# default mode (`bash scripts/doc-verify.sh` plus `bash scripts/i18n-audit.sh`
+# without the flag), which still hard-checks those classes; it is run by the
+# author locally and by independent verification.
+name: docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout (no submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Bilingual audit (i18n-audit.sh --repo-mode)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/i18n-audit.sh --repo-mode
+
+      - name: Documentation gate (doc-verify.sh --repo-mode)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/doc-verify.sh --repo-mode
