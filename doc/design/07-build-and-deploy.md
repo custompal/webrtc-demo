@@ -67,7 +67,7 @@ failed (`scripts/build_app.sh:360`).
 
 Gate value: `BUILD SUCCESSFUL`, **zero** `FROM-CACHE` lines, 43 tasks (42 executed + 1 up-to-date), and a
 non-zero count of native compile tasks. Note that `assembleDebug` alone is at `scripts/build_app.sh:363`;
-the `clean` and `--no-build-cache` parts are the recipe recorded in the publisher report.
+the `clean` and `--no-build-cache` parts are the recipe recorded in the publisher report `reports/10-app-build.md:1003`.
 
 ### 3.4 Stage 4 — unit tests, all tasks re-run
 

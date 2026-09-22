@@ -65,8 +65,7 @@ libvpx 构建显式启用运行时 CPU 分派，而不是依赖 configure 默认
 ```
 
 门禁值：`BUILD SUCCESSFUL`、**零**行 `FROM-CACHE`、43 个任务（42 个已执行 + 1 个最新），以及非零
-的原生编译任务数。注意单独的 `assembleDebug` 在 `scripts/build_app.sh:363`；`clean` 与
-`--no-build-cache` 两部分是发布报告记录的配方。
+的原生编译任务数。注意单独的 `assembleDebug` 在 `scripts/build_app.sh:363`；`clean` 与 `--no-build-cache` 两部分是发布报告记录的配方 `reports/10-app-build.md:1003`。
 
 ### 3.4 阶段 4 —— 单元测试，全部任务重跑
 
