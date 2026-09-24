@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>浏览器视频通话 Demo（Chrome）— webrtc-demo</title>
+<!-- 纯静态页面：无构建、无 npm、无 CDN、无自定义响应头（不使用 COOP/COEP/SharedArrayBuffer）。
+     必须经 http://localhost 打开（安全上下文）；file:// 不可用（ES Module + getUserMedia 需要 http）。 -->
+<link rel="stylesheet" href="./lib/style.css">
+</head>
+<body>
+
+<header>
+  <h1>浏览器视频通话 Demo · 与 Android App 经既有 Go 信令服务互拨</h1>
+  <div id="env-notice" class="notice">初始化中…</div>
+</header>
+
+<!-- 操作区（reports/70 §7 F-1…F-7） -->
+<section class="controls">
+  <div class="group">
+    <label for="signaling-url">信令地址</label>
+    <input id="signaling-url" type="text" spellcheck="false" autocomplete="off">
+    <button id="btn-apply-url" type="button">应用</button>
+  </div>
+
+  <div class="group">
+    <label for="room-id">房间号</label>
+    <input id="room-id" type="text" spellcheck="false" autocomplete="off" maxlength="6" placeholder="6 位">
+    <button id="btn-create" type="button" class="primary">Create（浏览器建房）</button>
+    <button id="btn-join" type="button" class="primary">Join（App 建房）</button>
+    <button id="btn-leave" type="button" class="danger" disabled>Leave</button>
+  </div>
+
+  <div class="group">
+    <button id="btn-offer" type="button" disabled>再发 offer</button>
+    <button id="btn-restart" type="button" disabled>ICE restart</button>
+    <button id="btn-renegotiate" type="button" disabled>Renegotiate</button>
+  </div>
+
+  <div class="group">
+    <label><input id="chk-relay" type="checkbox"> 强制 relay</label>
+    <label><input id="chk-mute" type="checkbox"> 静音</label>
+    <button id="btn-drop" type="button">模拟掉线</button>
+  </div>
+
+  <div class="group">
+    <button id="btn-selftest" type="button">运行自测矩阵</button>
+    <button id="btn-export-json" type="button">导出 JSON</button>
+    <button id="btn-export-timeline" type="button">CSV·时间线</button>
+    <button id="btn-export-ice" type="button">CSV·候选</button>
+    <button id="btn-export-stats" type="button">CSV·统计</button>
+  </div>
+</section>
+
+<!-- 媒体区（M-4：本端发送 + 远端渲染） -->
+<section class="media">
+  <div class="video-box">
+    <video id="video-local" autoplay playsinline muted></video>
+    <div class="caption" id="caption-local">本地（local） · 未开始</div>
+  </div>
+  <div class="video-box">
+    <video id="video-remote" autoplay playsinline></video>
+    <div class="caption" id="caption-remote">远端（remote） · 未连接</div>
+  </div>
+</section>
+
+<main class="panels">
+
+  <!-- ① 信令时间线（O-1） -->
+  <section class="panel wide">
+    <header>
+      <h2>① 信令时间线（O-1：方向 / 时刻 / type / 原始 JSON / 摘要）</h2>
+      <span class="count" id="timeline-count">0 帧</span>
+    </header>
+    <div class="body">
+      <table>
+        <thead><tr><th>#</th><th>at(ms)</th><th>方向</th><th>type</th><th>摘要</th><th>原始 JSON</th></tr></thead>
+        <tbody id="timeline-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ② SDP 原文 + 解析（O-2） -->
+  <section class="panel wide">
+    <header>
+      <h2>② SDP 原文 + 解析（m= 段 / codec / ICE ufrag-pwd / DTLS 指纹 / 字节数）</h2>
+      <span class="count" id="sdp-count">offer 0 B · answer 0 B</span>
+    </header>
+    <div class="body">
+      <h3>offer 原文（本地或远端）</h3>
+      <pre class="sdp" id="sdp-offer">（尚未产生）</pre>
+      <h3>answer 原文</h3>
+      <pre class="sdp" id="sdp-answer">（尚未产生）</pre>
+      <h3>解析结果</h3>
+      <div class="kv" id="sdp-summary"></div>
+      <table>
+        <thead><tr><th>m=</th><th>kind</th><th>mid</th><th>方向</th><th>codec（payload → name/clockRate）</th><th>候选行</th></tr></thead>
+        <tbody id="sdp-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ③ ICE 候选表 + 选中候选对（O-3 / I-4） -->
+  <section class="panel">
+    <header>
+      <h2>③ ICE 候选表 + 选中候选对（O-3）</h2>
+      <span class="count" id="ice-count">0 条</span>
+    </header>
+    <div class="body">
+      <div class="kv" id="ice-summary"></div>
+      <h3>选中候选对 + RTT + 收发字节</h3>
+      <div class="kv" id="pair-summary"></div>
+      <h3>全部候选</h3>
+      <table>
+        <thead><tr><th>来源</th><th>类型</th><th>协议</th><th>地址:端口</th><th>优先级</th><th>foundation</th><th>次数</th></tr></thead>
+        <tbody id="ice-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ④ 状态机跃迁（O-4） -->
+  <section class="panel">
+    <header>
+      <h2>④ 状态机跃迁（O-4：signaling / iceGathering / iceConnection / connection / dtls）</h2>
+      <span class="count" id="state-count">0 次跃迁</span>
+    </header>
+    <div class="body">
+      <div class="kv" id="state-current"></div>
+      <h3>跃迁日志</h3>
+      <table>
+        <thead><tr><th>#</th><th>at(ms)</th><th>状态机</th><th>旧值</th><th>新值</th></tr></thead>
+        <tbody id="state-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ⑤ 1 Hz RTP/RTCP 统计（O-5 / M-5 / M-6） -->
+  <section class="panel wide">
+    <header>
+      <h2>⑤ 1 Hz RTP/RTCP stats（码率 / 分辨率 / fps / jitter / 丢包 / NACK·PLI·FIR / RTT）</h2>
+      <span class="count" id="stats-count">0 个样本</span>
+    </header>
+    <div class="body">
+      <div class="kv" id="stats-latest"></div>
+      <table>
+        <thead><tr><th>t(ms)</th><th>in kbps</th><th>out kbps</th><th>分辨率</th><th>fps</th><th>jitter</th><th>丢包</th><th>NACK</th><th>PLI</th><th>FIR</th><th>RTT(ms)</th><th>候选对</th><th>方向</th><th>VP9</th></tr></thead>
+        <tbody id="stats-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ⑥ 事件与错误（O-6） -->
+  <section class="panel wide">
+    <header>
+      <h2>⑥ 事件与错误（O-6：error / 异常 / 超时 / 过滤，红字为 error）</h2>
+      <span class="count" id="event-count">0 条</span>
+    </header>
+    <div class="body">
+      <ul class="events" id="events-list"></ul>
+    </div>
+  </section>
+
+</main>
+
+<footer id="foot-hint"></footer>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -44,3 +44,13 @@
 ## 6. 文档索引与历史材料
 
 当前文档集的索引是 [doc/design/README.md](doc/design/README.md)。归档的旧文档，以及旧路径到当前章节的映射，见 [doc/README.md](doc/README.md)。
+
+## 7. 浏览器 Demo
+
+除真机 App 外，本仓库还带一个**纯静态的浏览器视频通话 Demo**（仅桌面 Chrome）：与 App 经同一信令服务真实互拨，全部过程在浏览器控制台与页面面板可见、可导出。
+
+* 上手：宿主机运行 `bash scripts/serve-web-demo.sh start`；在 VSCode PORTS 面板**只转发 8081**；Chrome 打开 `http://localhost:8081/`，点 Create（浏览器建房）或填入 App 给出的 6 位房号后 Join。
+* 信令由页面直连 `ws://47.238.144.66:8443/ws`（明文，8443 不需要转发）。
+* 面板六区：信令时间线、SDP 原文与解析、ICE 候选与选中候选对、状态机跃迁、1 Hz RTP/RTCP 统计、事件与错误；支持导出 JSON/CSV。
+* 运行手册与失败矩阵：[web/README.md](web/README.md)。交付报告与独立验证：[reports/71-browser-call-demo.md](reports/71-browser-call-demo.md)、[reports/72-browser-demo-verification.md](reports/72-browser-demo-verification.md)。
+* 已知限制：只支持桌面 Chrome；页面必须以 `http://localhost` 打开；mDNS 候选可能不可解析；TURN relay 端口范围 49152-49200（并发上限 45）。
